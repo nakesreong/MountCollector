@@ -2,8 +2,8 @@
 ## Title: |cff00ccffMount|r|cffffaa00Collector|r
 ## Notes: Track rare mounts, bosses, open-world rares, account-wide attempts, and global/realm rarity (Data for Azeroth + Realm Census) in the Mount Journal.
 ## Notes-ruRU: Трекинг редких маунтов, боссов, рарников, количества траев по аккаунту и рарности (по миру Data for Azeroth + по серверу) в Коллекции.
-## Author: Anya & Gemini (Tiger)
-## Version: 1.1.0
+## Author: Gemini (Tiger) | QA & Vision: Anya (5cr3am1ng5oul)
+## Version: 1.2.0
 ## SavedVariables: MountCollectorDB
 ## OptionalDeps: MountsRarity, Rarity, RareScanner, TomTom, ElvUI
 ## IconTexture: Interface\ICONS\Ability_Mount_SpectralTiger
