@@ -13,8 +13,6 @@ addon.MountsByMap = {}
 addon.RecentAttemptLock = {}
 addon.RecentAlertLock = {}
 
--- Оценка активного онлайна (персонажей максимального уровня за 30 дней) по RU/EU/US-серверам
--- Используется вместе с глобальной рарностью Data for Azeroth (MountsRarity-2.0) + живым локальным сканером сервера
 addon.RealmPopulations = {
     -- RU Realms
     ["Свежеватель Душ"] = 21500,
@@ -90,6 +88,8 @@ function addon:InitDB()
         showAttempts = true,
         alertRares = true,
         alertSound = true,
+        autoWaypoint = true,
+        showWorldMapPins = true,
         showNpcTooltip = true,
         announceAttempts = true,
     }
@@ -102,7 +102,6 @@ function addon:InitDB()
     self.db = db
 end
 
--- Получение глобальной рарности из проверенной либы MountsRarity-2.0 (Data for Azeroth)
 function addon:GetGlobalRarity(mountID)
     if not mountID then return nil end
     if not MountsRarity and LibStub then
@@ -117,7 +116,6 @@ function addon:GetGlobalRarity(mountID)
     return nil
 end
 
--- Окраска и тир редкости маунта (с поддержкой локализации L)
 function addon:FormatRarityTier(rarityPct)
     if type(rarityPct) ~= "number" then
         return L.NO_DATA, L.TIER_UNKNOWN, "|cff999999"
@@ -137,7 +135,6 @@ function addon:FormatRarityTier(rarityPct)
     end
 end
 
--- Оценка рарности на текущем сервере (например, Свежеватель Душ) + живые встречи
 function addon:GetServerRarityInfo(mountID)
     local realm = GetRealmName() or "Realm"
     local realmPop = self.RealmPopulations[realm] or self.DefaultRealmPopulation
@@ -156,7 +153,14 @@ function addon:GetServerRarityInfo(mountID)
     return realm, realmPop, estOwners, seenCount, globalPct
 end
 
--- Построение единого индекса маунтов, боссов, рарников и карт (MountDropsDB + Rarity + RareScanner + C_MountJournal)
+local function AddUniqueToList(list, val)
+    for _, v in ipairs(list) do
+        if v == val then return end
+    end
+    table.insert(list, val)
+end
+
+-- Построение единого индекса маунтов, предметов для маунтов, боссов, рарников и координат
 function addon:BuildMountIndex()
     if not C_MountJournal or not C_MountJournal.GetMountIDs then return end
 
@@ -186,62 +190,106 @@ function addon:BuildMountIndex()
                     boss = dropData.boss ~= "" and dropData.boss or nil,
                     npcs = {},
                     stats = dropData.stats or {},
-                    quests = dropData.quests or {},
-                    maps = dropData.maps or {},
+                    quests = {},
+                    maps = {},
+                    coords = {},
                     rarityKey = dropData.rarityKey,
                 }
+                for _, qid in ipairs(dropData.quests or {}) do
+                    AddUniqueToList(info.quests, qid)
+                end
+                for _, c in ipairs(dropData.coords or {}) do
+                    table.insert(info.coords, c)
+                end
                 if dropData.itemId and dropData.itemId > 0 then
                     self.MountByItem[dropData.itemId] = mountID
+                end
+                for _, srcItemID in ipairs(dropData.sourceItems or {}) do
+                    if srcItemID and srcItemID > 0 then
+                        self.MountByItem[srcItemID] = mountID
+                    end
                 end
                 for _, nid in ipairs(dropData.npcs or {}) do
                     info.npcs[nid] = true
                     self.MountsByNpc[nid] = self.MountsByNpc[nid] or {}
-                    table.insert(self.MountsByNpc[nid], mountID)
+                    AddUniqueToList(self.MountsByNpc[nid], mountID)
                 end
                 for _, mid in ipairs(dropData.maps or {}) do
+                    AddUniqueToList(info.maps, mid)
                     self.MountsByMap[mid] = self.MountsByMap[mid] or {}
-                    table.insert(self.MountsByMap[mid], mountID)
+                    AddUniqueToList(self.MountsByMap[mid], mountID)
                 end
                 self.DropInfoByMount[mountID] = info
             end
         end
     end
 
-    -- Дополняем индекс из таблиц RareScanner (если есть маунты, привязанные через itemID)
-    if self.RareScannerNpcToItems and C_MountJournal.GetMountFromItem then
-        for npcID, itemIDs in pairs(self.RareScannerNpcToItems) do
-            for _, itemID in ipairs(itemIDs) do
-                local mountID = self.MountByItem[itemID] or C_MountJournal.GetMountFromItem(itemID)
-                if mountID then
+    -- 2. Привязываем все предметы и штуки для маунтов из RareScannerMountItems (mountID -> { itemID1, itemID2... })
+    if self.RareScannerMountItems then
+        for mountID, itemList in pairs(self.RareScannerMountItems) do
+            for _, itemID in ipairs(itemList) do
+                if not self.MountByItem[itemID] then
                     self.MountByItem[itemID] = mountID
+                end
+            end
+        end
+    end
+
+    -- 3. Дополняем рарниками, квест-локами и точными координатами спавна из RareScannerNpcToMounts
+    if self.RareScannerNpcToMounts then
+        for npcID, rsData in pairs(self.RareScannerNpcToMounts) do
+            for _, mountID in ipairs(rsData.mounts or {}) do
+                local name, spellID = C_MountJournal.GetMountInfoByID(mountID)
+                if name then
                     local info = self.DropInfoByMount[mountID]
                     if not info then
-                        local name, spellID = C_MountJournal.GetMountInfoByID(mountID)
                         info = {
                             mountID = mountID,
                             name = name,
                             spellID = spellID,
-                            itemID = itemID,
                             chance = nil,
                             method = "NPC",
+                            boss = (rsData.name and rsData.name ~= "") and rsData.name or nil,
                             npcs = {},
                             stats = {},
                             quests = {},
                             maps = {},
+                            coords = {},
                         }
                         self.DropInfoByMount[mountID] = info
+                    elseif not info.boss and rsData.name and rsData.name ~= "" then
+                        info.boss = rsData.name
                     end
-                    if not info.npcs[npcID] then
-                        info.npcs[npcID] = true
-                        self.MountsByNpc[npcID] = self.MountsByNpc[npcID] or {}
-                        table.insert(self.MountsByNpc[npcID], mountID)
+
+                    info.npcs[npcID] = true
+                    self.MountsByNpc[npcID] = self.MountsByNpc[npcID] or {}
+                    AddUniqueToList(self.MountsByNpc[npcID], mountID)
+
+                    for _, qid in ipairs(rsData.quests or {}) do
+                        AddUniqueToList(info.quests, qid)
+                    end
+                    for _, c in ipairs(rsData.coords or {}) do
+                        if c.m and c.m > 0 then
+                            AddUniqueToList(info.maps, c.m)
+                            self.MountsByMap[c.m] = self.MountsByMap[c.m] or {}
+                            AddUniqueToList(self.MountsByMap[c.m], mountID)
+                            if c.x and c.x > 0 and c.y and c.y > 0 then
+                                table.insert(info.coords, {
+                                    m = c.m,
+                                    x = c.x,
+                                    y = c.y,
+                                    n = rsData.name or info.boss or name,
+                                    npcID = npcID,
+                                })
+                            end
+                        end
                     end
                 end
             end
         end
     end
 
-    -- Живая интеграция с Rarity (если установлен и загружен Rarity)
+    -- 4. Живая синхронизация с Rarity (если Rarity включён)
     if _G.Rarity and _G.Rarity.db and _G.Rarity.db.profile and _G.Rarity.db.profile.groups and _G.Rarity.db.profile.groups.mounts then
         for rKey, rEntry in pairs(_G.Rarity.db.profile.groups.mounts) do
             if type(rEntry) == "table" and rEntry.spellId then
@@ -262,6 +310,7 @@ function addon:BuildMountIndex()
                             stats = type(rEntry.statisticId) == "table" and rEntry.statisticId or {},
                             quests = {},
                             maps = {},
+                            coords = {},
                             rarityKey = rKey,
                         }
                         self.DropInfoByMount[mountID] = info
@@ -274,7 +323,7 @@ function addon:BuildMountIndex()
                                 if nid ~= 99999 and not info.npcs[nid] then
                                     info.npcs[nid] = true
                                     self.MountsByNpc[nid] = self.MountsByNpc[nid] or {}
-                                    table.insert(self.MountsByNpc[nid], mountID)
+                                    AddUniqueToList(self.MountsByNpc[nid], mountID)
                                 end
                             end
                         end
@@ -285,7 +334,87 @@ function addon:BuildMountIndex()
     end
 end
 
--- Получение и синхронизация количества траев по всем персонажам аккаунта (MountCollectorDB + Rarity + Blizzard Statistics)
+-- Получить лучшие координаты спавна для маунта (приоритет текущей карте)
+function addon:GetBestMountCoords(mountID, preferredMapID)
+    local info = self.DropInfoByMount[mountID]
+    if not info or not info.coords or #info.coords == 0 then return nil end
+
+    if preferredMapID then
+        for _, c in ipairs(info.coords) do
+            if c.m == preferredMapID and c.x and c.x > 0 and c.y and c.y > 0 then
+                return c
+            end
+        end
+    end
+    for _, c in ipairs(info.coords) do
+        if c.x and c.x > 0 and c.y and c.y > 0 then
+            return c
+        end
+    end
+    return nil
+end
+
+-- Поставить метку на карте и 3D-стрелку (Blizzard UserWaypoint + SuperTrack + TomTom)
+function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLabel, silent)
+    local name = C_MountJournal and C_MountJournal.GetMountInfoByID(mountID) or "Mount"
+    local info = self.DropInfoByMount[mountID]
+    local mapID = preferredMapID or (C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player"))
+    local x, y = liveX, liveY
+    local npcLabel = customLabel or (info and info.boss) or name
+
+    if not x or not y or x <= 0 or y <= 0 then
+        local c = self:GetBestMountCoords(mountID, mapID)
+        if c then
+            mapID = c.m
+            x = c.x
+            y = c.y
+            if not customLabel and c.n and c.n ~= "" then
+                npcLabel = c.n
+            end
+        end
+    end
+
+    if not mapID or not x or not y or x <= 0 or y <= 0 then
+        return false
+    end
+
+    local normX = (x > 1) and (x / 100.0) or x
+    local normY = (y > 1) and (y / 100.0) or y
+    local dispX = normX * 100.0
+    local dispY = normY * 100.0
+
+    -- 1. Стандартная метка и 3D-ромбик Blizzard
+    if C_Map and C_Map.CanSetUserWaypointOnMap and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates then
+        local ok, canSet = pcall(C_Map.CanSetUserWaypointOnMap, mapID)
+        if not ok or canSet then
+            pcall(function()
+                local pt = UiMapPoint.CreateFromCoordinates(mapID, normX, normY)
+                C_Map.SetUserWaypoint(pt)
+                if C_SuperTracked and C_SuperTracked.SetSuperTrackedUserWaypoint then
+                    C_SuperTracked.SetSuperTrackedUserWaypoint(true)
+                end
+            end)
+        end
+    end
+
+    -- 2. Стрелка TomTom (если установлен TomTom)
+    if _G.TomTom and _G.TomTom.AddWaypoint then
+        pcall(function()
+            _G.TomTom:AddWaypoint(mapID, normX, normY, {
+                title = string.format("[MountCollector] %s (%s)", npcLabel, name),
+                persistent = false,
+                minimap = true,
+                world = true,
+            })
+        end)
+    end
+
+    if not silent then
+        print(string.format(L.CHAT_WAYPOINT_SET, npcLabel, dispX, dispY, name))
+    end
+    return true
+end
+
 function addon:GetMountAttempts(mountID)
     if not mountID or not self.db then return 0, nil, nil end
     local info = self.DropInfoByMount[mountID]
@@ -344,7 +473,6 @@ function addon:GetMountAttempts(mountID)
     return finalAttempts, record and record.byChar or nil, info
 end
 
--- Запись нового трая (убийства босса / рарника) на аккаунт
 function addon:RecordAttempt(mountID, sourceName)
     if not mountID or not self.db then return end
     local name, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
@@ -388,9 +516,11 @@ function addon:RecordAttempt(mountID, sourceName)
     if self.RefreshRadarUI then
         self:RefreshRadarUI()
     end
+    if self.RefreshWorldMapPins then
+        self:RefreshWorldMapPins()
+    end
 end
 
--- Проверка квест-лок-аута рарника (убит ли сегодня/на этой неделе текущим персонажем)
 function addon:IsMountRareLockedToday(mountID)
     local info = self.DropInfoByMount[mountID]
     if not info or not info.quests or #info.quests == 0 then
@@ -406,7 +536,6 @@ function addon:IsMountRareLockedToday(mountID)
     return false
 end
 
--- Живое сканирование игроков вокруг на текущем сервере
 function addon:ScanUnitMount(unit)
     if not unit or not SafeNotSecret(unit) then return end
     if not UnitExists(unit) or not UnitIsPlayer(unit) then return end
@@ -457,12 +586,15 @@ function addon:CheckUnitForMountDrop(unit)
     if not mounts then return end
 
     local npcName = UnitName(unit)
-    if not SafeNotSecret(npcName) then npcName = "Rare NPC" end
+    if not SafeNotSecret(npcName) then
+        local rs = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
+        npcName = (rs and rs.name) or "Rare NPC"
+    end
 
     for _, mountID in ipairs(mounts) do
         local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
         if not isCollected then
-            self:TriggerRareMountAlert(mountID, npcID, npcName)
+            self:TriggerRareMountAlert(mountID, npcID, npcName, false)
         end
     end
 end
@@ -480,18 +612,31 @@ function addon:CheckVignetteForMountDrop(vignetteGUID)
     if not mounts then return end
 
     local vName = SafeNotSecret(vInfo.name) and vInfo.name or "Rare NPC"
+    local mapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    local liveX, liveY = nil, nil
+    if mapID and C_VignetteInfo.GetVignettePosition then
+        local ok, pos = pcall(C_VignetteInfo.GetVignettePosition, vignetteGUID, mapID)
+        if ok and pos and pos.GetXY then
+            local vx, vy = pos:GetXY()
+            if SafeNotSecret(vx) and SafeNotSecret(vy) and vx and vy and vx > 0 and vy > 0 then
+                liveX = vx * 100.0
+                liveY = vy * 100.0
+            end
+        end
+    end
+
     for _, mountID in ipairs(mounts) do
         local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
         if not isCollected then
-            self:TriggerRareMountAlert(mountID, npcID, vName)
+            self:TriggerRareMountAlert(mountID, npcID, vName, false, mapID, liveX, liveY)
         end
     end
 end
 
-function addon:GetZoneUncollectedMounts()
+function addon:GetZoneUncollectedMounts(targetMapID)
     local results = {}
-    if not C_Map or not C_Map.GetBestMapForUnit then return results end
-    local mapID = C_Map.GetBestMapForUnit("player")
+    if not C_Map then return results end
+    local mapID = targetMapID or (C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player"))
     if not mapID then return results end
 
     local seen = {}
@@ -505,17 +650,19 @@ function addon:GetZoneUncollectedMounts()
                 if name and not isCollected then
                     local attempts, _, info = self:GetMountAttempts(mountID)
                     local globalRarity = self:GetGlobalRarity(mountID)
+                    local bestCoord = self:GetBestMountCoords(mountID, mid)
                     table.insert(results, {
                         mountID = mountID,
                         name = name,
                         spellID = spellID,
                         icon = icon,
                         attempts = attempts,
-                        chance = info and info.chance or 100,
-                        boss = info and info.boss or nil,
+                        chance = info and info.chance or nil,
+                        boss = (bestCoord and bestCoord.n ~= "" and bestCoord.n) or (info and info.boss) or nil,
                         method = info and info.method or "NPC",
                         globalRarity = globalRarity,
                         locked = self:IsMountRareLockedToday(mountID),
+                        coord = bestCoord,
                     })
                 end
             end
@@ -523,7 +670,7 @@ function addon:GetZoneUncollectedMounts()
     end
 
     addMapMounts(mapID)
-    if C_Map.GetMapInfo then
+    if not targetMapID and C_Map.GetMapInfo then
         local mapInfo = C_Map.GetMapInfo(mapID)
         if mapInfo and mapInfo.parentMapID and mapInfo.parentMapID > 0 then
             addMapMounts(mapInfo.parentMapID)
@@ -564,15 +711,22 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             if addon.HookMountJournal then
                 addon:HookMountJournal()
             end
+        elseif loadedName == "Blizzard_WorldMap" then
+            if addon.InitWorldMapPins then
+                addon:InitWorldMapPins()
+            end
         elseif loadedName == "Rarity" then
             addon:BuildMountIndex()
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
         C_Timer.After(1.5, function()
             addon:BuildMountIndex()
-            if C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_Collections") then
-                if addon.HookMountJournal then
+            if C_AddOns and C_AddOns.IsAddOnLoaded then
+                if C_AddOns.IsAddOnLoaded("Blizzard_Collections") and addon.HookMountJournal then
                     addon:HookMountJournal()
+                end
+                if C_AddOns.IsAddOnLoaded("Blizzard_WorldMap") and addon.InitWorldMapPins then
+                    addon:InitWorldMapPins()
                 end
             end
             if addon.UpdateLDBText then
@@ -583,6 +737,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         addon:BuildMountIndex()
         if addon.UpdateLDBText then
             addon:UpdateLDBText()
+        end
+        if addon.RefreshWorldMapPins then
+            addon:RefreshWorldMapPins()
         end
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         if addon.UpdateLDBText then

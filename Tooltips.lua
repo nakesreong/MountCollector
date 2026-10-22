@@ -7,7 +7,7 @@ local lastTooltipFrame = nil
 local lastTooltipMountID = nil
 local lastTooltipTime = 0
 
-function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText)
+function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText, isSubItem)
     if not tooltip or not mountID then return end
     if not self.db or not self.db.settings or not self.db.settings.showInTooltips then return end
     if not C_MountJournal or not C_MountJournal.GetMountInfoByID then return end
@@ -54,6 +54,15 @@ function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText)
     tooltip:AddLine(" ")
     tooltip:AddLine("|cff00ccff=== Mount|r|cffffaa00Collector|r |cff00ccff===|r")
 
+    if isSubItem then
+        local iconTag = icon and string.format("|T%s:14:14:0:0|t ", icon) or ""
+        local statusTag = isCollected and L.TAG_COLLECTED or L.TAG_NOT_COLLECTED
+        tooltip:AddDoubleLine(
+            L.TT_ITEM_FOR_MOUNT,
+            string.format("%s|cffa335ee%s|r %s", iconTag, name, statusTag)
+        )
+    end
+
     -- 1. Рарность по миру (Data for Azeroth / Armory)
     if cfg.showGlobalRarity then
         if globalPct then
@@ -85,9 +94,20 @@ function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText)
         end
     end
 
-    -- 3. Дроп-шанс и количество траев по всем персонажам аккаунта
+    -- 3. Координаты спавна рарника/босса (если известны)
+    local bestCoord = self:GetBestMountCoords(mountID)
+    if bestCoord and bestCoord.x and bestCoord.x > 0 and bestCoord.y and bestCoord.y > 0 then
+        local mapName = (bestCoord.m and C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(bestCoord.m)) and C_Map.GetMapInfo(bestCoord.m).name or ""
+        local zoneStr = (mapName ~= "") and (mapName .. " ") or ""
+        tooltip:AddDoubleLine(
+            L.TT_SPAWN_COORDS,
+            string.format("|cff00ccff%s(%.1f, %.1f)|r", zoneStr, bestCoord.x, bestCoord.y)
+        )
+    end
+
+    -- 4. Дроп-шанс и количество траев по всем персонажам аккаунта
     local hasRealChance = dropInfo and dropInfo.chance and dropInfo.chance > 0
-    if cfg.showAttempts and (hasRealChance or attempts > 0) then
+    if cfg.showAttempts and (hasRealChance or attempts > 0 or (dropInfo and not isCollected)) then
         local chance = hasRealChance and dropInfo.chance or nil
         if chance then
             local dropPct = 100.0 / chance
@@ -142,7 +162,7 @@ if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and
         TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Mount, function(tooltip, data)
             if tooltip ~= GameTooltip and tooltip ~= ItemRefTooltip then return end
             if not data or not SafeNotSecret(data.id) then return end
-            addon:AppendMountCollectorLines(tooltip, data.id, false)
+            addon:AppendMountCollectorLines(tooltip, data.id, false, false)
         end)
     end
 
@@ -153,7 +173,7 @@ if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and
             local mountID = addon.MountBySpell[data.id]
             if mountID then
                 local inJournal = MountJournal and MountJournal:IsShown() and MouseIsOver(MountJournal)
-                addon:AppendMountCollectorLines(tooltip, mountID, inJournal)
+                addon:AppendMountCollectorLines(tooltip, mountID, inJournal, false)
             end
         end)
     end
@@ -162,12 +182,12 @@ if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and
         TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
             if tooltip ~= GameTooltip and tooltip ~= ItemRefTooltip then return end
             if not data or not SafeNotSecret(data.id) then return end
-            local mountID = addon.MountByItem[data.id]
-            if not mountID and C_MountJournal and C_MountJournal.GetMountFromItem then
-                mountID = C_MountJournal.GetMountFromItem(data.id)
-            end
+            local directMountID = C_MountJournal and C_MountJournal.GetMountFromItem and C_MountJournal.GetMountFromItem(data.id)
+            local mappedMountID = addon.MountByItem[data.id]
+            local mountID = directMountID or mappedMountID
             if mountID then
-                addon:AppendMountCollectorLines(tooltip, mountID, false)
+                local isSubItem = (not directMountID) and (mappedMountID ~= nil)
+                addon:AppendMountCollectorLines(tooltip, mountID, false, isSubItem)
             end
         end)
     end
@@ -194,7 +214,7 @@ if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and
                     local attempts, _, dropInfo = addon:GetMountAttempts(mountID)
                     local globalPct = addon:GetGlobalRarity(mountID)
                     local pctStr = globalPct and string.format(L.TT_WORLD_PCT_SHORT, globalPct) or L.TT_RARE_SHORT
-                    local chanceStr = (dropInfo and dropInfo.chance) and string.format("1/%d", dropInfo.chance) or ""
+                    local chanceStr = (dropInfo and dropInfo.chance) and string.format("1/%d, ", dropInfo.chance) or ""
                     local statusStr = isCollected and L.TAG_COLLECTED or L.TAG_NOT_COLLECTED
                     local iconTag = icon and string.format("|T%s:14:14:0:0|t ", icon) or ""
 
@@ -233,7 +253,7 @@ local function SetupMountRowButtonHook(button)
         local iconTag = icon and string.format("|T%s:18:18:0:0|t ", icon) or ""
         GameTooltip:SetText(iconTag .. name, 1, 1, 1)
         lastTooltipTime = 0
-        addon:AppendMountCollectorLines(GameTooltip, mountID, true)
+        addon:AppendMountCollectorLines(GameTooltip, mountID, true, false)
         GameTooltip:Show()
     end)
 
@@ -288,7 +308,6 @@ function addon:HookMountJournal()
                 return
             end
 
-            -- Привязываем наш блок аккуратно ПОД Lore (описание маунта), чтобы текст никогда не налезал на Lore!
             summaryFS:ClearAllPoints()
             if infoBtn.Lore and infoBtn.Lore:GetText() and infoBtn.Lore:GetText() ~= "" then
                 summaryFS:SetPoint("TOPLEFT", infoBtn.Lore, "BOTTOMLEFT", 0, -8)
@@ -298,6 +317,7 @@ function addon:HookMountJournal()
                 summaryFS:SetPoint("TOPLEFT", infoBtn, "BOTTOMLEFT", 0, -8)
             end
 
+            local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
             local realm, _, estOwners, seenCount, globalPct = addon:GetServerRarityInfo(mountID)
             local pctText, tierText = addon:FormatRarityTier(globalPct)
             local attempts, _, dropInfo = addon:GetMountAttempts(mountID)
