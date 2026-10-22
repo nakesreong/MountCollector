@@ -222,7 +222,7 @@ function addon:BuildMountIndex()
                             name = name,
                             spellID = spellID,
                             itemID = itemID,
-                            chance = 50,
+                            chance = nil,
                             method = "NPC",
                             npcs = {},
                             stats = {},

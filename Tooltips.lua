@@ -86,8 +86,9 @@ function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText)
     end
 
     -- 3. Дроп-шанс и количество траев по всем персонажам аккаунта
-    if cfg.showAttempts and (dropInfo or attempts > 0) then
-        local chance = (dropInfo and dropInfo.chance and dropInfo.chance > 0) and dropInfo.chance or nil
+    local hasRealChance = dropInfo and dropInfo.chance and dropInfo.chance > 0
+    if cfg.showAttempts and (hasRealChance or attempts > 0) then
+        local chance = hasRealChance and dropInfo.chance or nil
         if chance then
             local dropPct = 100.0 / chance
             tooltip:AddDoubleLine(
@@ -96,16 +97,18 @@ function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText)
             )
         end
 
-        local luckStr = ""
-        if chance and attempts > 0 then
-            local luckPct = (1 - math.pow(1 - (1 / chance), attempts)) * 100
-            luckStr = string.format(L.TT_LUCK_INLINE, luckPct)
-        end
+        if not isCollected or attempts > 0 then
+            local luckStr = ""
+            if chance and attempts > 0 then
+                local luckPct = (1 - math.pow(1 - (1 / chance), attempts)) * 100
+                luckStr = string.format(L.TT_LUCK_INLINE, luckPct)
+            end
 
-        tooltip:AddDoubleLine(
-            L.TT_ACCOUNT_ATTEMPTS,
-            string.format("|cffffd100%d|r%s", attempts, luckStr)
-        )
+            tooltip:AddDoubleLine(
+                L.TT_ACCOUNT_ATTEMPTS,
+                string.format("|cffffd100%d|r%s", attempts, luckStr)
+            )
+        end
 
         if byChar then
             local charParts = {}
@@ -311,7 +314,7 @@ function addon:HookMountJournal()
                 table.insert(extraLines, string.format("%s %s (%s)%s", L.MD_RARITY_LABEL, pctText, tierText, srvPart))
             end
 
-            if addon.db.settings.showAttempts and (dropInfo or attempts > 0) then
+            if addon.db.settings.showAttempts and ((dropInfo and dropInfo.chance and not isCollected) or attempts > 0) then
                 local chanceStr = (dropInfo and dropInfo.chance) and string.format(L.MD_CHANCE_PART, dropInfo.chance) or ""
                 table.insert(extraLines, string.format(L.MD_ATTEMPTS_LABEL, attempts, chanceStr))
             end
