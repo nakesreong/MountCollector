@@ -1,0 +1,24 @@
+## Interface: 120107, 120105, 110207
+## Title: |cff00ccffMount|r|cffffaa00Collector|r
+## Notes: Track rare mounts, bosses, open-world rares, account-wide attempts, and global/realm rarity (Data for Azeroth + Realm Census) in the Mount Journal.
+## Notes-ruRU: Трекинг редких маунтов, боссов, рарников, количества траев по аккаунту и рарности (по миру Data for Azeroth + по серверу) в Коллекции.
+## Author: Anya & Gemini (Tiger)
+## Version: 1.1.0
+## SavedVariables: MountCollectorDB
+## OptionalDeps: MountsRarity, Rarity, RareScanner, TomTom, ElvUI
+## IconTexture: Interface\ICONS\Ability_Mount_SpectralTiger
+
+# Proven Embedded Libraries (LibStub, LDB, LibDBIcon, MountsRarity-2.0)
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+Libs\MountsRarity-2.0.lua
+
+# Database, Locales & Core Modules
+Locales.lua
+MountDropsDB.lua
+Core.lua
+Tooltips.lua
+RadarUI.lua
+Config.lua
