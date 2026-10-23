@@ -1036,6 +1036,7 @@ function addon:RefreshRadarUI()
     if not radarFrame:IsShown() then return end
 
     if ui.currentTab == "SETTINGS" then
+        totalFS:SetText(string.format(L.TOTAL_LABEL, ui.lastListCount or #(self.MountQuestsDB or {})))
         leftCol:Hide()
         rightInspector:Hide()
         settingsPanel:Show()
@@ -1136,6 +1137,7 @@ function addon:RefreshRadarUI()
         end)
     end
 
+    ui.lastListCount = #listEntries
     totalFS:SetText(string.format(L.TOTAL_LABEL, #listEntries))
 
     local foundSelected = false
