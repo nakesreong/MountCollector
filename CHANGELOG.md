@@ -1,11 +1,37 @@
-# Changelog
+# Changelog — MountCollector
+
+## [v1.3.0] - 2026-10-23
+### Added
+- **Трекер и навигатор квестовых цепочек маунтов (`MountQuestsDB.lua`)**:
+  - Добавлена база из 20 многошаговых квестовых цепочек, секретов, оплотов класса и инкубации яиц (Совогрифон Жреца `mountID = 861`, Тенеколючий трутень `1320`, Зиесбарг `2222`, Курчавая альпака `1329`, Охряный сноходец `1834`, Грехоход Бланчи `1414`, Верный пожиратель `1443`, Поводья Лизи `1639`, Отто `1656`, Дитя Торкалы `1249`, Куа'фон `1043`, Медоспин-собиратель `1013`, Длинноногий гиппогриф `802`, все 4 Фалькозавра Легиона `793..796`, Нефритовый облачный змей `448`, Ядовитошкурый равазавр `311`, Зимний саблезуб `45`).
+  - Автоматическое определение текущего шага цепочки по сданным квестам (`C_QuestLog.IsQuestFlaggedCompleted`), активным заданиям в журнале и достижениям.
+  - Прямая интеграция с **TomTom** и 3D-стрелкой Blizzard (`C_SuperTracked`): автоматическое переключение маршрута на следующий шаг при сдаче квеста (`QUEST_TURNED_IN`).
+  - Всплывающее окно быстрого копирования ссылки на **Wowhead (`Ctrl+C`)** для любого маунта или конкретного квеста цепочки.
+- **Новый двухколоночный интерфейс в стиле ElvUI / «Транспорт» (`RadarUI.lua`)**:
+  - Полный редизайн окна `/mc` (`MountCollectorRadarFrame`) с живым поиском слева и подробным досье/чек-листом шагов справа.
+  - **Боковая док-колонка (`MountCollectorJournalDock`)** справа от стандартного окна Коллекции (`CollectionsJournal`), синхронизированная с выбранным в журнале маунтом.
+  - **Встроенная вкладка «Настройки»**: настройки интегрированы прямо внутрь главного окна `/mc` (без отдельного плавающего окна `MountCollectorConfigWindow`).
+
+### Fixed
+- Заменены символы Unicode `[✓]` и `[▶]` на нативные текстурные иконки WoW (`ReadyCheck-Ready`, `Indicator-Yellow`, `Indicator-Gray`), которые корректно рендерятся в кириллическом шрифте `FRIZQT___CYR.TTF`.
+- Полная защита от `Secret Value` / `Secret Aura` Taint в патче **WoW 12.1.5 (*Midnight*)** (`C_Secrets.ShouldAurasBeSecret`, отказ от подписки на защищённый `VIGNETTE_MINIMAP_UPDATED`).
+
+---
+
+## [v1.2.0] - 2026-10-23
+### Added
+- **Иконки рарников на Карте Мира (`WorldMapFrame`)**: интерактивные пины несобранных маунтов в текущей локации с отображением дневного КД и постановкой путевой точки по клику.
+- **Интеграция базы `RareScanner`**: привязка 200+ предметов-источников (яйца, фрагменты, ключи) к маунтам в тултипах + точные координаты спавна рарников.
+
+---
 
 ## [v1.1.0] - 2026-10-22
 ### Added
-- **Localization (`Locales.lua`)**: Full bilingual localization (`enUS` and `ruRU`) with automatic client locale detection (`GetLocale()`) and instant in-game language switching (`Auto / Русский / English`).
-- **Settings Menu (`Config.lua`)**: Registered in Blizzard's AddOn Options (`ESC -> Options -> AddOns -> MountCollector`) and accessible via `/mc config`, Middle-Clicking the minimap icon, or clicking the **Settings** button in `/mc`.
-- **3D Mount Display Layout Polish**: Dedicated `MountCollectorSummary` FontString anchored cleanly below `infoBtn.Lore` so Rarity and Attempt stats never overlap with the mount's lore text.
+- **Локализация (`Locales.lua`)**: полная поддержка `ruRU` и `enUS` с мгновенным переключением языка в настройках без `/reload`.
+- **Меню настроек (`Config.lua`)**: интеграция в `ESC -> Параметры -> Модификации -> MountCollector`.
+
+---
 
 ## [v1.0.0] - 2026-10-22
 ### Added
-- Initial release of **MountCollector** with embedded `MountsRarity-2.0` (Data for Azeroth), `LibDataBroker-1.1`, `LibDBIcon-1.0`, `MountDropsDB` (264 drop mounts & 353 rare NPCs), live `Rarity` + `GetStatistic` bridge, Realm Census scanner, and Open-World Rare Mount Radar (`/mc`).
+- Первый релиз **MountCollector**: глобальная рарность `MountsRarity-2.0` (Data for Azeroth), серверная статистика, кросс-аккаунтный трекер попыток (`Rarity` + `GetStatistic`) и радар рарников.

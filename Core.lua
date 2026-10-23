@@ -1,6 +1,17 @@
 local addonName, addon = ...
 _G.MountCollector = addon
 
+-- ============================================================================
+-- MountCollector — Core.lua
+-- Ядро аддона:
+--   1. Индексация маунтов, боссов, рарников, предметов и квестовых цепочек
+--      (MountDropsDB + RareScanner + Rarity + MountQuestsDB + MountsRarity-2.0)
+--   2. Оценка глобальной рарности (Data for Azeroth) и серверной популяции
+--   3. Учёт попыток (траев) по аккаунту и персонажам + расчёт вероятности
+--   4. Трекинг прогресса многошаговых квестовых цепочек и авто-навигация TomTom
+--   5. Защита от WoW 12.1.5 (Midnight) Secret Aura / Secret Value Taint
+-- ============================================================================
+
 local L = addon.L
 local LibStub = _G.LibStub
 local MountsRarity = LibStub and LibStub("MountsRarity-2.0", true)
@@ -8,6 +19,7 @@ local MountsRarity = LibStub and LibStub("MountsRarity-2.0", true)
 addon.MountBySpell = {}
 addon.MountByItem = {}
 addon.DropInfoByMount = {}
+addon.MountQuestsByMountID = {}
 addon.MountsByNpc = {}
 addon.MountsByMap = {}
 addon.RecentAttemptLock = {}
@@ -167,6 +179,7 @@ function addon:BuildMountIndex()
     wipe(self.MountBySpell)
     wipe(self.MountByItem)
     wipe(self.DropInfoByMount)
+    wipe(self.MountQuestsByMountID)
     wipe(self.MountsByNpc)
     wipe(self.MountsByMap)
 
@@ -332,6 +345,185 @@ function addon:BuildMountIndex()
             end
         end
     end
+
+    -- 5. Индексируем квестовые цепочки и инкубацию яиц из MountQuestsDB
+    if type(self.MountQuestsDB) == "table" then
+        for _, qChain in ipairs(self.MountQuestsDB) do
+            local mID = nil
+            if qChain.mountID and C_MountJournal.GetMountInfoByID(qChain.mountID) then
+                mID = qChain.mountID
+            end
+            if not mID then
+                mID = (qChain.spellID and self.MountBySpell[qChain.spellID])
+                    or (qChain.itemID and self.MountByItem[qChain.itemID])
+                    or (qChain.itemID and C_MountJournal.GetMountFromItem and C_MountJournal.GetMountFromItem(qChain.itemID))
+                    or (qChain.spellID and C_MountJournal.GetMountFromSpell and C_MountJournal.GetMountFromSpell(qChain.spellID))
+            end
+            if mID and C_MountJournal.GetMountInfoByID(mID) then
+                qChain.resolvedMountID = mID
+                self.MountQuestsByMountID[mID] = qChain
+            end
+        end
+    end
+end
+
+-- Оценка статуса пошаговой квестовой цепочки маунта
+function addon:GetMountQuestChainStatus(mountID)
+    local chain = self.MountQuestsByMountID and self.MountQuestsByMountID[mountID]
+    if not chain or type(chain.steps) ~= "table" then return nil end
+
+    local isRU = (self:GetActiveLocaleCode() == "ruRU")
+    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+    local totalSteps = #chain.steps
+    local stepStates = {}
+
+    for idx, s in ipairs(chain.steps) do
+        local isDone = false
+        local inLog = false
+        local doneSub = 0
+        local totalSub = (type(s.quests) == "table") and #s.quests or 0
+
+        if isCollected then
+            isDone = true
+            doneSub = totalSub
+        else
+            if s.doneQuest and C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
+                if C_QuestLog.IsQuestFlaggedCompleted(s.doneQuest) then
+                    isDone = true
+                end
+            end
+            if not isDone and s.achievementID and GetAchievementInfo then
+                local okAch, _, _, _, completed = pcall(GetAchievementInfo, s.achievementID)
+                if okAch and completed then
+                    isDone = true
+                end
+            end
+            if type(s.quests) == "table" and C_QuestLog then
+                for _, qid in ipairs(s.quests) do
+                    if C_QuestLog.IsQuestFlaggedCompleted and C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                        doneSub = doneSub + 1
+                    elseif C_QuestLog.IsOnQuest and C_QuestLog.IsOnQuest(qid) then
+                        inLog = true
+                    end
+                end
+                if not s.doneQuest and not s.achievementID and totalSub > 0 and doneSub >= totalSub then
+                    isDone = true
+                end
+            end
+        end
+
+        stepStates[idx] = {
+            index = idx,
+            step = s,
+            isDone = isDone,
+            inLog = inLog,
+            doneSubCount = doneSub,
+            totalSubCount = totalSub,
+            title = (isRU and s.titleRU) or s.titleEN or ("Step " .. idx),
+            desc = (isRU and s.descRU) or s.descEN or "",
+            npc = (isRU and s.npcRU) or s.npcEN or "",
+            zone = (isRU and s.zoneRU) or s.zoneEN or "",
+            mapID = s.mapID,
+            x = s.x,
+            y = s.y,
+            doneQuest = s.doneQuest,
+        }
+    end
+
+    local completedSteps = 0
+    local currentStepIndex = nil
+    local hasStarted = false
+
+    for idx, st in ipairs(stepStates) do
+        if st.isDone then
+            completedSteps = completedSteps + 1
+            hasStarted = true
+        else
+            if st.inLog or st.doneSubCount > 0 then
+                hasStarted = true
+            end
+            if not currentStepIndex then
+                currentStepIndex = idx
+                st.isCurrent = true
+            end
+        end
+    end
+
+    if not currentStepIndex then
+        currentStepIndex = totalSteps
+    end
+
+    return {
+        mountID = mountID,
+        name = name or "Mount",
+        spellID = spellID,
+        icon = icon,
+        isCollected = isCollected == true,
+        chain = chain,
+        wowheadUrl = chain.wowheadUrl,
+        category = (isRU and chain.categoryRU) or chain.categoryEN or "",
+        summary = (isRU and chain.summaryRU) or chain.summaryEN or "",
+        classRestriction = chain.classRestriction,
+        steps = stepStates,
+        completedSteps = completedSteps,
+        totalSteps = totalSteps,
+        currentStepIndex = currentStepIndex,
+        currentStep = stepStates[currentStepIndex],
+        hasStarted = hasStarted,
+    }
+end
+
+function addon:GetMountWowheadURL(mountID, questID)
+    local isRU = (self:GetActiveLocaleCode() == "ruRU")
+    local domain = isRU and "https://www.wowhead.com/ru/" or "https://www.wowhead.com/"
+    if questID and questID > 0 then
+        return domain .. "quest=" .. tostring(questID)
+    end
+    local chain = self.MountQuestsByMountID and self.MountQuestsByMountID[mountID]
+    if chain and chain.wowheadUrl then
+        if not isRU then
+            return (chain.wowheadUrl:gsub("/ru/", "/"))
+        end
+        return chain.wowheadUrl
+    end
+    local info = self.DropInfoByMount and self.DropInfoByMount[mountID]
+    if info and info.itemID and info.itemID > 0 then
+        return domain .. "item=" .. tostring(info.itemID)
+    end
+    local _, spellID = C_MountJournal.GetMountInfoByID(mountID)
+    if spellID and spellID > 0 then
+        return domain .. "spell=" .. tostring(spellID)
+    end
+    return domain .. "mounts"
+end
+
+-- Поставить стрелку TomTom + 3D-метку на конкретный (или текущий активный) шаг квестовой цепочки
+function addon:NavigateMountQuestStep(mountID, stepIndex, silent)
+    local status = self:GetMountQuestChainStatus(mountID)
+    if not status then return false end
+
+    local targetIdx = stepIndex or status.currentStepIndex or 1
+    local st = status.steps[targetIdx] or status.steps[1]
+    if not st or not st.mapID or not st.x or not st.y then return false end
+
+    self.activeQuestGuideMountID = mountID
+    self.activeQuestGuideStepIndex = st.index
+
+    local label = string.format("%s — %s", st.title, st.npc ~= "" and st.npc or status.name)
+    self:SetMountWaypoint(mountID, st.mapID, st.x, st.y, label, true)
+
+    if not silent then
+        print(string.format(
+            L.CHAT_QUEST_NAV_SET,
+            status.name,
+            st.title,
+            st.zone,
+            st.x,
+            st.y,
+            st.npc ~= "" and st.npc or "NPC"
+        ))
+    end
+    return true
 end
 
 -- Получить лучшие координаты спавна для маунта (приоритет текущей карте)
@@ -400,7 +592,10 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
     -- 2. Стрелка TomTom (если установлен TomTom)
     if _G.TomTom and _G.TomTom.AddWaypoint then
         pcall(function()
-            _G.TomTom:AddWaypoint(mapID, normX, normY, {
+            if self.lastTomTomUid and _G.TomTom.RemoveWaypoint then
+                _G.TomTom:RemoveWaypoint(self.lastTomTomUid)
+            end
+            self.lastTomTomUid = _G.TomTom:AddWaypoint(mapID, normX, normY, {
                 title = string.format("[MountCollector] %s (%s)", npcLabel, name),
                 persistent = false,
                 minimap = true,
@@ -537,8 +732,12 @@ function addon:IsMountRareLockedToday(mountID)
 end
 
 function addon:ScanUnitMount(unit)
+    if InCombatLockdown and InCombatLockdown() then return end
+    if IsInInstance and (select(1, IsInInstance())) then return end
+    if C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret() then return end
     if not unit or not SafeNotSecret(unit) then return end
     if not UnitExists(unit) or not UnitIsPlayer(unit) then return end
+    if UnitIsFriend and not UnitIsFriend("player", unit) then return end
     if not C_UnitAuras or not C_UnitAuras.GetAuraDataByIndex then return end
 
     local unitName, unitRealm = UnitName(unit)
@@ -546,8 +745,11 @@ function addon:ScanUnitMount(unit)
     local realm = (SafeNotSecret(unitRealm) and unitRealm and unitRealm ~= "") and unitRealm or (GetRealmName() or "Realm")
 
     for i = 1, 40 do
-        local aura = C_UnitAuras.GetAuraDataByIndex(unit, i, "HELPFUL")
-        if not aura then break end
+        if C_Secrets and C_Secrets.ShouldUnitAuraIndexBeSecret and C_Secrets.ShouldUnitAuraIndexBeSecret(unit, i, "HELPFUL") then
+            break
+        end
+        local okAura, aura = pcall(C_UnitAuras.GetAuraDataByIndex, unit, i, "HELPFUL")
+        if not okAura or not aura then break end
         local spellId = aura.spellId
         if SafeNotSecret(spellId) and spellId then
             local mountID = self.MountBySpell[spellId]
@@ -694,10 +896,32 @@ eventFrame:RegisterEvent("NEW_MOUNT_ADDED")
 eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 eventFrame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
 eventFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
-eventFrame:RegisterEvent("VIGNETTE_MINIMAP_UPDATED")
-eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+eventFrame:RegisterEvent("LOOT_READY")
+eventFrame:RegisterEvent("QUEST_TURNED_IN")
+eventFrame:RegisterEvent("QUEST_ACCEPTED")
 eventFrame:RegisterEvent("ENCOUNTER_END")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+
+local function CheckActiveQuestChainProgress()
+    if addon.RefreshRadarUI then
+        addon:RefreshRadarUI()
+    end
+    if not addon.activeQuestGuideMountID then return end
+    local status = addon:GetMountQuestChainStatus(addon.activeQuestGuideMountID)
+    if not status or status.isCollected then
+        addon.activeQuestGuideMountID = nil
+        addon.activeQuestGuideStepIndex = nil
+        return
+    end
+    if status.currentStepIndex and addon.activeQuestGuideStepIndex and status.currentStepIndex ~= addon.activeQuestGuideStepIndex then
+        addon.activeQuestGuideStepIndex = status.currentStepIndex
+        local st = status.currentStep
+        if st then
+            print(string.format(L.CHAT_QUEST_STEP_ADVANCED, status.name, st.title))
+            addon:NavigateMountQuestStep(addon.activeQuestGuideMountID, status.currentStepIndex, true)
+        end
+    end
+end
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -755,20 +979,45 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "NAME_PLATE_UNIT_ADDED" then
         local unit = ...
         addon:CheckUnitForMountDrop(unit)
-    elseif event == "VIGNETTE_MINIMAP_UPDATED" then
-        local vignetteGUID = ...
-        addon:CheckVignetteForMountDrop(vignetteGUID)
-    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        if not CombatLogGetCurrentEventInfo then return end
-        local _, subEvent, _, _, _, _, _, destGUID, destName = CombatLogGetCurrentEventInfo()
-        if subEvent == "UNIT_DIED" or subEvent == "PARTY_KILL" then
-            local npcID = addon:GetNPCIDFromGUID(destGUID)
-            if npcID and addon.MountsByNpc[npcID] then
-                for _, mountID in ipairs(addon.MountsByNpc[npcID]) do
-                    addon:RecordAttempt(mountID, SafeNotSecret(destName) and destName or "NPC")
+    elseif event == "LOOT_READY" then
+        if GetNumLootItems and GetLootSourceInfo then
+            local seenGuids = {}
+            local numItems = GetNumLootItems() or 0
+            for slot = 1, numItems do
+                local okSrc, srcInfo = pcall(function() return { GetLootSourceInfo(slot) } end)
+                if okSrc and type(srcInfo) == "table" then
+                    for i = 1, #srcInfo, 2 do
+                        local srcGuid = srcInfo[i]
+                        if srcGuid and SafeNotSecret(srcGuid) and not seenGuids[srcGuid] then
+                            seenGuids[srcGuid] = true
+                            local npcID = addon:GetNPCIDFromGUID(srcGuid)
+                            if npcID and addon.MountsByNpc[npcID] then
+                                for _, mountID in ipairs(addon.MountsByNpc[npcID]) do
+                                    addon:RecordAttempt(mountID, "NPC #" .. tostring(npcID))
+                                end
+                            end
+                        end
+                    end
                 end
             end
         end
+    elseif event == "QUEST_TURNED_IN" then
+        local questID = ...
+        if questID and SafeNotSecret(questID) then
+            for mountID, info in pairs(addon.DropInfoByMount) do
+                if type(info.quests) == "table" then
+                    for _, qid in ipairs(info.quests) do
+                        if qid == questID then
+                            addon:RecordAttempt(mountID, info.boss or "Rare")
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        C_Timer.After(0.5, CheckActiveQuestChainProgress)
+    elseif event == "QUEST_ACCEPTED" then
+        C_Timer.After(0.5, CheckActiveQuestChainProgress)
     elseif event == "ENCOUNTER_END" then
         local _, encounterName, _, _, success = ...
         if success == 1 and SafeNotSecret(encounterName) and encounterName then

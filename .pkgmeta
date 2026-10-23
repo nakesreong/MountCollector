@@ -1,0 +1,14 @@
+package-as: MountCollector
+enable-nolib-creation: no
+
+ignore:
+  - .github
+  - .gitignore
+  - logo.png
+  - logo.jpg
+  - screenshot_mount_journal.jpg
+  - MountCollector-v1.2.0.zip
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown

@@ -1,5 +1,14 @@
 local _, addon = ...
 
+-- ============================================================================
+-- MountCollector — Tooltips.lua
+-- Интеграция с тултипами (TooltipDataProcessor) и стандартным окном Коллекции:
+--   1. Блок MountCollector в тултипах маунтов, заклинаний и предметов-источников
+--   2. Дроп маунтов и статистика траев в тултипах NPC / боссов при наведении
+--   3. Тултипы при наведении на строчки списка в MountJournal
+--   4. Сводка рарности, траев и кнопка навигатора на 3D-превью MountDisplay
+-- ============================================================================
+
 local L = addon.L
 local SafeNotSecret = addon.SafeNotSecret
 
@@ -154,6 +163,16 @@ function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText, is
         end
     end
 
+    -- 5. Прогресс по квестовой цепочке / инкубации (если маунт есть в MountQuestsDB)
+    local qStatus = self.GetMountQuestChainStatus and self:GetMountQuestChainStatus(mountID)
+    if qStatus then
+        local curTitle = (qStatus.currentStep and qStatus.currentStep.title) or qStatus.category or ""
+        tooltip:AddDoubleLine(
+            L.TT_QUEST_CHAIN_LABEL,
+            string.format("|cff00ff96%d/%d|r — |cffffd100%s|r", qStatus.completedSteps, qStatus.totalSteps, curTitle)
+        )
+    end
+
     tooltip:Show()
 end
 
@@ -268,6 +287,10 @@ function addon:HookMountJournal()
     if journalHooked or not _G.MountJournal then return end
     journalHooked = true
 
+    if self.InitMountJournalSideColumn then
+        self:InitMountJournalSideColumn()
+    end
+
     if MountJournal.ScrollBox then
         hooksecurefunc(MountJournal.ScrollBox, "Update", function(scrollBox)
             if not scrollBox.ForEachFrame then return end
@@ -294,10 +317,23 @@ function addon:HookMountJournal()
                 infoBtn.MountCollectorSummary = fs
             end
 
+            if not infoBtn.MountCollectorQuestBtn then
+                local qBtn = CreateFrame("Button", nil, MountJournal.MountDisplay, "UIPanelButtonTemplate")
+                qBtn:SetSize(210, 22)
+                qBtn:SetScript("OnClick", function(self)
+                    if self.mountID and addon.OpenMountQuestChain then
+                        addon:OpenMountQuestChain(self.mountID)
+                    end
+                end)
+                infoBtn.MountCollectorQuestBtn = qBtn
+            end
+
             local summaryFS = infoBtn.MountCollectorSummary
+            local questBtn = infoBtn.MountCollectorQuestBtn
             if not addon.db or not addon.db.settings or not addon.db.settings.showInMountDisplay then
                 summaryFS:SetText("")
                 summaryFS:Hide()
+                questBtn:Hide()
                 return
             end
 
@@ -305,6 +341,7 @@ function addon:HookMountJournal()
             if not mountID then
                 summaryFS:SetText("")
                 summaryFS:Hide()
+                questBtn:Hide()
                 return
             end
 
@@ -339,12 +376,35 @@ function addon:HookMountJournal()
                 table.insert(extraLines, string.format(L.MD_ATTEMPTS_LABEL, attempts, chanceStr))
             end
 
+            local qStatus = addon.GetMountQuestChainStatus and addon:GetMountQuestChainStatus(mountID)
+            if qStatus and qStatus.currentStep then
+                table.insert(extraLines, string.format(L.MD_CHAIN_LINE, qStatus.completedSteps, qStatus.totalSteps, qStatus.currentStep.title))
+            end
+
             if #extraLines > 0 then
                 summaryFS:SetText(table.concat(extraLines, "\n"))
                 summaryFS:Show()
             else
                 summaryFS:SetText("")
                 summaryFS:Hide()
+            end
+
+            if qStatus then
+                questBtn.mountID = mountID
+                questBtn:SetText(L.MD_BTN_QUEST_GUIDE)
+                questBtn:ClearAllPoints()
+                if summaryFS:IsShown() then
+                    questBtn:SetPoint("TOPLEFT", summaryFS, "BOTTOMLEFT", 0, -6)
+                else
+                    questBtn:SetPoint("TOPLEFT", infoBtn, "BOTTOMLEFT", 0, -8)
+                end
+                questBtn:Show()
+            else
+                questBtn:Hide()
+            end
+
+            if addon.RefreshMountJournalSideColumn then
+                addon:RefreshMountJournalSideColumn()
             end
         end)
     end

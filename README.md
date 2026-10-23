@@ -1,33 +1,97 @@
-# 🐯 MountCollector — Mount Rarity, Attempt Tracker & Rare Boss Radar
+# 🐯 MountCollector — Трекер цепочек маунтов, рарности, траев и радар рарников
 
-**MountCollector** is a lightweight, modern World of Warcraft (Retail 11.x / 12.x) addon that enriches your **Mount Journal (`CollectionsJournal`)** and open-world exploration with **Global Armory Rarity** (*Data for Azeroth* via `MountsRarity-2.0`), **Realm Rarity & Live Server Sightings**, **Account-Wide Boss/Rare Attempt Tracking**, and a **Real-Time Open-World Rare Mount Radar**.
-
----
-
-## ✨ Key Features
-
-### 1. Mount Journal & Tooltip Integration
-* **Full Row-Hover Tooltips in the Mount Journal:** Hovering anywhere over a mount's row in the Mount Journal list automatically displays its full tooltip (Mount Name, Collected Status, Drop Source, Lore Description, Rarity, and Attempts) without needing to aim at the tiny spell icon.
-* **Global Rarity (`Data for Azeroth` / Armory):** Displays exact worldwide ownership percentage (`0.01% – 100%`) color-coded by tier (*Mythic `<1%`*, *Ultra Rare `<3%`*, *Epic `<10%`*, *Rare `<25%`*, *Uncommon*, *Common*).
-* **Realm Rarity & Live Server Census:** Estimates active owners on your current realm AND passively scans mounted players around you (`C_UnitAuras`) to count unique live sightings on your server.
-* **3D Preview Summary:** Cleanly appends Rarity and Account Attempt stats below the mount's Lore description in the right-side 3D model preview panel.
-
-### 2. Account-Wide Attempt Tracking & Sync
-* Tracks boss kills and rare NPC kills across **all characters on your account** (`MountCollectorDB`), with a per-character breakdown in the tooltip.
-* Automatically bridges and syncs with **`Rarity`** (if installed) and Blizzard's internal boss kill statistics (`GetStatistic`).
-* Calculates cumulative drop probability (*"Cumulative odds after N tries: X%"*) and displays daily/weekly rare lockout status (`[Locked Today]`) on the active character.
-
-### 3. Open-World Rare & Boss Radar (`/mc`)
-* Scans `NAME_PLATE_UNIT_ADDED`, `VIGNETTE_MINIMAP_UPDATED`, `PLAYER_TARGET_CHANGED`, and `UPDATE_MOUSEOVER_UNIT` for bosses and rares that drop **uncollected mounts**.
-* Pops a sleek, movable radar alert banner when a mount-dropping rare or boss is nearby (Left-Click opens the mount in the Mount Journal; Right-Click dismisses).
-* Includes a **Minimap Button (`LibDBIcon-1.0`)**, **DataBroker feed (`LibDataBroker-1.1`)**, and a **Zone Radar Window (`/mc`)** showing all uncollected drop mounts in your current zone or across your entire account.
-
-### 4. Localization & Settings Menu
-* Automatic client language detection (`GetLocale()`) supporting **English (`enUS`)** and **Russian (`ruRU`)**, plus manual language switching on the fly in Settings.
-* Full Settings panel in `ESC -> Options -> AddOns -> MountCollector` as well as `/mc config` (or clicking **Settings** inside `/mc`).
+**MountCollector (`v1.3.0`)** — комплексный аддон для **World of Warcraft (Retail 11.x / 12.x Midnight)**, объединяющий:
+1. **Пошаговый навигатор квестовых цепочек и инкубации маунтов (`MountQuestsDB`)** с автоматическим ведением через **TomTom** и стандартную 3D-стрелку Blizzard.
+2. **Двухколоночное окно в стиле ElvUI / «Транспорт» (`/mc`)** + **боковую док-колонку справа от стандартного окна Коллекции (`CollectionsJournal`)**.
+3. **Глобальную рарность по миру (`Data for Azeroth` / `MountsRarity-2.0`)** и **оценку владельцев на вашем сервере** с живым сканером встреченных игроков.
+4. **Кросс-аккаунтный счётчик траев боссов и рарников** (с синхронизацией `Rarity` и внутриигровой статистики `GetStatistic`).
+5. **Радар рарников в открытом мире** и **интерактивные иконки несобранных маунтов на Карте Мира (`M`)**.
 
 ---
 
-## 💬 Slash Commands
-* `/mc` or `/mountcollector` — Toggle the **Mount & Attempt Radar** window.
-* `/mc config` or `/mc settings` — Open the **MountCollector Settings** window.
+## ✨ Основные возможности
+
+### 1. Навигатор квестовых цепочек и многодневных маунтов (`Цепочки и Квесты`)
+* Отслеживает прогресс длинных квестовых цепочек, секретов, классовых маунтов Оплота и многодневной инкубации яиц (Совогрифон Жреца, Тенеколючий трутень в Ульдуме, Зиесбарг в Аз-Кахете, Грехоход Бланчи, Охряный сноходец, Отто, Лизи, Куа'фон, Дитя Торкалы, Фалькозавры Легиона, Нефритовый облачный змей и др.).
+* Проверяет выполненные этапы через `C_QuestLog.IsQuestFlaggedCompleted`, активные квесты в журнале (`C_QuestLog.IsOnQuest`) и достижения (`GetAchievementInfo`), формируя наглядный чек-лист **СДЕЛАНО / НАДО СДЕЛАТЬ (ТЕКУЩИЙ ШАГ)**.
+* **Авто-переключение шагов в TomTom:** при сдаче очередного квеста цепочки (`QUEST_TURNED_IN`) аддон автоматически перестраивает стрелку TomTom и 3D-метку Blizzard на следующий шаг маршрута.
+* **Копирование ссылок на Wowhead (`Ctrl+C`):** правый клик по любому шагу цепочки (или кнопка «Ссылка на Wowhead») открывает компактное окно с уже выделенной ссылкой на конкретный квест или маунта.
+
+### 2. Двухколоночный интерфейс `/mc` и боковая док-колонка в «Транспорт»
+* **Главное окно (`/mc`):** выполнено в тёмном плоском дизайне под ElvUI:
+  * **Слева:** живой поиск по названию/категории и список маунтов с цветовой индикацией прогресса.
+  * **Справа:** карточка выбранного маунта, чек-лист шагов с координатами и панель быстрых действий (маршрут к текущему шагу, маршрут к старту цепочки, ссылка Wowhead, открытие 3D-модели в Коллекции).
+  * **Встроенная вкладка «Настройки»:** открывается прямо внутри главного окна `/mc` без лишних плавающих окон.
+* **Боковая док-колонка в `CollectionsJournal` (`Транспорт`):** при открытии стандартной Коллекции маунтов справа автоматически пристыковывается панель чек-листа и навигации для любого выбранного маунта (сворачивается кнопкой **«Цепочка / Навигатор»**).
+
+### 3. Карта Мира, Радар рарников и Предметы-источники
+* **Иконки на Карте Мира (`M`):** отображает на карте локации всех рарников и боссов, с которых ещё не выбит маунт (при дневном КД иконка становится полупрозрачной). ЛКМ по иконке ставит 3D-стрелку, ПКМ — открывает маунта в Коллекции.
+* **Тултипы предметов для маунтов:** при наведении на яйца, ключи, фрагменты и квестовые предметы (база из 200+ предметов `RareScanner`) в тултипе сразу отображается, для какого маунта нужен предмет и собран ли он.
+* **Радар-баннер:** всплывающее уведомление со звуком и авто-меткой при обнаружении живого рарника или босса с несобранным маунтом.
+
+---
+
+## 🏗 Архитектура проекта и структура файлов
+
+Порядок загрузки модулей задаётся в [`MountCollector.toc`](file:///c:/Users/ev3n7/.gemini/antigravity/scratch/Games/MountCollector/MountCollector.toc):
+
+| Файл | Назначение |
+| :--- | :--- |
+| [`Locales.lua`](file:///c:/Users/ev3n7/.gemini/antigravity/scratch/Games/MountCollector/Locales.lua) | Двуязычный словарь (`ruRU` / `enUS`) с метатаблицей `addon.L` и поддержкой мгновенного переключения языка без `/reload`. Использует встроенные текстурные иконки WoW (`\|TInterface\...\|t`) вместо неподдерживаемых в `FRIZQT___CYR.TTF` символов Unicode. |
+| [`MountDropsDB.lua`](file:///c:/Users/ev3n7/.gemini/antigravity/scratch/Games/MountCollector/MountDropsDB.lua) | База дроп-маунтов (`addon.MountDropsBySpell`), привязка 200+ предметов к маунтам (`addon.RareScannerMountItems`) и база координат/квест-локов рарников (`addon.RareScannerNpcToMounts`). |
+| [`MountQuestsDB.lua`](file:///c:/Users/ev3n7/.gemini/antigravity/scratch/Games/MountCollector/MountQuestsDB.lua) | Структурированная база многошаговых квестовых цепочек и инкубации маунтов (`addon.MountQuestsDB`). Содержит точные `mountID`, `spellID`, `itemID`, `wowheadUrl` и массив шагов `steps`. |
+| [`Core.lua`](file:///c:/Users/ev3n7/.gemini/antigravity/scratch/Games/MountCollector/Core.lua) | Ядро аддона: инициализация `MountCollectorDB`, построение единого индекса (`BuildMountIndex`), расчёт статуса цепочек (`GetMountQuestChainStatus`), постановка точек (`SetMountWaypoint`, `NavigateMountQuestStep`), учёт траев (`GetMountAttempts`, `RecordAttempt`) и обработка событий с защитой от Taint в WoW 12.1.5. |
+| [`Tooltips.lua`](file:///c:/Users/ev3n7/.gemini/antigravity/scratch/Games/MountCollector/Tooltips.lua) | Хуки `TooltipDataProcessor` (для маунтов, заклинаний, предметов и NPC), ховер строчек списка в `MountJournal` и сводка на 3D-превью `MountDisplay`. |
+| [`RadarUI.lua`](file:///c:/Users/ev3n7/.gemini/antigravity/scratch/Games/MountCollector/RadarUI.lua) | Плоские UI-компоненты (`ApplyFlatBackdrop`, `CreateFlatButton`), главное двухколоночное окно `/mc` (`MountCollectorRadarFrame`), боковая док-колонка `MountCollectorJournalDock`, радар-баннер, пины на Карте Мира и иконка миникарты (`LibDBIcon-1.0`). |
+| [`Config.lua`](file:///c:/Users/ev3n7/.gemini/antigravity/scratch/Games/MountCollector/Config.lua) | Конструктор настроек (`addon:BuildSettingsControls`), встраивающий панель настроек как во вкладку «Настройки» внутри `/mc`, так и в системное меню `ESC -> Параметры -> Модификации -> MountCollector`. |
+
+---
+
+## 🧩 Как добавить новую квестовую цепочку в `MountQuestsDB.lua`
+
+Каждая запись в массиве `addon.MountQuestsDB` в [`MountQuestsDB.lua`](file:///c:/Users/ev3n7/.gemini/antigravity/scratch/Games/MountCollector/MountQuestsDB.lua) имеет следующий формат:
+
+```lua
+{
+    mountID = 1320,                                    -- Точный ID маунта в C_MountJournal
+    spellID = 316339,                                  -- ID заклинания маунта
+    itemID = 174771,                                   -- ID предмета маунта (опционально)
+    wowheadUrl = "https://www.wowhead.com/ru/item=174771",
+    classRestriction = nil,                            -- Например "PRIEST", если маунт классовый
+    categoryRU = "Инкубация яйца (30 дней, BfA)",
+    categoryEN = "Egg Incubation (30 Days, BfA)",
+    summaryRU = "Краткое описание цепочки на русском...",
+    summaryEN = "Short chain summary in English...",
+    steps = {
+        {
+            titleRU = "Шаг 1: Название этапа",
+            titleEN = "Step 1: Stage Title",
+            descRU = "Подробное описание, что нужно сделать...",
+            descEN = "Detailed instructions for this step...",
+            npcRU = "Имя NPC или объекта",
+            npcEN = "NPC or Object Name",
+            zoneRU = "Ульдум",
+            zoneEN = "Uldum",
+            mapID = 1527, x = 20.8, y = 61.9,          -- UiMapID и координаты для TomTom
+            quests = { 58615 },                        -- Список questID этапа
+            doneQuest = 58615,                         -- Финальный questID, закрывающий шаг
+            achievementID = nil,                       -- Опционально: ID достижения
+        },
+    },
+}
+```
+
+---
+
+## 🛡 Совместимость с WoW 12.1.5 (*Midnight*) и защита от Taint
+
+В патче **12.1.5 (*Midnight*)** Blizzard ввела систему секретных значений (`Secret Values` / `C_Secrets`) и защитила ряд событий миникарты:
+1. Аддон **не регистрирует** защищённое событие `VIGNETTE_MINIMAP_UPDATED`, чтобы не вызывать блокировку (`ADDON_ACTION_FORBIDDEN`) при клике по виньеткам на миникарте.
+2. Сканер маунтов окружающих игроков (`addon:ScanUnitMount` в [`Core.lua`](file:///c:/Users/ev3n7/.gemini/antigravity/scratch/Games/MountCollector/Core.lua)) работает только вне инстансов и в мирном режиме, предварительно проверяя `C_Secrets.ShouldAurasBeSecret()`, `C_Secrets.ShouldUnitAuraIndexBeSecret()` и `_G.issecretvalue()`.
+
+---
+
+## 💬 Слэш-команды
+
+* `/mc` или `/mountcollector` — открыть / закрыть главное двухколоночное окно **MountCollector**.
+* `/mc config` или `/mc settings` — открыть окно **MountCollector** сразу на встроенной вкладке **«Настройки»**.
