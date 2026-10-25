@@ -318,22 +318,50 @@ function addon:HookMountJournal()
             end
 
             if not infoBtn.MountCollectorQuestBtn then
-                local qBtn = CreateFrame("Button", nil, MountJournal.MountDisplay, "UIPanelButtonTemplate")
-                qBtn:SetSize(210, 22)
+                local qBtn
+                if addon.CreateFlatButton then
+                    qBtn = addon.CreateFlatButton(MountJournal.MountDisplay, 178, 22, L.MD_BTN_SOURCE_MC, true)
+                else
+                    qBtn = CreateFrame("Button", nil, MountJournal.MountDisplay, "UIPanelButtonTemplate")
+                    qBtn:SetSize(178, 22)
+                end
                 qBtn:SetScript("OnClick", function(self)
-                    if self.mountID and addon.OpenMountQuestChain then
+                    if self.mountID and addon.InspectMountInCollector then
+                        addon:InspectMountInCollector(self.mountID)
+                    elseif self.mountID and addon.OpenMountQuestChain then
                         addon:OpenMountQuestChain(self.mountID)
                     end
                 end)
                 infoBtn.MountCollectorQuestBtn = qBtn
             end
 
+            if not infoBtn.MountCollectorRouteBtn then
+                local rBtn
+                if addon.CreateFlatButton then
+                    rBtn = addon.CreateFlatButton(MountJournal.MountDisplay, 184, 22, L.MD_BTN_CONTINUE_ROUTE, false)
+                else
+                    rBtn = CreateFrame("Button", nil, MountJournal.MountDisplay, "UIPanelButtonTemplate")
+                    rBtn:SetSize(184, 22)
+                end
+                rBtn:SetScript("OnClick", function(self)
+                    if not self.mountID then return end
+                    if self.isQuestMount and addon.NavigateMountQuestStep then
+                        addon:NavigateMountQuestStep(self.mountID, nil, false)
+                    elseif addon.PinAllMountSpawns then
+                        addon:PinAllMountSpawns(self.mountID, true)
+                    end
+                end)
+                infoBtn.MountCollectorRouteBtn = rBtn
+            end
+
             local summaryFS = infoBtn.MountCollectorSummary
             local questBtn = infoBtn.MountCollectorQuestBtn
+            local routeBtn = infoBtn.MountCollectorRouteBtn
             if not addon.db or not addon.db.settings or not addon.db.settings.showInMountDisplay then
                 summaryFS:SetText("")
                 summaryFS:Hide()
                 questBtn:Hide()
+                routeBtn:Hide()
                 return
             end
 
@@ -342,6 +370,7 @@ function addon:HookMountJournal()
                 summaryFS:SetText("")
                 summaryFS:Hide()
                 questBtn:Hide()
+                routeBtn:Hide()
                 return
             end
 
@@ -379,6 +408,14 @@ function addon:HookMountJournal()
             local qStatus = addon.GetMountQuestChainStatus and addon:GetMountQuestChainStatus(mountID)
             if qStatus and qStatus.currentStep then
                 table.insert(extraLines, string.format(L.MD_CHAIN_LINE, qStatus.completedSteps, qStatus.totalSteps, qStatus.currentStep.title))
+                if qStatus.currentStep.luaStepDetail and qStatus.currentStep.luaStepDetail ~= "" then
+                    table.insert(extraLines, qStatus.currentStep.luaStepDetail)
+                end
+            else
+                local specCond = addon.GetMountSpecialConditions and addon:GetMountSpecialConditions(mountID)
+                if specCond and specCond.lines and specCond.lines[1] then
+                    table.insert(extraLines, specCond.lines[1])
+                end
             end
 
             if #extraLines > 0 then
@@ -389,18 +426,32 @@ function addon:HookMountJournal()
                 summaryFS:Hide()
             end
 
-            if qStatus then
-                questBtn.mountID = mountID
-                questBtn:SetText(L.MD_BTN_QUEST_GUIDE)
-                questBtn:ClearAllPoints()
-                if summaryFS:IsShown() then
-                    questBtn:SetPoint("TOPLEFT", summaryFS, "BOTTOMLEFT", 0, -6)
-                else
-                    questBtn:SetPoint("TOPLEFT", infoBtn, "BOTTOMLEFT", 0, -8)
-                end
-                questBtn:Show()
+            questBtn.mountID = mountID
+            questBtn:SetText(L.MD_BTN_SOURCE_MC)
+            questBtn:ClearAllPoints()
+            if summaryFS:IsShown() then
+                questBtn:SetPoint("TOPLEFT", summaryFS, "BOTTOMLEFT", 0, -6)
             else
-                questBtn:Hide()
+                questBtn:SetPoint("TOPLEFT", infoBtn, "BOTTOMLEFT", 0, -8)
+            end
+            questBtn:Show()
+
+            if qStatus then
+                routeBtn.mountID = mountID
+                routeBtn.isQuestMount = true
+                routeBtn:SetText(L.MD_BTN_CONTINUE_ROUTE)
+                routeBtn:ClearAllPoints()
+                routeBtn:SetPoint("LEFT", questBtn, "RIGHT", 6, 0)
+                routeBtn:Show()
+            elseif dropInfo and dropInfo.coords and #dropInfo.coords > 0 then
+                routeBtn.mountID = mountID
+                routeBtn.isQuestMount = false
+                routeBtn:SetText(L.MD_BTN_PIN_SPAWNS)
+                routeBtn:ClearAllPoints()
+                routeBtn:SetPoint("LEFT", questBtn, "RIGHT", 6, 0)
+                routeBtn:Show()
+            else
+                routeBtn:Hide()
             end
 
             if addon.RefreshMountJournalSideColumn then

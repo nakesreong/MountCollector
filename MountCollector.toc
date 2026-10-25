@@ -1,9 +1,18 @@
 ## Interface: 120107, 120105, 110207
 ## Title: |cff00ccffMount|r|cffffaa00Collector|r
-## Notes: Track rare mounts, bosses, open-world rares, account-wide attempts, and global/realm rarity (Data for Azeroth + Realm Census) in the Mount Journal.
-## Notes-ruRU: Трекинг редких маунтов, боссов, рарников, количества траев по аккаунту и рарности (по миру Data for Azeroth + по серверу) в Коллекции.
+## Notes: Track rare mounts, bosses, open-world rares, quest chains, account-wide attempts, and global/realm rarity (Data for Azeroth + Realm Census) in the Mount Journal.
+## Notes-ruRU: Трекинг редких маунтов, боссов, рарников, квестовых цепочек, количества траев по аккаунту и рарности (по миру Data for Azeroth + по серверу) в Коллекции.
+## Notes-deDE: Verfolgt seltene Reittiere, Bosse, Questreihen, accountweite Versuche und weltweite/Realm-Seltenheit in der Reittiersammlung.
+## Notes-frFR: Suivi des montures rares, boss, suites de quêtes, tentatives du compte et rareté mondiale/royaume dans la Collection.
+## Notes-esES: Seguimiento de monturas raras, jefes, cadenas de misiones, intentos de la cuenta y rareza mundial/reino en la Colección.
+## Notes-esMX: Seguimiento de monturas raras, jefes, cadenas de misiones, intentos de la cuenta y rareza mundial/reino en la Colección.
+## Notes-itIT: Traccia cavalcature rare, boss, serie di missioni, tentativi dell'account e rarità globale/reame nella Collezione.
+## Notes-ptBR: Rastreie montarias raras, chefes, séries de missões, tentativas da conta e raridade global/reino na Coleção.
+## Notes-koKR: 탈것 수집품에서 희귀 탈것, 우두머리, 연속 퀘스트, 계정 시도 횟수 및 전 세계/서버 희귀도를 추적합니다.
+## Notes-zhCN: 在坐骑藏品中追踪稀有坐骑、首领、任务链进度、账号刷取次数以及全球/服务器稀有度。
+## Notes-zhTW: 在坐騎收藏中追蹤稀有坐騎、首領、任務鏈進度、帳號刷取次數以及全球/伺服器稀有度。
 ## Author: Gemini (Tiger) | QA & Vision: Anya (5cr3am1ng5oul)
-## Version: 1.3.0
+## Version: 1.4.0
 ## SavedVariables: MountCollectorDB
 ## OptionalDeps: MountsRarity, Rarity, RareScanner, TomTom, ElvUI
 ## IconTexture: Interface\ICONS\Ability_Mount_SpectralTiger

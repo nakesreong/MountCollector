@@ -1,6 +1,6 @@
 # MountCollector — Quest Chain Navigator, Rarity Census, Attempt Tracker & Rare Boss Radar
 
-**Version:** 1.3.0  
+**Version:** 1.4.0  
 **Authors:** Gemini (Tiger) & Anya (5cr3am1ng5oul)  
 **Compatibility:** World of Warcraft: Retail / Midnight (`12.1.7`, `12.1.5`) & The War Within (`11.2.7`)  
 **Source Repository:** [https://github.com/nakesreong/MountCollector](https://github.com/nakesreong/MountCollector)  
@@ -12,12 +12,13 @@
 
 **MountCollector** is a modular mount collection, progression, and radar suite for World of Warcraft. It unifies multi-step questline tracking, egg incubation checklists, global and realm rarity statistics, account-wide boss/rare attempt counters, and open-world rare navigation into a cohesive dark flat UI modeled after ElvUI.
 
-* **Step-by-Step Quest Chain & Egg Incubation Navigator:** Tracks progress across complex multi-day questlines, secret mounts, Class Order Hall campaigns, and hatchling incubation chains (`MountQuestsDB`), with automated **TomTom** and Blizzard 3D waypoint routing.
-* **Two-Column Control Center (`/mc`) & Mount Journal Side-Dock:** Features a standalone two-column browser (`/mc`) alongside a synchronized side-column docked directly to the right edge of the standard **Mount Journal (`CollectionsJournal`)**.
+* **Step-by-Step Quest Chain & Egg Incubation Navigator:** Tracks progress across 54 complex multi-day questlines, secret mounts, all 11 Legion Class Order Hall campaigns, and hatchling incubation chains (`MountQuestsDB`), with live Lua quest/item evaluation and automated **TomTom** + Blizzard 3D waypoint routing.
+* **Built-In Lua Quest & Condition Debugger (`/mc debug`):** Inspects every quest flag (`IsQuestFlaggedCompleted`, `IsQuestFlaggedCompletedOnAccount`, `IsOnQuest`, `GetQuestObjectives`), achievement criteria, bag item count, and daily rare lockout in a copyable diagnostic window.
+* **Two-Column Control Center (`/mc`) & Mount Journal Side-Dock:** Features a standalone two-column browser (`/mc`) alongside a synchronized side-column docked directly to the right edge of the standard **Mount Journal (`CollectionsJournal`)** and a one-click **Source (MountCollector)** button on every mount's 3D preview.
 * **Global & Realm Rarity Census:** Integrates **Data for Azeroth** global ownership percentages (`MountsRarity-2.0`) with realm population ownership estimates and a live out-of-instance player mount scanner.
 * **Account-Wide Attempt Counter & Probability Engine:** Tracks boss and rare NPC kills across all characters on your account (`MountCollectorDB`), bridges with **Rarity** and Blizzard's internal kill statistics (`GetStatistic`), and calculates cumulative drop odds (`1 - (1 - 1/N)^K`).
 * **World of Warcraft 12.x (Midnight) Taint-Safe Architecture:** Engineered with `C_Secrets.ShouldAurasBeSecret()`, `C_Secrets.ShouldUnitAuraIndexBeSecret()`, and `issecretvalue()` guards, avoiding protected minimap vignette events (`VIGNETTE_MINIMAP_UPDATED`) to guarantee zero taint in modern combat and instance environments.
-* **Bilingual Interface:** Instant live switching between **English (`enUS`)** and **Russian (`ruRU`)** without reloading the UI.
+* **Multi-Language Client Support:** Localized across all 11 World of Warcraft client locales (`enUS`/`enGB`, `ruRU`, `deDE`, `frFR`, `esES`/`esMX`, `itIT`, `ptBR`, `koKR`, `zhCN`, `zhTW`) with instant live language switching without reloading the UI.
 
 ---
 

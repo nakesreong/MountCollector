@@ -176,6 +176,88 @@ function addon:ShowCopyLinkPopup(url, subtitle)
     p.editBox:HighlightText()
 end
 
+    -- 1b. Окно Lua-дебаггера квестовых цепочек и условий (MountCollectorDebugFrame)
+function addon:ShowMountDebugWindow(mountID)
+    local targetMountID = mountID
+        or (MountJournal and MountJournal:IsShown() and MountJournal.selectedMountID)
+        or ui.selectedMountID
+        or 861
+
+    if not ui.debugFrame then
+        local f = CreateFrame("Frame", "MountCollectorDebugFrame", UIParent, "BackdropTemplate")
+        f:SetSize(660, 480)
+        f:SetPoint("CENTER", UIParent, "CENTER", 0, 30)
+        f:SetFrameStrata("FULLSCREEN_DIALOG")
+        ApplyFlatBackdrop(f, 0.04, 0.04, 0.05, 0.98, 1.0, 0.82, 0.0, 1.0)
+        f:EnableMouse(true)
+        f:SetMovable(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", f.StartMoving)
+        f:SetScript("OnDragStop", f.StopMovingOrSizing)
+
+        local top = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        top:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+        top:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -1)
+        top:SetHeight(28)
+        ApplyFlatBackdrop(top, 0.08, 0.08, 0.10, 0.98, 0.22, 0.22, 0.25, 1.0)
+
+        f.title = top:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        f.title:SetPoint("LEFT", top, "LEFT", 12, 0)
+        f.title:SetTextColor(1.0, 0.82, 0.0, 1.0)
+        f.title:SetText(L.DEBUG_WINDOW_TITLE)
+
+        local closeBtn = CreateFlatButton(top, 22, 22, "X", false)
+        closeBtn:SetPoint("RIGHT", top, "RIGHT", -4, 0)
+        closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+        local bodyBg = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        bodyBg:SetPoint("TOPLEFT", f, "TOPLEFT", 10, -36)
+        bodyBg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 44)
+        ApplyFlatBackdrop(bodyBg, 0.02, 0.02, 0.03, 0.98, 0.22, 0.22, 0.26, 1.0)
+
+        local sf = CreateFrame("ScrollFrame", "MountCollectorDebugScroll", bodyBg, "UIPanelScrollFrameTemplate")
+        sf:SetPoint("TOPLEFT", bodyBg, "TOPLEFT", 8, -8)
+        sf:SetPoint("BOTTOMRIGHT", bodyBg, "BOTTOMRIGHT", -28, 8)
+
+        local eb = CreateFrame("EditBox", nil, sf)
+        eb:SetMultiLine(true)
+        eb:SetWidth(590)
+        eb:SetFontObject("ChatFontNormal")
+        eb:SetAutoFocus(false)
+        eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        sf:SetScrollChild(eb)
+        f.editBox = eb
+
+        local btnRefresh = CreateFlatButton(f, 200, 26, L.DEBUG_REFRESH_BTN, false)
+        btnRefresh:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 10, 10)
+        btnRefresh:SetScript("OnClick", function()
+            if f.currentMountID then
+                local report = addon:BuildMountDebugReport(f.currentMountID)
+                f.editBox:SetText(report)
+            end
+        end)
+        f.btnRefresh = btnRefresh
+
+        local btnCopy = CreateFlatButton(f, 240, 26, L.DEBUG_COPY_BTN, true)
+        btnCopy:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 10)
+        btnCopy:SetScript("OnClick", function()
+            f.editBox:SetFocus()
+            f.editBox:HighlightText()
+        end)
+        f.btnCopy = btnCopy
+
+        ui.debugFrame = f
+    end
+
+    local f = ui.debugFrame
+    f.currentMountID = targetMountID
+    f.title:SetText(L.DEBUG_WINDOW_TITLE)
+    f.btnRefresh:SetText(L.DEBUG_REFRESH_BTN)
+    f.btnCopy:SetText(L.DEBUG_COPY_BTN)
+    f.editBox:SetText(self:BuildMountDebugReport(targetMountID))
+    f:Show()
+end
+
 -- Универсальная навигация для любого маунта (квестового или дропового)
 function addon:NavigateMountTarget(mountID, forceFirstStep)
     if not mountID then return end
@@ -183,6 +265,10 @@ function addon:NavigateMountTarget(mountID, forceFirstStep)
     if qStatus then
         local stepIdx = forceFirstStep and 1 or qStatus.currentStepIndex or 1
         self:NavigateMountQuestStep(mountID, stepIdx, false)
+        return
+    end
+    if forceFirstStep then
+        self:PinAllMountSpawns(mountID, true)
         return
     end
     local info = self.DropInfoByMount and self.DropInfoByMount[mountID]
@@ -365,7 +451,8 @@ function addon:RefreshWorldMapPins()
     local pinIdx = 0
     for _, mountID in ipairs(list) do
         local name, _, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
-        if name and not isCollected then
+        local isHighlighted = (self.highlightedMapMountID and self.highlightedMapMountID == mountID)
+        if name and (not isCollected or isHighlighted) then
             local info = self.DropInfoByMount[mountID]
             local locked = self:IsMountRareLockedToday(mountID)
             if info and info.coords then
@@ -380,11 +467,18 @@ function addon:RefreshWorldMapPins()
                         pin.npcName = (c.n and c.n ~= "") and c.n or info.boss or name
                         pin.icon:SetTexture(icon or "Interface\\ICONS\\Ability_Mount_SpectralTiger")
 
-                        if locked then
+                        if isHighlighted then
+                            pin:SetSize(28, 28)
+                            pin.icon:SetDesaturated(false)
+                            pin:SetBackdropBorderColor(0.0, 0.95, 1.0, 1.0)
+                            pin:SetAlpha(1.0)
+                        elseif locked then
+                            pin:SetSize(24, 24)
                             pin.icon:SetDesaturated(true)
                             pin:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
                             pin:SetAlpha(0.6)
                         else
+                            pin:SetSize(24, 24)
                             pin.icon:SetDesaturated(false)
                             pin:SetBackdropBorderColor(1.0, 0.78, 0.0, 1.0)
                             pin:SetAlpha(1.0)
@@ -434,15 +528,16 @@ local function GetOrCreateChecklistCard(pool, parent, index, cardWidth)
     card:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     ApplyFlatBackdrop(card, 0.08, 0.08, 0.10, 0.94, 0.22, 0.22, 0.26, 1.0)
 
-    card.statusFS = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    card.statusFS:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -8)
-    card.statusFS:SetJustifyH("LEFT")
-    card.statusFS:SetWordWrap(false)
-
     card.coordsFS = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     card.coordsFS:SetPoint("TOPRIGHT", card, "TOPRIGHT", -10, -8)
     card.coordsFS:SetJustifyH("RIGHT")
     card.coordsFS:SetWordWrap(false)
+
+    card.statusFS = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    card.statusFS:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -8)
+    card.statusFS:SetPoint("RIGHT", card.coordsFS, "LEFT", -8, 0)
+    card.statusFS:SetJustifyH("LEFT")
+    card.statusFS:SetWordWrap(false)
 
     card.titleFS = card:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     card.titleFS:SetPoint("TOPLEFT", card.statusFS, "BOTTOMLEFT", 0, -5)
@@ -492,6 +587,8 @@ local function GetOrCreateChecklistCard(pool, parent, index, cardWidth)
             addon:ShowCopyLinkPopup(url, self.rawTitle)
         elseif self.stepIndex then
             addon:NavigateMountQuestStep(self.mountID, self.stepIndex, false)
+        elseif self.customMapID and self.customX and self.customY then
+            addon:SetMountWaypoint(self.mountID, self.customMapID, self.customX, self.customY, self.customNpc, false)
         else
             addon:NavigateMountTarget(self.mountID, false)
         end
@@ -509,11 +606,11 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
     if panel.secLabel then
         panel.secLabel:SetText(L.SECTION_CHECKLIST)
     end
+    if panel.btnDebug then
+        panel.btnDebug:SetText(L.QUEST_DEBUG_BTN)
+    end
     if panel.btnNavNow then
         panel.btnNavNow:SetText(L.QUEST_NAV_BTN)
-    end
-    if panel.btnNavStart then
-        panel.btnNavStart:SetText(L.QUEST_START_BTN)
     end
     if panel.btnWowhead then
         panel.btnWowhead:SetText(L.QUEST_WOWHEAD_BTN)
@@ -527,6 +624,9 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         panel.nameFS:SetText("")
         panel.metaFS:SetText("")
         panel.scrollContent:SetHeight(1)
+        if panel.btnNavStart then
+            panel.btnNavStart:SetText(L.QUEST_START_BTN)
+        end
         return
     end
 
@@ -539,6 +639,10 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
     local attempts, byChar, dropInfo = addon:GetMountAttempts(mountID)
     local qStatus = addon:GetMountQuestChainStatus(mountID)
     local bestCoord = addon:GetBestMountCoords(mountID)
+
+    if panel.btnNavStart then
+        panel.btnNavStart:SetText(qStatus and L.QUEST_START_BTN or L.RARE_PIN_ALL_BTN)
+    end
 
     panel.iconFrame:Show()
     panel.iconTex:SetTexture(icon or "Interface\\ICONS\\Ability_Mount_SpectralTiger")
@@ -579,7 +683,7 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
             local bg = { 0.07, 0.08, 0.10, 0.90 }
             local br = { 0.20, 0.22, 0.26, 0.90 }
             if st.isDone then
-                badge = L.QUEST_STEP_DONE
+                badge = st.isDoneAccountOnly and L.QUEST_STEP_DONE_ACCT or L.QUEST_STEP_DONE
                 bg = { 0.06, 0.12, 0.08, 0.92 }
                 br = { 0.18, 0.58, 0.30, 0.95 }
             elseif st.isCurrent then
@@ -593,7 +697,19 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
                 br = { 1.0, 0.82, 0.0, 1.0 }
             end
 
-            local coordText = (st.x and st.y) and string.format("|cff00ccff%s [%.1f, %.1f]|r", st.zone or "", st.x, st.y) or (st.zone or "")
+            local zRaw = st.zone or ""
+            local coordText = zRaw
+            if st.x and st.y and not string.find(zRaw, "[", 1, true) then
+                coordText = string.format("|cff00ccff%s [%.1f, %.1f]|r", zRaw, st.x, st.y)
+            elseif zRaw ~= "" then
+                coordText = "|cff00ccff" .. zRaw .. "|r"
+            end
+
+            local fullDesc = st.desc or ""
+            if st.luaStepDetail and st.luaStepDetail ~= "" then
+                fullDesc = fullDesc .. "\n" .. st.luaStepDetail
+            end
+
             table.insert(stepsToRender, {
                 mountID = mountID,
                 stepIndex = st.index,
@@ -602,13 +718,13 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
                 coords = coordText,
                 title = st.title,
                 npc = st.npc ~= "" and (L.STEP_NPC_PREFIX .. st.npc .. "|r") or "",
-                desc = st.desc or "",
+                desc = fullDesc,
                 bg = bg,
                 br = br,
             })
         end
     else
-        -- Для обычных дроповых / прочих маунтов формируем понятный чек-лист добычи
+        -- 1. Основная карточка источника дропа / торговца / достижения
         local lockedToday = addon:IsMountRareLockedToday(mountID)
         local badge1 = isCollected and L.QUEST_STEP_DONE or (lockedToday and L.TAG_LOCKED_TODAY or L.QUEST_STEP_ACTIVE)
         local coordText = ""
@@ -628,6 +744,63 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
             bg = isCollected and { 0.06, 0.12, 0.08, 0.92 } or { 0.12, 0.11, 0.06, 0.94 },
             br = isCollected and { 0.18, 0.58, 0.30, 0.95 } or { 0.85, 0.68, 0.15, 1.0 },
         })
+
+        -- 2. Карточка особых условий получения и Lua-статуса (приманки, ковенант, КД рарника, траи)
+        local specCond = addon:GetMountSpecialConditions(mountID)
+        if specCond and specCond.lines and #specCond.lines > 0 then
+            table.insert(stepsToRender, {
+                mountID = mountID,
+                stepIndex = nil,
+                badge = specCond.lockedToday and L.TAG_LOCKED_TODAY or L.QUEST_STEP_ACTIVE,
+                coords = "|cffffd100Lua API|r",
+                title = L.STEP_SPECIAL_COND_TITLE,
+                npc = "",
+                desc = table.concat(specCond.lines, "\n"),
+                bg = { 0.09, 0.09, 0.13, 0.95 },
+                br = { 0.35, 0.65, 0.95, 0.95 },
+            })
+        end
+
+        -- 3. Отдельные кликабельные карточки для каждой точки спавна рарника / босса
+        if dropInfo and dropInfo.coords and #dropInfo.coords > 0 then
+            local uniqueSpawns = {}
+            for _, c in ipairs(dropInfo.coords) do
+                if c.m and c.x and c.x > 0 and c.y and c.y > 0 then
+                    local isDup = false
+                    for _, u in ipairs(uniqueSpawns) do
+                        if u.m == c.m and math.abs(u.x - c.x) < 0.8 and math.abs(u.y - c.y) < 0.8 then
+                            isDup = true
+                            break
+                        end
+                    end
+                    if not isDup then
+                        table.insert(uniqueSpawns, c)
+                    end
+                end
+            end
+
+            for spIdx, c in ipairs(uniqueSpawns) do
+                if spIdx <= 12 then
+                    local zName = (C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(c.m)) and C_Map.GetMapInfo(c.m).name or ("Map #" .. tostring(c.m))
+                    local targetNpc = (c.n and c.n ~= "") and c.n or (dropInfo.boss or name)
+                    table.insert(stepsToRender, {
+                        mountID = mountID,
+                        stepIndex = nil,
+                        customMapID = c.m,
+                        customX = c.x,
+                        customY = c.y,
+                        customNpc = targetNpc,
+                        badge = lockedToday and L.TAG_LOCKED_TODAY or L.QUEST_STEP_ACTIVE,
+                        coords = string.format("|cff00ccff%s [%.1f, %.1f]|r", zName, c.x, c.y),
+                        title = string.format(L.STEP_SPAWN_POINT_FMT, spIdx, targetNpc),
+                        npc = "",
+                        desc = L.QUEST_STEP_CLICK_HINT,
+                        bg = { 0.07, 0.08, 0.10, 0.92 },
+                        br = { 0.24, 0.26, 0.32, 0.95 },
+                    })
+                end
+            end
+        end
     end
 
     local yOffset = 0
@@ -636,6 +809,10 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         card.mountID = item.mountID
         card.stepIndex = item.stepIndex
         card.doneQuest = item.doneQuest
+        card.customMapID = item.customMapID
+        card.customX = item.customX
+        card.customY = item.customY
+        card.customNpc = item.customNpc
         card.rawTitle = item.title
         card.rawDesc = item.desc
         card.defaultBorder = item.br
@@ -706,16 +883,28 @@ local function CreateMountInspectorWidget(parent, scrollName, cardWidth, isDocke
     end
     panel.metaFS = metaFS
 
+    -- Кнопка Lua-дебаггера цепочки и условий справа над чек-листом
+    local btnDebug = CreateFlatButton(panel, 146, 20, L.QUEST_DEBUG_BTN, false)
+    btnDebug:SetPoint("TOPRIGHT", headerBox, "BOTTOMRIGHT", 0, -4)
+    btnDebug:SetScript("OnClick", function()
+        local mID = isDockedInJournal and (MountJournal and MountJournal.selectedMountID) or ui.selectedMountID
+        addon:ShowMountDebugWindow(mID)
+    end)
+    panel.btnDebug = btnDebug
+
     -- Заголовок секции чек-листа
     local secLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     secLabel:SetPoint("TOPLEFT", headerBox, "BOTTOMLEFT", 2, -8)
+    secLabel:SetPoint("RIGHT", btnDebug, "LEFT", -6, 0)
+    secLabel:SetJustifyH("LEFT")
+    secLabel:SetWordWrap(false)
     secLabel:SetTextColor(1.0, 0.82, 0.0, 1.0)
     secLabel:SetText(L.SECTION_CHECKLIST)
     panel.secLabel = secLabel
 
     -- Скролл со списком шагов (Сделано / Надо сделать)
     local scrollFrame = CreateFrame("ScrollFrame", scrollName, panel, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", headerBox, "BOTTOMLEFT", 0, -26)
+    scrollFrame:SetPoint("TOPLEFT", headerBox, "BOTTOMLEFT", 0, -28)
     scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 68)
 
     local scrollContent = CreateFrame("Frame", nil, scrollFrame)
@@ -768,8 +957,8 @@ local function CreateMountInspectorWidget(parent, scrollName, cardWidth, isDocke
     btnFourth:SetScript("OnClick", function()
         if isDockedInJournal then
             local mID = MountJournal and MountJournal.selectedMountID
-            if mID and addon.MountQuestsByMountID[mID] then
-                addon:OpenMountQuestChain(mID)
+            if mID then
+                addon:InspectMountInCollector(mID)
             else
                 addon:ToggleRadarWindow()
             end
@@ -997,13 +1186,27 @@ local function GetOrCreateMountListRow(index)
     return row
 end
 
-function addon:OpenMountQuestChain(mountID)
+function addon:InspectMountInCollector(mountID)
     if not mountID then return end
-    ui.currentTab = "QUESTS"
     ui.selectedMountID = mountID
+    ui.pinnedInspectMountID = mountID
+    if self:GetMountQuestChainStatus(mountID) then
+        ui.currentTab = "QUESTS"
+    elseif ui.currentTab == "SETTINGS" then
+        ui.currentTab = "ALL"
+    end
     radarFrame:Show()
     self:RefreshRadarUI()
-    self:NavigateMountQuestStep(mountID, nil, false)
+end
+
+function addon:OpenMountQuestChain(mountID)
+    if not mountID then return end
+    self:InspectMountInCollector(mountID)
+    if self:GetMountQuestChainStatus(mountID) then
+        self:NavigateMountQuestStep(mountID, nil, false)
+    else
+        self:NavigateMountTarget(mountID, false)
+    end
 end
 
 function addon:RefreshRadarUI()
@@ -1137,9 +1340,6 @@ function addon:RefreshRadarUI()
         end)
     end
 
-    ui.lastListCount = #listEntries
-    totalFS:SetText(string.format(L.TOTAL_LABEL, #listEntries))
-
     local foundSelected = false
     for _, item in ipairs(listEntries) do
         if item.mountID == ui.selectedMountID then
@@ -1147,9 +1347,28 @@ function addon:RefreshRadarUI()
             break
         end
     end
+    if not foundSelected and ui.selectedMountID and ui.selectedMountID == ui.pinnedInspectMountID then
+        local pName, _, pIcon, _, _, _, _, _, _, _, pCollected = C_MountJournal.GetMountInfoByID(ui.selectedMountID)
+        if pName then
+            local pAttempts, _, pDrop = self:GetMountAttempts(ui.selectedMountID)
+            local chPart = (pDrop and pDrop.chance and pDrop.chance > 0) and string.format(" • 1/%d", pDrop.chance) or ""
+            table.insert(listEntries, 1, {
+                mountID = ui.selectedMountID,
+                name = pName,
+                icon = pIcon,
+                attempts = pAttempts,
+                isCollected = pCollected,
+                subLine = string.format(L.ROW_ATTEMPTS_FMT, pAttempts or 0) .. "|cff888888" .. chPart .. "|r",
+            })
+            foundSelected = true
+        end
+    end
     if not foundSelected then
         ui.selectedMountID = listEntries[1] and listEntries[1].mountID or nil
     end
+
+    ui.lastListCount = #listEntries
+    totalFS:SetText(string.format(L.TOTAL_LABEL, #listEntries))
 
     for idx, entry in ipairs(listEntries) do
         local row = GetOrCreateMountListRow(idx)
@@ -1360,6 +1579,9 @@ SlashCmdList["MOUNTCOLLECTOR"] = function(msg)
         if addon.ToggleConfigFrame then
             addon:ToggleConfigFrame()
         end
+    elseif string.find(cmd, "^debug") or string.find(cmd, "^dbg") then
+        local argID = tonumber(string.match(cmd, "(%d+)"))
+        addon:ShowMountDebugWindow(argID)
     else
         addon:ToggleRadarWindow()
     end
