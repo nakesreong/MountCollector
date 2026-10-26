@@ -331,7 +331,7 @@ end)
 
 function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, liveX, liveY)
     if not forceShow and (not self.db or not self.db.settings.alertRares) then return end
-    local key = tostring(npcID or 0) .. ":" .. tostring(mountID or 0)
+    local key = (npcID and npcID > 0 and npcID ~= 99999) and ("npc:" .. tostring(npcID)) or (tostring(npcID or 0) .. ":" .. tostring(mountID or 0))
     local now = GetTime()
     if not forceShow and self.RecentAlertLock[key] and (now - self.RecentAlertLock[key]) < 120 then
         return
@@ -340,6 +340,21 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
 
     local name, _, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
     if not name or (isCollected and not forceShow) then return end
+
+    -- Если с этого NPC падает сразу несколько несобранных маунтов, объединяем их названия в один алерт и одну метку
+    local displayMountNames = name
+    if not forceShow and npcID and self.MountsByNpc and self.MountsByNpc[npcID] and #self.MountsByNpc[npcID] > 1 then
+        local namesList = {}
+        for _, mID in ipairs(self.MountsByNpc[npcID]) do
+            local mName, _, _, _, _, _, _, _, _, _, mCol = C_MountJournal.GetMountInfoByID(mID)
+            if mName and not mCol then
+                table.insert(namesList, mName)
+            end
+        end
+        if #namesList > 1 then
+            displayMountNames = table.concat(namesList, ", ")
+        end
+    end
 
     local attempts, _, dropInfo = self:GetMountAttempts(mountID)
     local globalPct = self:GetGlobalRarity(mountID)
@@ -354,7 +369,7 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
 
     alertIcon:SetTexture(icon or "Interface\\ICONS\\Ability_Mount_SpectralTiger")
     alertHeader:SetText(string.format(L.ALERT_HEADER_NEARBY, npcName or "Rare NPC"))
-    alertMountName:SetText(string.format(L.ALERT_NOT_COLLECTED, name))
+    alertMountName:SetText(string.format(L.ALERT_NOT_COLLECTED, displayMountNames))
     alertStats:SetText(string.format(L.ALERT_STATS_LINE, attempts, chanceStr, pctText))
 
     alertFrame:Show()
@@ -363,7 +378,7 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
     end
 
     if self.db and self.db.settings.autoWaypoint then
-        self:SetMountWaypoint(mountID, mapID, liveX, liveY, npcName, false)
+        self:SetMountWaypoint(mountID, mapID, liveX, liveY, npcName, false, displayMountNames)
     end
 
     if self.alertHideTimer then

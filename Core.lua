@@ -697,8 +697,8 @@ function addon:GetBestMountCoords(mountID, preferredMapID)
 end
 
 -- Поставить метку на карте и 3D-стрелку (Blizzard UserWaypoint + SuperTrack + TomTom)
-function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLabel, silent)
-    local name = C_MountJournal and C_MountJournal.GetMountInfoByID(mountID) or "Mount"
+function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLabel, silent, customMountNames)
+    local name = customMountNames or (C_MountJournal and C_MountJournal.GetMountInfoByID(mountID)) or "Mount"
     local info = self.DropInfoByMount[mountID]
     local mapID = preferredMapID or (C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player"))
     local x, y = liveX, liveY
@@ -755,7 +755,13 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
     end
 
     if not silent then
-        print(string.format(L.CHAT_WAYPOINT_SET, npcLabel, dispX, dispY, name))
+        local chatKey = string.format("%s:%s:%.1f:%.1f", tostring(mapID), tostring(npcLabel), dispX, dispY)
+        local now = GetTime()
+        if self.lastWaypointChatKey ~= chatKey or not self.lastWaypointChatTime or (now - self.lastWaypointChatTime) > 10 then
+            self.lastWaypointChatKey = chatKey
+            self.lastWaypointChatTime = now
+            print(string.format(L.CHAT_WAYPOINT_SET, npcLabel, dispX, dispY, name))
+        end
     end
     return true
 end
@@ -1109,26 +1115,40 @@ function addon:RecordAttempt(mountID, sourceName)
     end
     self.RecentAttemptLock[mountID] = now
 
-    local prevTotal = self:GetMountAttempts(mountID)
-    local record = self.db.attempts[mountID] or { total = prevTotal, byChar = {} }
+    local info = self.DropInfoByMount[mountID]
+    local record = self.db.attempts[mountID] or { total = 0, byChar = {} }
     local charKey = self:GetCharKey()
 
+    record.byChar = record.byChar or {}
     record.byChar[charKey] = (record.byChar[charKey] or 0) + 1
-    record.total = math.max((record.total or 0) + 1, prevTotal + 1)
+
+    local byCharSum = 0
+    for _, c in pairs(record.byChar) do
+        byCharSum = byCharSum + (tonumber(c) or 0)
+    end
+
+    local rEntry = info and info.rarityEntry
+    if rEntry and type(rEntry.attempts) == "number" and rEntry.attempts > 0 then
+        record.total = math.max(byCharSum, rEntry.attempts)
+    else
+        local prevTotal = self:GetMountAttempts(mountID)
+        record.total = math.max((record.total or 0) + 1, prevTotal + 1, byCharSum)
+    end
+
     record.lastKill = time()
     record.lastChar = charKey
     self.db.attempts[mountID] = record
 
-    local info = self.DropInfoByMount[mountID]
     local chance = (info and info.chance and info.chance > 0) and info.chance or 100
     local luckPct = (1 - math.pow(1 - (1 / chance), record.total)) * 100
 
-    if self.db.settings.announceAttempts then
+    local rarityAlreadyAnnounces = (_G.Rarity and rEntry and _G.Rarity.db and _G.Rarity.db.profile and _G.Rarity.db.profile.enableAnnouncements ~= false)
+    if self.db.settings.announceAttempts and not rarityAlreadyAnnounces then
         print(string.format(
             L.CHAT_ATTEMPT_RECORDED,
             record.total,
             name or "Mount",
-            sourceName or "NPC",
+            sourceName or (info and info.boss) or "NPC",
             chance,
             record.total,
             luckPct
@@ -1208,25 +1228,30 @@ function addon:CheckUnitForMountDrop(unit)
         self:ScanUnitMount(unit)
         return
     end
-    if UnitIsDead(unit) then return end
 
     local guid = UnitGUID(unit)
     local npcID = self:GetNPCIDFromGUID(guid)
     if not npcID then return end
 
+    local npcName = UnitName(unit)
+    if SafeNotSecret(npcName) and npcName and npcName ~= "" then
+        self.KnownNpcNames = self.KnownNpcNames or {}
+        self.KnownNpcNames[npcID] = npcName
+    else
+        local rs = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
+        npcName = (self.KnownNpcNames and self.KnownNpcNames[npcID]) or (rs and rs.name) or "Rare NPC"
+    end
+
+    if UnitIsDead(unit) then return end
+
     local mounts = self.MountsByNpc[npcID]
     if not mounts then return end
-
-    local npcName = UnitName(unit)
-    if not SafeNotSecret(npcName) then
-        local rs = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
-        npcName = (rs and rs.name) or "Rare NPC"
-    end
 
     for _, mountID in ipairs(mounts) do
         local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
         if not isCollected then
             self:TriggerRareMountAlert(mountID, npcID, npcName, false)
+            break
         end
     end
 end
@@ -1244,6 +1269,10 @@ function addon:CheckVignetteForMountDrop(vignetteGUID)
     if not mounts then return end
 
     local vName = SafeNotSecret(vInfo.name) and vInfo.name or "Rare NPC"
+    if vName ~= "Rare NPC" then
+        self.KnownNpcNames = self.KnownNpcNames or {}
+        self.KnownNpcNames[npcID] = vName
+    end
     local mapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
     local liveX, liveY = nil, nil
     if mapID and C_VignetteInfo.GetVignettePosition then
@@ -1261,6 +1290,7 @@ function addon:CheckVignetteForMountDrop(vignetteGUID)
         local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
         if not isCollected then
             self:TriggerRareMountAlert(mountID, npcID, vName, false, mapID, liveX, liveY)
+            break
         end
     end
 end
@@ -1422,8 +1452,12 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                             seenGuids[srcGuid] = true
                             local npcID = addon:GetNPCIDFromGUID(srcGuid)
                             if npcID and addon.MountsByNpc[npcID] then
+                                local rs = addon.RareScannerNpcToMounts and addon.RareScannerNpcToMounts[npcID]
+                                local srcName = (addon.KnownNpcNames and addon.KnownNpcNames[npcID])
+                                    or (rs and rs.name and rs.name ~= "" and rs.name)
+                                    or ("NPC #" .. tostring(npcID))
                                 for _, mountID in ipairs(addon.MountsByNpc[npcID]) do
-                                    addon:RecordAttempt(mountID, "NPC #" .. tostring(npcID))
+                                    addon:RecordAttempt(mountID, srcName)
                                 end
                             end
                         end
