@@ -681,19 +681,57 @@ function addon:GetBestMountCoords(mountID, preferredMapID)
     local info = self.DropInfoByMount[mountID]
     if not info or not info.coords or #info.coords == 0 then return nil end
 
-    if preferredMapID then
-        for _, c in ipairs(info.coords) do
-            if c.m == preferredMapID and c.x and c.x > 0 and c.y and c.y > 0 then
-                return c
+    local pMapID = preferredMapID or (C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player"))
+    local px, py = nil, nil
+    if pMapID and C_Map and C_Map.GetPlayerMapPosition then
+        local okPos, pos = pcall(C_Map.GetPlayerMapPosition, pMapID, "player")
+        if okPos and pos and pos.GetXY then
+            local rx, ry = pos:GetXY()
+            if SafeNotSecret(rx) and SafeNotSecret(ry) and rx and ry and rx > 0 and ry > 0 then
+                px, py = rx * 100.0, ry * 100.0
             end
         end
     end
-    for _, c in ipairs(info.coords) do
-        if c.x and c.x > 0 and c.y and c.y > 0 then
-            return c
+
+    local function findBest(requireUnlocked, filterMapID)
+        local bestC = nil
+        local bestDistSq = math.huge
+        for _, c in ipairs(info.coords) do
+            if c.x and c.x > 0 and c.y and c.y > 0 and (not filterMapID or c.m == filterMapID) then
+                local isLocked = (c.npcID and self.IsNpcLockedToday and self:IsNpcLockedToday(c.npcID)) or false
+                if not requireUnlocked or not isLocked then
+                    if px and py and c.m == pMapID then
+                        local dx = c.x - px
+                        local dy = c.y - py
+                        local dSq = dx * dx + dy * dy
+                        if dSq < bestDistSq then
+                            bestDistSq = dSq
+                            bestC = c
+                        end
+                    elseif not bestC then
+                        bestC = c
+                    end
+                end
+            end
         end
+        return bestC
     end
-    return nil
+
+    -- 1. Сначала ищем ближайшего НЕ убитого сегодня рарника в целевой/текущей зоне
+    if preferredMapID then
+        local unlockedInPref = findBest(true, preferredMapID)
+        if unlockedInPref then return unlockedInPref end
+    end
+    -- 2. Ищем любого НЕ убитого сегодня рарника по всем зонам маунта
+    local unlockedAny = findBest(true, nil)
+    if unlockedAny then return unlockedAny end
+
+    -- 3. Если все рарники сегодня уже убиты (КД), возвращаем ближайшую точку как фоллбэк
+    if preferredMapID then
+        local anyInPref = findBest(false, preferredMapID)
+        if anyInPref then return anyInPref end
+    end
+    return findBest(false, nil)
 end
 
 -- Поставить метку на карте и 3D-стрелку (Blizzard UserWaypoint + SuperTrack + TomTom)
@@ -809,20 +847,22 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
     self.multiTomTomUids = {}
 
     local playerMapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
-    local primaryCoord = coords[1]
+    local availCoords = {}
     for _, c in ipairs(coords) do
-        if playerMapID and c.m == playerMapID then
-            primaryCoord = c
-            break
+        if not (c.npcID and self:IsNpcLockedToday(c.npcID)) then
+            table.insert(availCoords, c)
         end
     end
+    local routeCoords = (#availCoords > 0) and availCoords or coords
+
+    local primaryCoord = self:GetBestMountCoords(mountID, playerMapID) or routeCoords[1]
 
     if _G.TomTom and _G.TomTom.AddWaypoint then
-        for idx, c in ipairs(coords) do
+        for idx, c in ipairs(routeCoords) do
             local nx = (c.x > 1) and (c.x / 100.0) or c.x
             local ny = (c.y > 1) and (c.y / 100.0) or c.y
             local label = (c.n and c.n ~= "") and c.n or (info and info.boss) or name
-            if #coords > 1 then
+            if #routeCoords > 1 then
                 label = string.format("%s #%d", label, idx)
             end
             pcall(function()
@@ -894,16 +934,36 @@ function addon:GetMountSpecialConditions(mountID)
     if info and type(info.quests) == "table" and #info.quests > 0 and C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
         local doneQuests = {}
         local availQuests = {}
-        for _, qid in ipairs(info.quests) do
-            if C_QuestLog.IsQuestFlaggedCompleted(qid) then
-                table.insert(doneQuests, "#" .. tostring(qid))
-            else
-                table.insert(availQuests, "#" .. tostring(qid))
+        local questToNpcName = {}
+        if self.RareScannerNpcToMounts then
+            for nid, rsData in pairs(self.RareScannerNpcToMounts) do
+                if rsData and type(rsData.quests) == "table" then
+                    local nName = (self.KnownNpcNames and self.KnownNpcNames[nid]) or rsData.name
+                    if nName and nName ~= "" then
+                        for _, rq in ipairs(rsData.quests) do
+                            questToNpcName[rq] = nName
+                        end
+                    end
+                end
             end
+        end
+        for _, qid in ipairs(info.quests) do
+            local label = questToNpcName[qid] and string.format("%s (#%d)", questToNpcName[qid], qid) or ("#" .. tostring(qid))
+            if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                table.insert(doneQuests, label)
+            else
+                table.insert(availQuests, label)
+            end
+        end
+        if #info.quests > 1 then
+            table.insert(lines, string.format(L.LUA_LOCKOUT_MULTI_SUMMARY_FMT, #doneQuests, #info.quests, #availQuests))
         end
         if #doneQuests > 0 then
             table.insert(lines, string.format(L.LUA_LOCKOUT_LOCKED_FMT, table.concat(doneQuests, ", ")))
-        else
+        end
+        if #availQuests > 0 and (#info.quests == 1 or #doneQuests > 0) then
+            table.insert(lines, string.format(L.LUA_LOCKOUT_AVAIL_FMT, table.concat(availQuests, ", ")))
+        elseif #doneQuests == 0 then
             table.insert(lines, string.format(L.LUA_LOCKOUT_AVAIL_FMT, table.concat(availQuests, ", ")))
         end
     end
@@ -1013,7 +1073,12 @@ function addon:BuildMountDebugReport(mountID)
             add(string.format("Spawn Coordinates (%d points):", #dropInfo.coords))
             for i, c in ipairs(dropInfo.coords) do
                 local mName = (c.m and C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(c.m)) and C_Map.GetMapInfo(c.m).name or ("Map " .. tostring(c.m))
-                add(string.format("  %d. %s (mapID=%s) [%.1f, %.1f] — %s", i, mName, tostring(c.m), c.x or 0, c.y or 0, tostring(c.n or "")))
+                local npcLock, qid = false, nil
+                if c.npcID then
+                    npcLock, qid = self:IsNpcLockedToday(c.npcID)
+                end
+                local lockTag = c.npcID and (npcLock and string.format(" [KILLED TODAY q#%s]", tostring(qid or "?")) or string.format(" [AVAILABLE q#%s]", tostring(qid or "?"))) or ""
+                add(string.format("  %d. %s (mapID=%s) [%.1f, %.1f] — %s (npcID=%s)%s", i, mName, tostring(c.m), c.x or 0, c.y or 0, tostring(c.n or ""), tostring(c.npcID or "?"), lockTag))
             end
         end
     end
@@ -1166,19 +1231,52 @@ function addon:RecordAttempt(mountID, sourceName)
     end
 end
 
-function addon:IsMountRareLockedToday(mountID)
-    local info = self.DropInfoByMount[mountID]
-    if not info or not info.quests or #info.quests == 0 then
-        return false
+-- Проверить, убит ли уже сегодня конкретный рарник (по его индивидуальному скрытому daily questID)
+function addon:IsNpcLockedToday(npcID)
+    if not npcID or not C_QuestLog or not C_QuestLog.IsQuestFlaggedCompleted then
+        return false, nil
     end
-    if C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
-        for _, qid in ipairs(info.quests) do
+    local rs = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
+    if rs and type(rs.quests) == "table" and #rs.quests > 0 then
+        for _, qid in ipairs(rs.quests) do
             if C_QuestLog.IsQuestFlaggedCompleted(qid) then
-                return true
+                return true, qid
+            end
+        end
+        return false, rs.quests[1]
+    end
+    local mounts = self.MountsByNpc and self.MountsByNpc[npcID]
+    if mounts then
+        for _, mID in ipairs(mounts) do
+            local info = self.DropInfoByMount and self.DropInfoByMount[mID]
+            if info and type(info.quests) == "table" and #info.quests == 1 then
+                local qid = info.quests[1]
+                if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                    return true, qid
+                end
+                return false, qid
             end
         end
     end
-    return false
+    return false, nil
+end
+
+-- Проверить, закрыты ли на сегодня рарники для маунта (возвращает: allLocked, doneCount, totalCount)
+function addon:IsMountRareLockedToday(mountID)
+    local info = self.DropInfoByMount[mountID]
+    if not info or not info.quests or #info.quests == 0 then
+        return false, 0, 0
+    end
+    local doneCount = 0
+    local totalCount = #info.quests
+    if C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
+        for _, qid in ipairs(info.quests) do
+            if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                doneCount = doneCount + 1
+            end
+        end
+    end
+    return (doneCount >= totalCount and totalCount > 0), doneCount, totalCount
 end
 
 function addon:ScanUnitMount(unit)
@@ -1247,6 +1345,9 @@ function addon:CheckUnitForMountDrop(unit)
     local mounts = self.MountsByNpc[npcID]
     if not mounts then return end
 
+    -- Если этот конкретный рарник уже убит сегодня этим персонажем (КД до сброса), не вопим и не ставим метку на второй круг!
+    if self:IsNpcLockedToday(npcID) then return end
+
     for _, mountID in ipairs(mounts) do
         local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
         if not isCollected then
@@ -1267,6 +1368,9 @@ function addon:CheckVignetteForMountDrop(vignetteGUID)
 
     local mounts = self.MountsByNpc[npcID]
     if not mounts then return end
+
+    -- Если этот конкретный рарник уже убит сегодня (КД до сброса), игнорируем его звезду на миникарте
+    if self:IsNpcLockedToday(npcID) then return end
 
     local vName = SafeNotSecret(vInfo.name) and vInfo.name or "Rare NPC"
     if vName ~= "Rare NPC" then
@@ -1313,6 +1417,7 @@ function addon:GetZoneUncollectedMounts(targetMapID)
                     local attempts, _, info = self:GetMountAttempts(mountID)
                     local globalRarity = self:GetGlobalRarity(mountID)
                     local bestCoord = self:GetBestMountCoords(mountID, mid)
+                    local locked, lockedCount, totalLockoutCount = self:IsMountRareLockedToday(mountID)
                     table.insert(results, {
                         mountID = mountID,
                         name = name,
@@ -1323,7 +1428,9 @@ function addon:GetZoneUncollectedMounts(targetMapID)
                         boss = (bestCoord and bestCoord.n ~= "" and bestCoord.n) or (info and info.boss) or nil,
                         method = info and info.method or "NPC",
                         globalRarity = globalRarity,
-                        locked = self:IsMountRareLockedToday(mountID),
+                        locked = locked,
+                        lockedCount = lockedCount or 0,
+                        totalLockoutCount = totalLockoutCount or 0,
                         coord = bestCoord,
                     })
                 end
@@ -1456,8 +1563,21 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                                 local srcName = (addon.KnownNpcNames and addon.KnownNpcNames[npcID])
                                     or (rs and rs.name and rs.name ~= "" and rs.name)
                                     or ("NPC #" .. tostring(npcID))
-                                for _, mountID in ipairs(addon.MountsByNpc[npcID]) do
-                                    addon:RecordAttempt(mountID, srcName)
+                                local isLocked, lockQid = addon:IsNpcLockedToday(npcID)
+                                local now = GetTime()
+                                local justTurnedIn = lockQid and addon.JustCompletedLockoutQuestAt and addon.JustCompletedLockoutQuestAt[lockQid] and ((now - addon.JustCompletedLockoutQuestAt[lockQid]) < 120)
+                                if isLocked and not justTurnedIn then
+                                    addon.SkipLockoutNoticeAt = addon.SkipLockoutNoticeAt or {}
+                                    if not addon.SkipLockoutNoticeAt[npcID] or (now - addon.SkipLockoutNoticeAt[npcID]) > 60 then
+                                        addon.SkipLockoutNoticeAt[npcID] = now
+                                        if addon.db and addon.db.settings and addon.db.settings.announceAttempts then
+                                            print(string.format(L.CHAT_ATTEMPT_SKIPPED_LOCKOUT, srcName))
+                                        end
+                                    end
+                                else
+                                    for _, mountID in ipairs(addon.MountsByNpc[npcID]) do
+                                        addon:RecordAttempt(mountID, srcName)
+                                    end
                                 end
                             end
                         end
@@ -1468,15 +1588,36 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "QUEST_TURNED_IN" then
         local questID = ...
         if questID and SafeNotSecret(questID) then
+            addon.JustCompletedLockoutQuestAt = addon.JustCompletedLockoutQuestAt or {}
+            addon.JustCompletedLockoutQuestAt[questID] = GetTime()
+
+            local matchedNpcName = nil
+            if addon.RareScannerNpcToMounts then
+                for nid, rsData in pairs(addon.RareScannerNpcToMounts) do
+                    if rsData and type(rsData.quests) == "table" then
+                        for _, rq in ipairs(rsData.quests) do
+                            if rq == questID then
+                                matchedNpcName = (addon.KnownNpcNames and addon.KnownNpcNames[nid]) or rsData.name
+                                break
+                            end
+                        end
+                    end
+                    if matchedNpcName then break end
+                end
+            end
+
             for mountID, info in pairs(addon.DropInfoByMount) do
                 if type(info.quests) == "table" then
                     for _, qid in ipairs(info.quests) do
                         if qid == questID then
-                            addon:RecordAttempt(mountID, info.boss or "Rare")
+                            addon:RecordAttempt(mountID, matchedNpcName or info.boss or "Rare")
                             break
                         end
                     end
                 end
+            end
+            if addon.RefreshWorldMapPins then
+                addon:RefreshWorldMapPins()
             end
         end
         C_Timer.After(0.5, CheckActiveQuestChainProgress)

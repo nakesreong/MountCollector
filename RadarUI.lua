@@ -417,8 +417,26 @@ local function GetOrCreateMapPin(parent, index)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         local mName, _, mIcon = C_MountJournal.GetMountInfoByID(self.mountID)
         local iconTag = mIcon and string.format("|T%s:18:18:0:0|t ", mIcon) or ""
+        local displayMounts = iconTag .. (mName or "Mount")
+        if self.mountIDs and #self.mountIDs > 1 then
+            local parts = {}
+            for _, mID in ipairs(self.mountIDs) do
+                local n, _, ic = C_MountJournal.GetMountInfoByID(mID)
+                if n then
+                    local it = ic and string.format("|T%s:16:16:0:0|t ", ic) or ""
+                    table.insert(parts, it .. n)
+                end
+            end
+            if #parts > 1 then
+                displayMounts = table.concat(parts, " / ")
+            end
+        end
         local npcLine = self.npcName and ("|cffffd100" .. self.npcName .. "|r — ") or ""
-        GameTooltip:SetText(npcLine .. iconTag .. (mName or "Mount"), 1, 1, 1)
+        GameTooltip:SetText(npcLine .. displayMounts, 1, 1, 1)
+        if self.npcID then
+            local npcLocked = addon:IsNpcLockedToday(self.npcID)
+            GameTooltip:AddDoubleLine(L.TT_STATUS_TODAY, npcLocked and L.TT_NPC_STATUS_LOCKED or L.TT_NPC_STATUS_AVAIL)
+        end
         addon:AppendMountCollectorLines(GameTooltip, self.mountID, true, false)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine(L.MAP_PIN_HINT)
@@ -464,6 +482,7 @@ function addon:RefreshWorldMapPins()
     if not cw or not ch or cw <= 0 or ch <= 0 then return end
 
     local pinIdx = 0
+    local pinByCoordKey = {}
     for _, mountID in ipairs(list) do
         local name, _, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
         local isHighlighted = (self.highlightedMapMountID and self.highlightedMapMountID == mountID)
@@ -473,37 +492,65 @@ function addon:RefreshWorldMapPins()
             if info and info.coords then
                 for _, c in ipairs(info.coords) do
                     if c.m == mapID and c.x and c.x > 0 and c.y and c.y > 0 then
-                        pinIdx = pinIdx + 1
-                        local pin = GetOrCreateMapPin(canvas, pinIdx)
-                        pin.mountID = mountID
-                        pin.mapID = mapID
-                        pin.coordX = c.x
-                        pin.coordY = c.y
-                        pin.npcName = (c.n and c.n ~= "") and c.n or info.boss or name
-                        pin.icon:SetTexture(icon or "Interface\\ICONS\\Ability_Mount_SpectralTiger")
-
-                        if isHighlighted then
-                            pin:SetSize(28, 28)
-                            pin.icon:SetDesaturated(false)
-                            pin:SetBackdropBorderColor(0.0, 0.95, 1.0, 1.0)
-                            pin:SetAlpha(1.0)
-                        elseif locked then
-                            pin:SetSize(24, 24)
-                            pin.icon:SetDesaturated(true)
-                            pin:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
-                            pin:SetAlpha(0.6)
+                        local coordKey = string.format("%d:%.1f:%.1f", mapID, c.x, c.y)
+                        local existingPin = pinByCoordKey[coordKey]
+                        if existingPin then
+                            existingPin.mountIDs = existingPin.mountIDs or { existingPin.mountID }
+                            local alreadyAdded = false
+                            for _, mID in ipairs(existingPin.mountIDs) do
+                                if mID == mountID then
+                                    alreadyAdded = true
+                                    break
+                                end
+                            end
+                            if not alreadyAdded then
+                                table.insert(existingPin.mountIDs, mountID)
+                            end
+                            if isHighlighted and not existingPin.pinLocked then
+                                existingPin:SetSize(28, 28)
+                                existingPin.icon:SetDesaturated(false)
+                                existingPin:SetBackdropBorderColor(0.0, 0.95, 1.0, 1.0)
+                                existingPin:SetAlpha(1.0)
+                            end
                         else
-                            pin:SetSize(24, 24)
-                            pin.icon:SetDesaturated(false)
-                            pin:SetBackdropBorderColor(1.0, 0.78, 0.0, 1.0)
-                            pin:SetAlpha(1.0)
-                        end
+                            local pinLocked = (c.npcID and self:IsNpcLockedToday(c.npcID)) or locked
+                            pinIdx = pinIdx + 1
+                            local pin = GetOrCreateMapPin(canvas, pinIdx)
+                            pin.mountID = mountID
+                            pin.mountIDs = { mountID }
+                            pin.npcID = c.npcID
+                            pin.pinLocked = pinLocked
+                            pin.mapID = mapID
+                            pin.coordX = c.x
+                            pin.coordY = c.y
+                            local knownNpcName = (c.npcID and self.KnownNpcNames and self.KnownNpcNames[c.npcID]) or nil
+                            pin.npcName = knownNpcName or ((c.n and c.n ~= "") and c.n) or info.boss or name
+                            pin.icon:SetTexture(icon or "Interface\\ICONS\\Ability_Mount_SpectralTiger")
 
-                        local px = (c.x / 100.0) * cw
-                        local py = -(c.y / 100.0) * ch
-                        pin:ClearAllPoints()
-                        pin:SetPoint("CENTER", canvas, "TOPLEFT", px, py)
-                        pin:Show()
+                            if pinLocked then
+                                pin:SetSize(22, 22)
+                                pin.icon:SetDesaturated(true)
+                                pin:SetBackdropBorderColor(0.45, 0.45, 0.45, 0.75)
+                                pin:SetAlpha(0.55)
+                            elseif isHighlighted then
+                                pin:SetSize(28, 28)
+                                pin.icon:SetDesaturated(false)
+                                pin:SetBackdropBorderColor(0.0, 0.95, 1.0, 1.0)
+                                pin:SetAlpha(1.0)
+                            else
+                                pin:SetSize(24, 24)
+                                pin.icon:SetDesaturated(false)
+                                pin:SetBackdropBorderColor(1.0, 0.78, 0.0, 1.0)
+                                pin:SetAlpha(1.0)
+                            end
+
+                            local px = (c.x / 100.0) * cw
+                            local py = -(c.y / 100.0) * ch
+                            pin:ClearAllPoints()
+                            pin:SetPoint("CENTER", canvas, "TOPLEFT", px, py)
+                            pin:Show()
+                            pinByCoordKey[coordKey] = pin
+                        end
                     end
                 end
             end
@@ -794,10 +841,21 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
                 end
             end
 
+            table.sort(uniqueSpawns, function(a, b)
+                local lockA = (a.npcID and addon:IsNpcLockedToday(a.npcID)) or false
+                local lockB = (b.npcID and addon:IsNpcLockedToday(b.npcID)) or false
+                if lockA ~= lockB then
+                    return not lockA
+                end
+                return (a.x or 0) < (b.x or 0)
+            end)
+
             for spIdx, c in ipairs(uniqueSpawns) do
-                if spIdx <= 12 then
+                if spIdx <= 30 then
                     local zName = (C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(c.m)) and C_Map.GetMapInfo(c.m).name or ("Map #" .. tostring(c.m))
-                    local targetNpc = (c.n and c.n ~= "") and c.n or (dropInfo.boss or name)
+                    local knownNpc = (c.npcID and addon.KnownNpcNames and addon.KnownNpcNames[c.npcID]) or nil
+                    local targetNpc = knownNpc or ((c.n and c.n ~= "") and c.n) or (dropInfo.boss or name)
+                    local spLocked = (c.npcID and addon:IsNpcLockedToday(c.npcID)) or lockedToday
                     table.insert(stepsToRender, {
                         mountID = mountID,
                         stepIndex = nil,
@@ -805,13 +863,13 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
                         customX = c.x,
                         customY = c.y,
                         customNpc = targetNpc,
-                        badge = lockedToday and L.TAG_LOCKED_TODAY or L.QUEST_STEP_ACTIVE,
+                        badge = spLocked and L.RARE_SPAWN_DONE_BADGE or L.RARE_SPAWN_AVAIL_BADGE,
                         coords = string.format("|cff00ccff%s [%.1f, %.1f]|r", zName, c.x, c.y),
                         title = string.format(L.STEP_SPAWN_POINT_FMT, spIdx, targetNpc),
                         npc = "",
                         desc = L.QUEST_STEP_CLICK_HINT,
-                        bg = { 0.07, 0.08, 0.10, 0.92 },
-                        br = { 0.24, 0.26, 0.32, 0.95 },
+                        bg = spLocked and { 0.06, 0.06, 0.07, 0.88 } or { 0.07, 0.10, 0.08, 0.94 },
+                        br = spLocked and { 0.35, 0.22, 0.22, 0.85 } or { 0.22, 0.65, 0.38, 0.95 },
                     })
                 end
             end
@@ -1323,12 +1381,18 @@ function addon:RefreshRadarUI()
         for _, m in ipairs(zoneMounts) do
             if ui.searchText == "" or string.find(string.lower(m.name), ui.searchText, 1, true) then
                 local chPart = (m.chance and m.chance > 0) and string.format(" • 1/%d", m.chance) or ""
+                local lockPart = ""
+                if m.locked then
+                    lockPart = L.TAG_LOCKED_SHORT
+                elseif m.totalLockoutCount and m.totalLockoutCount > 1 then
+                    lockPart = string.format(L.ROW_RARES_LOCKOUT_FMT, m.lockedCount or 0, m.totalLockoutCount)
+                end
                 table.insert(listEntries, {
                     mountID = m.mountID,
                     name = m.name,
                     icon = m.icon,
                     isCollected = false,
-                    subLine = string.format(L.ROW_ATTEMPTS_FMT, m.attempts or 0) .. "|cff888888" .. chPart .. "|r",
+                    subLine = string.format(L.ROW_ATTEMPTS_FMT, m.attempts or 0) .. "|cff888888" .. chPart .. "|r" .. lockPart,
                 })
             end
         end

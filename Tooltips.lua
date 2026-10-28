@@ -155,11 +155,24 @@ function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText, is
             end
         end
 
-        if not isCollected and self:IsMountRareLockedToday(mountID) then
-            tooltip:AddDoubleLine(
-                L.TT_STATUS_TODAY,
-                L.TT_LOCKED_TODAY
-            )
+        if not isCollected then
+            local locked, lockedCount, totalLockoutCount = self:IsMountRareLockedToday(mountID)
+            if locked then
+                tooltip:AddDoubleLine(
+                    L.TT_STATUS_TODAY,
+                    L.TT_LOCKED_TODAY
+                )
+            elseif totalLockoutCount and totalLockoutCount > 1 and lockedCount and lockedCount > 0 then
+                tooltip:AddDoubleLine(
+                    L.TT_STATUS_TODAY,
+                    string.format(L.TT_LOCKED_PARTIAL_FMT, lockedCount, totalLockoutCount, totalLockoutCount - lockedCount)
+                )
+            elseif totalLockoutCount and totalLockoutCount > 0 then
+                tooltip:AddDoubleLine(
+                    L.TT_STATUS_TODAY,
+                    L.TT_AVAILABLE_TODAY
+                )
+            end
         end
     end
 
@@ -227,6 +240,13 @@ if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and
 
             tooltip:AddLine(" ")
             tooltip:AddLine(L.TT_NPC_DROPS_HEADER)
+            local npcLocked, lockQid = addon:IsNpcLockedToday(npcID)
+            if lockQid then
+                tooltip:AddDoubleLine(
+                    L.TT_STATUS_TODAY,
+                    npcLocked and L.TT_NPC_STATUS_LOCKED or L.TT_NPC_STATUS_AVAIL
+                )
+            end
             for _, mountID in ipairs(mounts) do
                 local name, _, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
                 if name then
