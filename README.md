@@ -1,6 +1,6 @@
 # MountCollector — Quest Chain Navigator, Rarity Census, Attempt Tracker & Rare Boss Radar
 
-**Version:** 1.4.0  
+**Version:** 1.4.2  
 **Authors:** Gemini (Tiger) & Anya (5cr3am1ng5oul)  
 **Compatibility:** World of Warcraft: Retail / Midnight (`12.1.7`, `12.1.5`) & The War Within (`11.2.7`)  
 **Source Repository:** [https://github.com/nakesreong/MountCollector](https://github.com/nakesreong/MountCollector)  
@@ -45,9 +45,23 @@ Enhances Blizzard's native Mount Journal without replacing it:
 
 ### 4. World Map Pins, Open-World Rare Radar & Source Item Tooltips
 Built on a database of 264 drop mounts, 353 rare NPCs, and 200+ mount-related items (`MountDropsDB.lua`):
-* **World Map Pins (`WorldMapFrame`):** Renders interactive mount icons at exact spawn coordinates on the World Map (`M`) for uncollected zone rares and bosses. Icons automatically desaturate when the rare is already killed on the active character today (`[Locked]`).
-* **Proximity Rare Alert Banner:** Monitors `NAME_PLATE_UNIT_ADDED`, `PLAYER_TARGET_CHANGED`, and `UPDATE_MOUSEOVER_UNIT` for uncollected mount-dropping NPCs, triggering a movable alert banner with audio notification and optional automatic waypoint placement.
+* **World Map Pins (`WorldMapFrame`):** Renders interactive mount icons at exact spawn coordinates on the World Map (`M`) for uncollected zone rares and bosses. Icons automatically desaturate per-rare when that specific rare is already killed on the active character today (`[Locked Today]`).
+* **Proximity Rare Alert Banner:** Monitors `NAME_PLATE_UNIT_ADDED`, `PLAYER_TARGET_CHANGED`, and `UPDATE_MOUSEOVER_UNIT` for uncollected mount-dropping NPCs, triggering a movable alert banner with audio notification and optional automatic waypoint placement (automatically silenced if that specific rare is already on daily lockout today).
 * **Mount Source Item Tooltips:** Appends target mount ownership and rarity information directly onto tooltips of eggs, keys, fragments, and quest items required to obtain mounts.
+
+### 5. Global & Realm Rarity Engine & Armory DB Updates (`Libs/MountsRarity-2.0.lua`)
+MountCollector evaluates mount rarity across two complementary layers in `Core.lua`:
+1. **Global Armory Ownership (`addon:GetGlobalRarity(mountID)`):**
+   * Queries `Libs/MountsRarity-2.0.lua` (`LibStub("MountsRarity-2.0")`), which contains pre-compiled global mount ownership percentages (`0.0001%` to `100.0%`) aggregated from millions of Battle.net Armory profiles via **Data for Azeroth** (`sgade/MountsRarity`).
+   * Because it is registered via `LibStub:NewLibrary("MountsRarity-2.0", MINOR)`, if a player also runs the standalone `MountsRarity` addon with a newer `MINOR` build timestamp, `LibStub` seamlessly uses whichever dataset is newer; otherwise it uses MountCollector's embedded `Libs/MountsRarity-2.0.lua`.
+   * Categorizes mounts into 6 color-coded tiers (`addon:FormatRarityTier`): **Mythic** (`<1%`), **Ultra Rare** (`<3%`), **Epic** (`<10%`), **Rare** (`<25%`), **Uncommon** (`<50%`), and **Common** (`>=50%`).
+2. **Realm Ownership Projection & Live Census (`addon:GetServerRarityInfo(mountID)`):**
+   * Combines the global Armory percentage with active realm population estimates (`addon.RealmPopulations[realm]`, e.g., *Soulflayer / Свежеватель Душ*, *Howling Fjord / Ревущий фьорд*, *Gordunni / Гордунни*, *Silvermoon*, *Draenor*, *Area 52*, *Illidan*):
+     $$\text{Estimated Realm Owners} = \max\left(\text{Live Seen Players},\ \text{round}\left(\frac{\text{GlobalRarity\%}}{100} \times \text{RealmPopulation}\right)\right)$$
+   * **Live Out-of-Combat Realm Scanner (`addon:ScanUnitMount(unit)`):** While out of combat and outside instances, MountCollector inspects friendly player mount buffs in the open world (using taint-safe `C_Secrets.ShouldAurasBeSecret()` guards) and records unique player sightings per realm in `MountCollectorDB.realmCensus`.
+3. **Automated Twice-Weekly Armory DB Updates:**
+   * **Local / Manual Script:** Run `python scripts/update_armory_rarity_db.py` to fetch the latest `MountsRarity.lua` build from upstream (`sgade/MountsRarity`), report newly added `mountID`s and updated ownership percentages, and sync `Libs/MountsRarity-2.0.lua` to both the repository and the local World of Warcraft client.
+   * **GitHub Actions CI (`.github/workflows/update-rarity-db.yml`):** Automatically runs twice a week (**every Tuesday and Friday at 08:00 UTC**) to pull fresh Armory ownership statistics into `Libs/MountsRarity-2.0.lua` without creating noisy CurseForge release tags.
 
 ---
 

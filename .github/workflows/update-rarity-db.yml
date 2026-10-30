@@ -1,0 +1,37 @@
+name: Update Armory Mount Rarity DB (Twice Weekly)
+
+on:
+  schedule:
+    # Runs every Tuesday and Friday at 08:00 UTC
+    - cron: "0 8 * * 2,5"
+  workflow_dispatch:
+
+jobs:
+  update-rarity-db:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch latest Armory / Data for Azeroth database
+        run: python3 scripts/update_armory_rarity_db.py
+
+      - name: Commit updated Libs/MountsRarity-2.0.lua if changed
+        run: |
+          if git diff --quiet Libs/MountsRarity-2.0.lua; then
+            echo "No changes in Libs/MountsRarity-2.0.lua"
+            exit 0
+          fi
+          MINOR=$(grep -oP 'local MINOR = \K\d+' Libs/MountsRarity-2.0.lua || echo "latest")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Libs/MountsRarity-2.0.lua
+          git commit -m "chore(db): update Armory mount rarity DB (MountsRarity-2.0 v${MINOR})"
+          git push origin HEAD:main

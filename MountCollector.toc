@@ -12,7 +12,7 @@
 ## Notes-zhCN: 在坐骑藏品中追踪稀有坐骑、首领、任务链进度、账号刷取次数以及全球/服务器稀有度。
 ## Notes-zhTW: 在坐騎收藏中追蹤稀有坐騎、首領、任務鏈進度、帳號刷取次數以及全球/伺服器稀有度。
 ## Author: Gemini (Tiger) | QA & Vision: Anya (5cr3am1ng5oul)
-## Version: 1.4.1
+## Version: 1.4.2
 ## SavedVariables: MountCollectorDB
 ## OptionalDeps: MountsRarity, Rarity, RareScanner, TomTom, ElvUI
 ## IconTexture: Interface\ICONS\Ability_Mount_SpectralTiger

@@ -4,12 +4,17 @@ enable-nolib-creation: no
 ignore:
   - .github
   - .gitignore
+  - scripts
   - Screenshots
   - logo.png
   - logo.jpg
   - screenshot_mount_journal.jpg
+  - MountCollector-v1.1.0.zip
   - MountCollector-v1.2.0.zip
+  - MountCollector-v1.4.0.zip
+  - MountCollector-v1.4.1.zip
+  - MountCollector_v1.4.0_CurseForge.zip
+  - MountCollector_v1.4.1_CurseForge.zip
+  - MountCollector-v1.4.2.zip
+  - MountCollector_v1.4.2_CurseForge.zip
 
-manual-changelog:
-  filename: CHANGELOG.md
-  markup-type: markdown
