@@ -258,13 +258,150 @@ function addon:ShowMountDebugWindow(mountID)
     f:Show()
 end
 
--- Универсальная навигация для любого маунта (квестового или дропового)
+-- Окно ручной настройки / корректировки счётчика траев (для Всадника без головы и исторических боссов)
+function addon:ShowSetAttemptsPopup(mountID)
+    local targetMountID = mountID or ui.selectedMountID or (MountJournal and MountJournal.selectedMountID)
+    if not targetMountID then return end
+
+    if not ui.setAttemptsFrame then
+        local f = CreateFrame("Frame", "MountCollectorSetAttemptsFrame", UIParent, "BackdropTemplate")
+        f:SetSize(460, 210)
+        f:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
+        f:SetFrameStrata("FULLSCREEN_DIALOG")
+        ApplyFlatBackdrop(f, 0.05, 0.05, 0.06, 0.98, 1.0, 0.82, 0.0, 1.0)
+        f:EnableMouse(true)
+        f:SetMovable(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", f.StartMoving)
+        f:SetScript("OnDragStop", f.StopMovingOrSizing)
+
+        local top = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        top:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+        top:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -1)
+        top:SetHeight(26)
+        ApplyFlatBackdrop(top, 0.09, 0.09, 0.10, 0.98, 0.22, 0.22, 0.25, 1.0)
+
+        local title = top:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        title:SetPoint("LEFT", top, "LEFT", 10, 0)
+        f.title = title
+
+        local btnClose = CreateFlatButton(top, 20, 20, "X", false)
+        btnClose:SetPoint("RIGHT", top, "RIGHT", -4, 0)
+        btnClose:SetScript("OnClick", function() f:Hide() end)
+
+        local mountLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        mountLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -36)
+        mountLabel:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -36)
+        mountLabel:SetJustifyH("LEFT")
+        f.mountLabel = mountLabel
+
+        local desc = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        desc:SetPoint("TOPLEFT", mountLabel, "BOTTOMLEFT", 0, -6)
+        desc:SetPoint("RIGHT", f, "RIGHT", -14, 0)
+        desc:SetJustifyH("LEFT")
+        desc:SetTextColor(0.82, 0.82, 0.85, 1.0)
+        f.desc = desc
+
+        local boxFrame = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        boxFrame:SetSize(130, 28)
+        boxFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 44)
+        ApplyFlatBackdrop(boxFrame, 0.02, 0.02, 0.03, 1.0, 0.85, 0.68, 0.15, 1.0)
+
+        local eb = CreateFrame("EditBox", nil, boxFrame)
+        eb:SetPoint("TOPLEFT", boxFrame, "TOPLEFT", 8, -2)
+        eb:SetPoint("BOTTOMRIGHT", boxFrame, "BOTTOMRIGHT", -8, 2)
+        eb:SetFontObject("GameFontHighlightLarge")
+        eb:SetJustifyH("CENTER")
+        eb:SetAutoFocus(false)
+        eb:SetNumeric(true)
+        eb:SetMaxLetters(6)
+        f.editBox = eb
+
+        local function AdjustVal(delta)
+            local cur = tonumber(eb:GetText()) or 0
+            eb:SetText(tostring(math.max(0, cur + delta)))
+        end
+
+        local btnMinus1 = CreateFlatButton(f, 44, 28, "-1", false)
+        btnMinus1:SetPoint("LEFT", boxFrame, "RIGHT", 6, 0)
+        btnMinus1:SetScript("OnClick", function() AdjustVal(-1) end)
+
+        local btnPlus1 = CreateFlatButton(f, 44, 28, "+1", false)
+        btnPlus1:SetPoint("LEFT", btnMinus1, "RIGHT", 5, 0)
+        btnPlus1:SetScript("OnClick", function() AdjustVal(1) end)
+
+        local btnPlus10 = CreateFlatButton(f, 52, 28, "+10", false)
+        btnPlus10:SetPoint("LEFT", btnPlus1, "RIGHT", 5, 0)
+        btnPlus10:SetScript("OnClick", function() AdjustVal(10) end)
+
+        local btnPlus50 = CreateFlatButton(f, 52, 28, "+50", false)
+        btnPlus50:SetPoint("LEFT", btnPlus10, "RIGHT", 5, 0)
+        btnPlus50:SetScript("OnClick", function() AdjustVal(50) end)
+
+        local btnSave = CreateFlatButton(f, 210, 26, L.SET_ATTEMPTS_SAVE, true)
+        btnSave:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 10)
+        btnSave:SetScript("OnClick", function()
+            if f.currentMountID then
+                local val = tonumber(eb:GetText()) or 0
+                addon:SetManualMountAttempts(f.currentMountID, val, false)
+            end
+            f:Hide()
+        end)
+        f.btnSave = btnSave
+
+        local btnReset = CreateFlatButton(f, 210, 26, L.SET_ATTEMPTS_RESET, false)
+        btnReset:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14, 10)
+        btnReset:SetScript("OnClick", function()
+            if f.currentMountID then
+                addon:SetManualMountAttempts(f.currentMountID, 0, true)
+            end
+            f:Hide()
+        end)
+        f.btnReset = btnReset
+
+        eb:SetScript("OnEnterPressed", function()
+            btnSave:Click()
+        end)
+        eb:SetScript("OnEscapePressed", function()
+            f:Hide()
+        end)
+
+        ui.setAttemptsFrame = f
+    end
+
+    local f = ui.setAttemptsFrame
+    f.currentMountID = targetMountID
+    local name, _, icon = C_MountJournal.GetMountInfoByID(targetMountID)
+    local curAttempts = self:GetMountAttempts(targetMountID)
+    local iconTag = icon and string.format("|T%s:20:20:0:0|t ", icon) or ""
+
+    f.title:SetText(L.SET_ATTEMPTS_TITLE)
+    f.mountLabel:SetText(iconTag .. "|cffa335ee" .. (name or "Mount") .. "|r")
+    f.desc:SetText(L.SET_ATTEMPTS_DESC)
+    f.btnSave:SetText(L.SET_ATTEMPTS_SAVE)
+    f.btnReset:SetText(L.SET_ATTEMPTS_RESET)
+    f.editBox:SetText(tostring(curAttempts or 0))
+    f:Show()
+    f.editBox:SetFocus()
+    f.editBox:HighlightText()
+end
+
+-- Универсальная навигация для любого маунта (квестового, данжевого или дропового)
 function addon:NavigateMountTarget(mountID, forceFirstStep)
     if not mountID then return end
     local qStatus = self:GetMountQuestChainStatus(mountID)
     if qStatus then
         local stepIdx = forceFirstStep and 1 or qStatus.currentStepIndex or 1
         self:NavigateMountQuestStep(mountID, stepIdx, false)
+        return
+    end
+    local dStatus = self:GetDungeonMountStatus(mountID)
+    if dStatus and dStatus.mapID and dStatus.x and dStatus.y then
+        if forceFirstStep then
+            self:SetMountWaypoint(mountID, dStatus.mapID, dStatus.x, dStatus.y, dStatus.instanceTitle, false)
+        else
+            self:SetMountWaypoint(mountID, dStatus.mapID, dStatus.x, dStatus.y, dStatus.instanceTitle .. " — " .. dStatus.bossTitle, false)
+        end
         return
     end
     if forceFirstStep then
@@ -671,6 +808,9 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
     if panel.btnDebug then
         panel.btnDebug:SetText(L.QUEST_DEBUG_BTN)
     end
+    if panel.btnSetAttempts then
+        panel.btnSetAttempts:SetText(L.BTN_SET_ATTEMPTS)
+    end
     if panel.btnNavNow then
         panel.btnNavNow:SetText(L.QUEST_NAV_BTN)
     end
@@ -700,8 +840,12 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
     local pctText, tierText = addon:FormatRarityTier(globalPct)
     local attempts, byChar, dropInfo = addon:GetMountAttempts(mountID)
     local qStatus = addon:GetMountQuestChainStatus(mountID)
+    local dStatus = (not qStatus) and addon:GetDungeonMountStatus(mountID) or nil
     local bestCoord = addon:GetBestMountCoords(mountID)
 
+    if panel.btnNavNow then
+        panel.btnNavNow:SetText(dStatus and L.DUNGEON_ENTRANCE_BTN or L.QUEST_NAV_BTN)
+    end
     if panel.btnNavStart then
         panel.btnNavStart:SetText(qStatus and L.QUEST_START_BTN or L.RARE_PIN_ALL_BTN)
     end
@@ -717,6 +861,14 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         local curZone = (qStatus.currentStep and qStatus.currentStep.zone) or ""
         table.insert(metaLines, string.format(L.META_CHAIN_TYPE_ZONE, qStatus.category, curZone ~= "" and curZone or "—"))
         table.insert(metaLines, string.format(L.META_CHAIN_PROGRESS, qStatus.completedSteps, qStatus.totalSteps))
+    elseif dStatus then
+        if dStatus.eventTitle then
+            table.insert(metaLines, string.format(L.REQUIRES_EVENT_FMT, dStatus.eventTitle))
+        end
+        table.insert(metaLines, string.format(L.DUNGEON_META_LINE1_FMT, dStatus.instanceTitle, dStatus.bossTitle))
+        table.insert(metaLines, string.format(L.DUNGEON_META_LINE2_FMT, dStatus.difficultyTitle, dStatus.lockoutTitle, dStatus.minLevel))
+        local chStr = string.format(L.MD_CHANCE_PART, dStatus.chance)
+        table.insert(metaLines, string.format(L.META_DROP_ATTEMPTS, attempts, chStr))
     else
         local bossStr = (dropInfo and dropInfo.boss) or (bestCoord and bestCoord.n) or "—"
         local zoneStr = "—"
@@ -736,6 +888,10 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
     end
 
     panel.metaFS:SetText(table.concat(metaLines, "\n"))
+    if panel.headerBox then
+        local metaH = panel.metaFS:GetStringHeight() or 40
+        panel.headerBox:SetHeight(math.max(114, 66 + metaH))
+    end
 
     -- Заполняем карточки шагов (Сделано / Надо сделать)
     local stepsToRender = {}
@@ -785,6 +941,89 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
                 br = br,
             })
         end
+    elseif dStatus then
+        -- 1. Карточка: Как получить, шанс выпадения, КД и событие
+        local badge1
+        if isCollected then
+            badge1 = L.QUEST_STEP_DONE
+        elseif dStatus.eventTitle then
+            badge1 = string.format(L.REQUIRES_EVENT_FMT, dStatus.eventTitle)
+        elseif dStatus.isLockedOnCurrentChar then
+            badge1 = L.ALT_STATUS_LOCKED .. "  |cffaaaaaa(" .. dStatus.lockoutTitle .. ")|r"
+        else
+            badge1 = L.QUEST_STEP_ACTIVE .. "  |cff00ff96(" .. dStatus.lockoutTitle .. ")|r"
+        end
+
+        local coordText = "|cff00ccff" .. (dStatus.zoneTitle or "") .. "|r"
+        if dStatus.mapID and dStatus.x and dStatus.y then
+            coordText = string.format("|cff00ccff%s [%.1f, %.1f]|r", dStatus.zoneTitle or "", dStatus.x, dStatus.y)
+        end
+
+        local descLines = {}
+        if dStatus.eventTitle then
+            table.insert(descLines, string.format(L.REQUIRES_EVENT_FMT, dStatus.eventTitle))
+        end
+        if dStatus.howToGet and dStatus.howToGet ~= "" then
+            table.insert(descLines, dStatus.howToGet)
+        end
+        if attempts > 0 and dStatus.chance and dStatus.chance > 1 then
+            local luck = (1.0 - ((1.0 - (1.0 / dStatus.chance)) ^ attempts)) * 100.0
+            table.insert(descLines, string.format(L.TT_ACCOUNT_ATTEMPTS .. " |cffffd100%d|r" .. L.TT_LUCK_INLINE, attempts, luck))
+        end
+        table.insert(descLines, L.QUEST_STEP_CLICK_HINT)
+
+        table.insert(stepsToRender, {
+            mountID = mountID,
+            stepIndex = nil,
+            customMapID = dStatus.mapID,
+            customX = dStatus.x,
+            customY = dStatus.y,
+            customNpc = dStatus.instanceTitle .. " — " .. dStatus.bossTitle,
+            badge = badge1,
+            coords = coordText,
+            title = string.format("%s — %s (%s)", dStatus.instanceTitle, dStatus.bossTitle, dStatus.difficultyTitle),
+            npc = string.format(L.DUNGEON_CHANCE_LOCKOUT_LINE_FMT, dStatus.chance, dStatus.chancePct, dStatus.lockoutTitle),
+            desc = table.concat(descLines, "\n"),
+            bg = isCollected and { 0.06, 0.12, 0.08, 0.92 } or (dStatus.eventTitle and { 0.15, 0.10, 0.04, 0.96 } or { 0.12, 0.11, 0.06, 0.94 }),
+            br = isCollected and { 0.18, 0.58, 0.30, 0.95 } or (dStatus.eventTitle and { 1.0, 0.55, 0.0, 1.0 } or { 0.85, 0.68, 0.15, 1.0 }),
+        })
+
+        -- 2. Карточка: Твинки аккаунта (с фильтром по уровню minLevel+ и проверкой КД)
+        local altLines = {
+            string.format(L.DUNGEON_ALTS_DESC_FMT, dStatus.minLevel, dStatus.minLevel),
+        }
+        if #dStatus.eligibleChars > 0 then
+            for _, ch in ipairs(dStatus.eligibleChars) do
+                local stTag = ch.isLocked and L.ALT_STATUS_LOCKED or L.ALT_STATUS_READY
+                local charTries = (byChar and byChar[ch.charKey]) or 0
+                local triesPart = (charTries > 0) and string.format("  |cffaaaaaa(%s)|r", string.format(L.ROW_ATTEMPTS_FMT, charTries)) or ""
+                table.insert(altLines, string.format("• %s — %s%s", ch.coloredName, stTag, triesPart))
+            end
+        end
+        if #dStatus.underleveledChars > 0 then
+            local lowNames = {}
+            for _, ch in ipairs(dStatus.underleveledChars) do
+                table.insert(lowNames, ch.coloredName)
+            end
+            table.insert(altLines, string.format(L.ALT_UNDERLEVEL_HEADER_FMT, dStatus.minLevel, table.concat(lowNames, ", ")))
+        end
+
+        local allLocked = (dStatus.totalEligible > 0 and dStatus.readyCount == 0)
+        table.insert(stepsToRender, {
+            mountID = mountID,
+            stepIndex = nil,
+            customMapID = dStatus.mapID,
+            customX = dStatus.x,
+            customY = dStatus.y,
+            customNpc = dStatus.instanceTitle,
+            badge = allLocked and L.DUNGEON_ALTS_CARD_BADGE_ALL_LOCKED or L.DUNGEON_ALTS_CARD_BADGE_READY,
+            coords = string.format("|cffffd100%d+ lvl|r", dStatus.minLevel),
+            title = string.format(L.DUNGEON_ALTS_TITLE_FMT, dStatus.minLevel, dStatus.instanceTitle, dStatus.readyCount, dStatus.totalEligible),
+            npc = "",
+            desc = table.concat(altLines, "\n"),
+            bg = allLocked and { 0.10, 0.06, 0.06, 0.92 } or { 0.07, 0.10, 0.12, 0.95 },
+            br = allLocked and { 0.65, 0.25, 0.25, 0.90 } or { 0.25, 0.70, 0.95, 0.95 },
+        })
     else
         -- 1. Основная карточка источника дропа / торговца / достижения
         local lockedToday = addon:IsMountRareLockedToday(mountID)
@@ -926,6 +1165,7 @@ local function CreateMountInspectorWidget(parent, scrollName, cardWidth, isDocke
     headerBox:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -8)
     headerBox:SetHeight(114)
     ApplyFlatBackdrop(headerBox, 0.07, 0.07, 0.08, 0.96, 0.22, 0.22, 0.25, 1.0)
+    panel.headerBox = headerBox
 
     local iconFrame = CreateFrame("Frame", nil, headerBox, "BackdropTemplate")
     iconFrame:SetSize(44, 44)
@@ -957,7 +1197,7 @@ local function CreateMountInspectorWidget(parent, scrollName, cardWidth, isDocke
     panel.metaFS = metaFS
 
     -- Кнопка Lua-дебаггера цепочки и условий справа над чек-листом
-    local btnDebug = CreateFlatButton(panel, 146, 20, L.QUEST_DEBUG_BTN, false)
+    local btnDebug = CreateFlatButton(panel, 134, 20, L.QUEST_DEBUG_BTN, false)
     btnDebug:SetPoint("TOPRIGHT", headerBox, "BOTTOMRIGHT", 0, -4)
     btnDebug:SetScript("OnClick", function()
         local mID = isDockedInJournal and (MountJournal and MountJournal.selectedMountID) or ui.selectedMountID
@@ -965,10 +1205,19 @@ local function CreateMountInspectorWidget(parent, scrollName, cardWidth, isDocke
     end)
     panel.btnDebug = btnDebug
 
+    -- Кнопка ручной настройки траев (для Всадника без головы и исторических боссов)
+    local btnSetAttempts = CreateFlatButton(panel, 102, 20, L.BTN_SET_ATTEMPTS, true)
+    btnSetAttempts:SetPoint("RIGHT", btnDebug, "LEFT", -5, 0)
+    btnSetAttempts:SetScript("OnClick", function()
+        local mID = isDockedInJournal and (MountJournal and MountJournal.selectedMountID) or ui.selectedMountID
+        addon:ShowSetAttemptsPopup(mID)
+    end)
+    panel.btnSetAttempts = btnSetAttempts
+
     -- Заголовок секции чек-листа
     local secLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     secLabel:SetPoint("TOPLEFT", headerBox, "BOTTOMLEFT", 2, -8)
-    secLabel:SetPoint("RIGHT", btnDebug, "LEFT", -6, 0)
+    secLabel:SetPoint("RIGHT", btnSetAttempts, "LEFT", -6, 0)
     secLabel:SetJustifyH("LEFT")
     secLabel:SetWordWrap(false)
     secLabel:SetTextColor(1.0, 0.82, 0.0, 1.0)
@@ -1079,7 +1328,7 @@ radarClose:SetScript("OnClick", function() radarFrame:Hide() end)
 
 -- Панель вкладок и счётчика «Всего: X»
 local totalBox = CreateFrame("Frame", nil, radarFrame, "BackdropTemplate")
-totalBox:SetSize(150, 24)
+totalBox:SetSize(112, 24)
 totalBox:SetPoint("TOPLEFT", radarFrame, "TOPLEFT", 12, -36)
 ApplyFlatBackdrop(totalBox, 0.03, 0.03, 0.04, 0.95, 0.18, 0.18, 0.20, 1.0)
 
@@ -1087,17 +1336,20 @@ local totalFS = totalBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 totalFS:SetPoint("CENTER", totalBox, "CENTER", 0, 0)
 totalFS:SetTextColor(1.0, 0.82, 0.0, 1.0)
 
-local tabQuestsBtn = CreateFlatButton(radarFrame, 155, 24, "", false)
-tabQuestsBtn:SetPoint("LEFT", totalBox, "RIGHT", 8, 0)
+local tabQuestsBtn = CreateFlatButton(radarFrame, 138, 24, "", false)
+tabQuestsBtn:SetPoint("LEFT", totalBox, "RIGHT", 6, 0)
 
-local tabZoneBtn = CreateFlatButton(radarFrame, 145, 24, "", false)
-tabZoneBtn:SetPoint("LEFT", tabQuestsBtn, "RIGHT", 6, 0)
+local tabDungeonsBtn = CreateFlatButton(radarFrame, 110, 24, "", false)
+tabDungeonsBtn:SetPoint("LEFT", tabQuestsBtn, "RIGHT", 5, 0)
 
-local tabAllBtn = CreateFlatButton(radarFrame, 155, 24, "", false)
-tabAllBtn:SetPoint("LEFT", tabZoneBtn, "RIGHT", 6, 0)
+local tabZoneBtn = CreateFlatButton(radarFrame, 126, 24, "", false)
+tabZoneBtn:SetPoint("LEFT", tabDungeonsBtn, "RIGHT", 5, 0)
 
-local btnPinZone = CreateFlatButton(radarFrame, 125, 24, "", false)
-btnPinZone:SetPoint("LEFT", tabAllBtn, "RIGHT", 6, 0)
+local tabAllBtn = CreateFlatButton(radarFrame, 132, 24, "", false)
+tabAllBtn:SetPoint("LEFT", tabZoneBtn, "RIGHT", 5, 0)
+
+local btnPinZone = CreateFlatButton(radarFrame, 104, 24, "", false)
+btnPinZone:SetPoint("LEFT", tabAllBtn, "RIGHT", 5, 0)
 btnPinZone:SetScript("OnClick", function()
     local zoneMounts, mapID = addon:GetZoneUncollectedMounts()
     for _, m in ipairs(zoneMounts) do
@@ -1110,7 +1362,7 @@ btnPinZone:SetScript("OnClick", function()
     end
 end)
 
-local btnSettings = CreateFlatButton(radarFrame, 88, 24, "", false)
+local btnSettings = CreateFlatButton(radarFrame, 82, 24, "", false)
 btnSettings:SetPoint("TOPRIGHT", radarFrame, "TOPRIGHT", -12, -36)
 btnSettings:SetScript("OnClick", function()
     if ui.currentTab == "SETTINGS" then
@@ -1265,6 +1517,8 @@ function addon:InspectMountInCollector(mountID)
     ui.pinnedInspectMountID = mountID
     if self:GetMountQuestChainStatus(mountID) then
         ui.currentTab = "QUESTS"
+    elseif self:GetDungeonMountStatus(mountID) then
+        ui.currentTab = "DUNGEONS"
     elseif ui.currentTab == "SETTINGS" then
         ui.currentTab = "ALL"
     end
@@ -1285,6 +1539,7 @@ end
 function addon:RefreshRadarUI()
     radarTitle:SetText(L.RADAR_WINDOW_TITLE)
     tabQuestsBtn:SetText(L.TAB_QUEST_CHAINS)
+    tabDungeonsBtn:SetText(L.TAB_DUNGEON_LOOT)
     tabZoneBtn:SetText(L.TAB_CURRENT_ZONE)
     tabAllBtn:SetText(L.TAB_ALL_ATTEMPTS)
     btnPinZone:SetText(L.BTN_PIN_ALL_ZONE)
@@ -1299,6 +1554,7 @@ function addon:RefreshRadarUI()
     end
 
     tabQuestsBtn:SetActiveTab(ui.currentTab == "QUESTS")
+    tabDungeonsBtn:SetActiveTab(ui.currentTab == "DUNGEONS")
     tabZoneBtn:SetActiveTab(ui.currentTab == "ZONE")
     tabAllBtn:SetActiveTab(ui.currentTab == "ALL")
     btnSettings:SetActiveTab(ui.currentTab == "SETTINGS")
@@ -1375,6 +1631,50 @@ function addon:RefreshRadarUI()
                 return a.hasStarted
             end
             return (a.completedSteps or 0) > (b.completedSteps or 0)
+        end)
+    elseif ui.currentTab == "DUNGEONS" then
+        if type(self.MountDungeonsDB) == "table" then
+            for dbIdx, dEntry in ipairs(self.MountDungeonsDB) do
+                local mID = dEntry.resolvedMountID or (dEntry.spellID and self.MountBySpell[dEntry.spellID]) or dEntry.mountID
+                local st = mID and self:GetDungeonMountStatus(mID)
+                if st then
+                    local sTxt = ui.searchText or ""
+                    local matchSearch = (sTxt == "")
+                        or string.find(string.lower(st.name or ""), sTxt, 1, true)
+                        or string.find(string.lower(st.instanceTitle or ""), sTxt, 1, true)
+                        or string.find(string.lower(st.bossTitle or ""), sTxt, 1, true)
+                        or (st.eventTitle and string.find(string.lower(st.eventTitle), sTxt, 1, true))
+                    if matchSearch then
+                        local attempts = self:GetMountAttempts(mID)
+                        local subLine
+                        if st.isCollected then
+                            subLine = string.format("%s |cff888888• %s|r", L.TAG_COLLECTED, st.eventTitle or st.instanceTitle)
+                        elseif st.eventTitle then
+                            local altsPart = (st.totalEligible > 0) and string.format(L.ROW_ALTS_READY_FMT, st.readyCount, st.totalEligible) or ""
+                            subLine = string.format(L.ROW_REQUIRES_EVENT_FMT, st.eventTitle) .. string.format(" |cff888888• 1/%d|r", st.chance) .. altsPart
+                        else
+                            local altsPart = (st.totalEligible > 0) and string.format(L.ROW_ALTS_READY_FMT, st.readyCount, st.totalEligible) or ""
+                            subLine = string.format(L.ROW_ATTEMPTS_FMT, attempts or 0) .. string.format(" |cff888888• 1/%d • %s|r", st.chance, st.instanceTitle) .. altsPart
+                        end
+                        table.insert(listEntries, {
+                            mountID = st.mountID,
+                            name = st.name,
+                            icon = st.icon,
+                            attempts = attempts,
+                            isCollected = st.isCollected,
+                            dbOrder = dbIdx,
+                            subLine = subLine,
+                        })
+                    end
+                end
+            end
+        end
+
+        table.sort(listEntries, function(a, b)
+            if a.isCollected ~= b.isCollected then
+                return not a.isCollected
+            end
+            return (a.dbOrder or 0) < (b.dbOrder or 0)
         end)
     elseif ui.currentTab == "ZONE" then
         local zoneMounts = self:GetZoneUncollectedMounts()
@@ -1502,6 +1802,11 @@ end
 
 tabQuestsBtn:SetScript("OnClick", function()
     ui.currentTab = "QUESTS"
+    addon:RefreshRadarUI()
+end)
+
+tabDungeonsBtn:SetScript("OnClick", function()
+    ui.currentTab = "DUNGEONS"
     addon:RefreshRadarUI()
 end)
 
@@ -1661,6 +1966,14 @@ SlashCmdList["MOUNTCOLLECTOR"] = function(msg)
     elseif string.find(cmd, "^debug") or string.find(cmd, "^dbg") then
         local argID = tonumber(string.match(cmd, "(%d+)"))
         addon:ShowMountDebugWindow(argID)
+    elseif string.find(cmd, "^set") then
+        local count = tonumber(string.match(cmd, "(%d+)"))
+        local mID = ui.selectedMountID or (MountJournal and MountJournal.selectedMountID)
+        if mID and count then
+            addon:SetManualMountAttempts(mID, count, false)
+        else
+            addon:ShowSetAttemptsPopup(mID)
+        end
     else
         addon:ToggleRadarWindow()
     end

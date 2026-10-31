@@ -1,6 +1,6 @@
 # MountCollector — Quest Chain Navigator, Rarity Census, Attempt Tracker & Rare Boss Radar
 
-**Version:** 1.4.2  
+**Version:** 1.5.0  
 **Authors:** Gemini (Tiger) & Anya (5cr3am1ng5oul)  
 **Compatibility:** World of Warcraft: Retail / Midnight (`12.1.7`, `12.1.5`) & The War Within (`11.2.7`)  
 **Source Repository:** [https://github.com/nakesreong/MountCollector](https://github.com/nakesreong/MountCollector)  
@@ -10,13 +10,14 @@
 
 ## Overview
 
-**MountCollector** is a modular mount collection, progression, and radar suite for World of Warcraft. It unifies multi-step questline tracking, egg incubation checklists, global and realm rarity statistics, account-wide boss/rare attempt counters, and open-world rare navigation into a cohesive dark flat UI modeled after ElvUI.
+**MountCollector** is a modular mount collection, progression, and radar suite for World of Warcraft. It unifies multi-step questline tracking, egg incubation checklists, dungeon/raid/holiday event lockout matrices, global and realm rarity statistics, account-wide boss/rare attempt counters, and open-world rare navigation into a cohesive dark flat UI modeled after ElvUI.
 
 * **Step-by-Step Quest Chain & Egg Incubation Navigator:** Tracks progress across 54 complex multi-day questlines, secret mounts, all 11 Legion Class Order Hall campaigns, and hatchling incubation chains (`MountQuestsDB`), with live Lua quest/item evaluation and automated **TomTom** + Blizzard 3D waypoint routing.
+* **Dungeon, Raid & Holiday Event Loot Tracker (`MountDungeonsDB`):** Dedicated **Dungeon Loot (`Данж-лут`)** tab covering 42 iconic Holiday Event mounts (*The Horseman's Reins*, *The Headless Horseman's Ghoulish Charger*, *X-45 Heartbreaker*, *Sweeper*, *Brewfest Ram & Kodo*, *Noblegarden Carpet*), Mythic/Heroic Dungeon mounts, and Legacy/Modern Raid boss drops — complete with drop chance, lockout type (`Daily` / `Weekly` / `Unlimited`), required holiday event badge, and an **Account Alt Lockout & Minimum Level Matrix** (`Ready` vs `Saved/CD` vs `Below Min Level`).
 * **Built-In Lua Quest & Condition Debugger (`/mc debug`):** Inspects every quest flag (`IsQuestFlaggedCompleted`, `IsQuestFlaggedCompletedOnAccount`, `IsOnQuest`, `GetQuestObjectives`), achievement criteria, bag item count, and daily rare lockout in a copyable diagnostic window.
 * **Two-Column Control Center (`/mc`) & Mount Journal Side-Dock:** Features a standalone two-column browser (`/mc`) alongside a synchronized side-column docked directly to the right edge of the standard **Mount Journal (`CollectionsJournal`)** and a one-click **Source (MountCollector)** button on every mount's 3D preview.
 * **Global & Realm Rarity Census:** Integrates **Data for Azeroth** global ownership percentages (`MountsRarity-2.0`) with realm population ownership estimates and a live out-of-instance player mount scanner.
-* **Account-Wide Attempt Counter & Probability Engine:** Tracks boss and rare NPC kills across all characters on your account (`MountCollectorDB`), bridges with **Rarity** and Blizzard's internal kill statistics (`GetStatistic`), and calculates cumulative drop odds (`1 - (1 - 1/N)^K`).
+* **Account-Wide Attempt Counter, `GetStatistic` Scanner & Manual Override:** Tracks boss, rare NPC, and holiday cache (`Loot-Filled Pumpkin`, `Heart-Shaped Box`, Paragon chests) attempts across all characters on your account (`MountCollectorDB`), automatically aggregates per-character Blizzard achievement statistics (`GetStatistic`) across alts, and provides an in-UI **Set Attempts (`Задать траи`)** modal for historical pre-WotLK/holiday kills.
 * **World of Warcraft 12.x (Midnight) Taint-Safe Architecture:** Engineered with `C_Secrets.ShouldAurasBeSecret()`, `C_Secrets.ShouldUnitAuraIndexBeSecret()`, and `issecretvalue()` guards, avoiding protected minimap vignette events (`VIGNETTE_MINIMAP_UPDATED`) to guarantee zero taint in modern combat and instance environments.
 * **Multi-Language Client Support:** Localized across all 11 World of Warcraft client locales (`enUS`/`enGB`, `ruRU`, `deDE`, `frFR`, `esES`/`esMX`, `itIT`, `ptBR`, `koKR`, `zhCN`, `zhTW`) with instant live language switching without reloading the UI.
 

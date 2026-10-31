@@ -18,8 +18,10 @@ local MountsRarity = LibStub and LibStub("MountsRarity-2.0", true)
 
 addon.MountBySpell = {}
 addon.MountByItem = {}
+addon.MountsBySourceItem = {}
 addon.DropInfoByMount = {}
 addon.MountQuestsByMountID = {}
+addon.MountDungeonsByMountID = {}
 addon.MountsByNpc = {}
 addon.MountsByMap = {}
 addon.RecentAttemptLock = {}
@@ -63,6 +65,25 @@ end
 
 addon.SafeNotSecret = SafeNotSecret
 
+local function IsValidNpcName(name)
+    if not SafeNotSecret(name) or type(name) ~= "string" or name == "" then
+        return false
+    end
+    if _G.UNKNOWNOBJECT and name == _G.UNKNOWNOBJECT then
+        return false
+    end
+    if _G.UNKNOWN and name == _G.UNKNOWN then
+        return false
+    end
+    local lower = string.lower(name)
+    if lower == "неизвестно" or lower == "unknown" or lower == "rare npc" then
+        return false
+    end
+    return true
+end
+
+addon.IsValidNpcName = IsValidNpcName
+
 function addon:GetCharKey()
     local name = UnitName("player") or "Unknown"
     local realm = GetRealmName() or "Realm"
@@ -86,9 +107,21 @@ function addon:InitDB()
     end
     local db = _G.MountCollectorDB
     db.attempts = db.attempts or {}
+    db.chars = db.chars or {}
     db.realmCensus = db.realmCensus or {}
+    db.knownNpcNames = db.knownNpcNames or {}
     db.minimap = db.minimap or { hide = false }
     db.settings = db.settings or {}
+
+    for k, v in pairs(db.knownNpcNames) do
+        if not IsValidNpcName(v) then
+            db.knownNpcNames[k] = nil
+        end
+    end
+    if not db.knownNpcNames[250780] then
+        db.knownNpcNames[250780] = "Волнуш"
+    end
+    self.KnownNpcNames = db.knownNpcNames
 
     local defaults = {
         language = "auto",
@@ -178,8 +211,10 @@ function addon:BuildMountIndex()
 
     wipe(self.MountBySpell)
     wipe(self.MountByItem)
+    wipe(self.MountsBySourceItem)
     wipe(self.DropInfoByMount)
     wipe(self.MountQuestsByMountID)
+    wipe(self.MountDungeonsByMountID)
     wipe(self.MountsByNpc)
     wipe(self.MountsByMap)
 
@@ -220,6 +255,8 @@ function addon:BuildMountIndex()
                 for _, srcItemID in ipairs(dropData.sourceItems or {}) do
                     if srcItemID and srcItemID > 0 then
                         self.MountByItem[srcItemID] = mountID
+                        self.MountsBySourceItem[srcItemID] = self.MountsBySourceItem[srcItemID] or {}
+                        AddUniqueToList(self.MountsBySourceItem[srcItemID], mountID)
                     end
                 end
                 for _, nid in ipairs(dropData.npcs or {}) do
@@ -357,6 +394,63 @@ function addon:BuildMountIndex()
             if mID and C_MountJournal.GetMountInfoByID(mID) then
                 qChain.resolvedMountID = mID
                 self.MountQuestsByMountID[mID] = qChain
+            end
+        end
+    end
+
+    -- 6. Индексируем данж-лут, рейдовых боссов и праздничные события из MountDungeonsDB
+    if type(self.MountDungeonsDB) == "table" then
+        for _, dEntry in ipairs(self.MountDungeonsDB) do
+            local mID = (dEntry.spellID and self.MountBySpell[dEntry.spellID])
+                or (dEntry.itemID and C_MountJournal.GetMountFromItem and C_MountJournal.GetMountFromItem(dEntry.itemID))
+                or (dEntry.spellID and C_MountJournal.GetMountFromSpell and C_MountJournal.GetMountFromSpell(dEntry.spellID))
+                or (dEntry.itemID and self.MountByItem[dEntry.itemID])
+                or dEntry.mountID
+            if mID and C_MountJournal.GetMountInfoByID(mID) then
+                dEntry.resolvedMountID = mID
+                self.MountDungeonsByMountID[mID] = dEntry
+
+                local info = self.DropInfoByMount[mID]
+                if not info then
+                    local name, spellID = C_MountJournal.GetMountInfoByID(mID)
+                    info = {
+                        mountID = mID,
+                        name = name,
+                        spellID = spellID or dEntry.spellID,
+                        itemID = dEntry.itemID,
+                        chance = dEntry.chance or 100,
+                        method = (dEntry.sourceKind == "EVENT") and "SPECIAL" or "BOSS",
+                        boss = dEntry.bossEN or dEntry.bossRU,
+                        bossRU = dEntry.bossRU,
+                        bossEN = dEntry.bossEN,
+                        npcs = {},
+                        stats = {},
+                        quests = {},
+                        maps = {},
+                        coords = {},
+                    }
+                    self.DropInfoByMount[mID] = info
+                else
+                    if not info.chance and dEntry.chance then
+                        info.chance = dEntry.chance
+                    end
+                    if not info.boss and (dEntry.bossEN or dEntry.bossRU) then
+                        info.boss = dEntry.bossEN or dEntry.bossRU
+                    end
+                    info.bossRU = dEntry.bossRU or info.bossRU
+                    info.bossEN = dEntry.bossEN or info.bossEN
+                end
+                if dEntry.itemID and dEntry.itemID > 0 and not self.MountByItem[dEntry.itemID] then
+                    self.MountByItem[dEntry.itemID] = mID
+                end
+                if dEntry.mapID and dEntry.x and dEntry.y and #info.coords == 0 then
+                    table.insert(info.coords, {
+                        m = dEntry.mapID,
+                        x = dEntry.x,
+                        y = dEntry.y,
+                        n = dEntry.instanceEN or dEntry.instanceRU or info.boss or info.name,
+                    })
+                end
             end
         end
     end
@@ -740,17 +834,23 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
     local info = self.DropInfoByMount[mountID]
     local mapID = preferredMapID or (C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player"))
     local x, y = liveX, liveY
-    local npcLabel = customLabel or (info and info.boss) or name
+    local validCustomLabel = IsValidNpcName(customLabel) and customLabel or nil
+    local npcLabel = validCustomLabel or (info and info.boss) or name
 
+    local c = self:GetBestMountCoords(mountID, mapID)
     if not x or not y or x <= 0 or y <= 0 then
-        local c = self:GetBestMountCoords(mountID, mapID)
         if c then
             mapID = c.m
             x = c.x
             y = c.y
-            if not customLabel and c.n and c.n ~= "" then
-                npcLabel = c.n
-            end
+        end
+    end
+    if not validCustomLabel and c then
+        local knownName = c.npcID and self.KnownNpcNames and self.KnownNpcNames[c.npcID]
+        if IsValidNpcName(knownName) then
+            npcLabel = knownName
+        elseif c.n and c.n ~= "" then
+            npcLabel = c.n
         end
     end
 
@@ -793,9 +893,9 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
     end
 
     if not silent then
-        local chatKey = string.format("%s:%s:%.1f:%.1f", tostring(mapID), tostring(npcLabel), dispX, dispY)
+        local chatKey = string.format("%s:%.1f:%.1f", tostring(mapID), dispX, dispY)
         local now = GetTime()
-        if self.lastWaypointChatKey ~= chatKey or not self.lastWaypointChatTime or (now - self.lastWaypointChatTime) > 10 then
+        if self.lastWaypointChatKey ~= chatKey or not self.lastWaypointChatTime or (now - self.lastWaypointChatTime) > 15 then
             self.lastWaypointChatKey = chatKey
             self.lastWaypointChatTime = now
             print(string.format(L.CHAT_WAYPOINT_SET, npcLabel, dispX, dispY, name))
@@ -1111,6 +1211,211 @@ function addon:BuildMountDebugReport(mountID)
     return table.concat(out, "\n")
 end
 
+local function ParseStatisticValue(val)
+    if not val or not SafeNotSecret(val) then return 0 end
+    if type(val) == "number" then return val > 0 and val or 0 end
+    if type(val) ~= "string" then return 0 end
+    if val == "--" or val == "-" or val == "" then return 0 end
+    local cleaned = val:gsub("[^%d]", "")
+    local num = tonumber(cleaned)
+    return (num and num > 0) and num or 0
+end
+
+-- Предсохранённый слепок статистики персонажей и траев из RarityDB (чтобы история не терялась при выключенном Rarity)
+local SeededRarityCharStats = {
+    ["Моржовый - Свежеватель Душ"] = {
+        [1088] = 1, [1098] = 2, [1391] = 1, [4688] = 3, [5577] = 1, [5971] = 4,
+        [6162] = 1, [6168] = 1, [8146] = 1, [8148] = 2, [8150] = 1, [8152] = 4,
+        [8170] = 1, [8172] = 4, [8178] = 2, [8568] = 1, [8626] = 2, [8628] = 1,
+        [8630] = 4, [8637] = 4, [9365] = 3, [10929] = 5, [10930] = 1, [10931] = 4,
+        [10979] = 1, [10980] = 5, [11894] = 1, [11895] = 3, [11896] = 5, [11957] = 3,
+        [11958] = 2, [11959] = 4, [11986] = 1, [12118] = 1, [12745] = 5, [12752] = 7,
+        [12763] = 7, [13600] = 1, [13601] = 1, [14110] = 2, [14138] = 2,
+    },
+    ["Ньарлатхотеп - Свежеватель Душ"] = {
+        [1097] = 1, [4688] = 1, [6989] = 1, [9279] = 1, [9365] = 2, [10928] = 1,
+        [10931] = 1, [10979] = 1, [11893] = 1, [11957] = 5, [11958] = 2, [11959] = 2,
+        [11986] = 1, [12118] = 1, [13366] = 1, [13600] = 3, [13601] = 3, [13603] = 2,
+        [14107] = 1, [14110] = 12, [14138] = 9, [14398] = 1, [14458] = 1, [40295] = 8,
+    },
+    ["Ньарлатхотеп - Пиратская Бухта"] = {
+        [1097] = 1, [4688] = 1, [6989] = 1, [9279] = 1, [9365] = 2, [10928] = 1,
+        [10931] = 1, [10979] = 1, [11893] = 1, [11957] = 5, [11958] = 2, [11959] = 2,
+        [11986] = 1, [12118] = 1, [13366] = 1, [13600] = 3, [13601] = 3, [13603] = 2,
+        [14107] = 1, [14110] = 12, [14138] = 9, [14398] = 1, [14458] = 1, [40295] = 8,
+    },
+}
+
+local SeededRarityMountTotals = {
+    ["Solar Spirehawk"] = 2,
+    ["Cobalt Dragonhawk"] = 7,
+    ["Invincible's Reins"] = 5,
+    ["Experiment 12-B"] = 1,
+    ["Reins of the Thundering Cobalt Cloud Serpent"] = 1,
+    ["Flametalon of Alysrazor"] = 4,
+    ["Shackled Ur'zul"] = 3,
+    ["Fiendish Hellfire Core"] = 5,
+    ["Reins of the Heavenly Onyx Cloud Serpent"] = 2,
+    ["Reins of the Sureki Skyrazor"] = 16,
+    ["Ironhoof Destroyer"] = 7,
+    ["Sharkbait's Favorite Crackers"] = 7,
+    ["Reins of the Azure Drake"] = 1,
+    ["Spawn of Horridon"] = 5,
+    ["Ny'alotha Allseer"] = 20,
+    ["Antoran Charhound"] = 30,
+    ["Mummified Raptor Skull"] = 7,
+    ["Deathcharger's Reins"] = 2,
+    ["Ashes of Al'ar"] = 1,
+    ["The Headless Horseman's Ghoulish Charger"] = 4,
+    ["Cerulean Hawkstrider"] = 7,
+    ["Kor'kron Juggernaut"] = 4,
+    ["Abyss Worm"] = 11,
+    ["Reins of the Drake of the South Wind"] = 1,
+    ["Living Infernal Core"] = 8,
+    ["The Horseman's Reins"] = 6,
+    ["Underrot Crawg Harness"] = 5,
+    ["Life-Binder's Handmaiden"] = 1,
+    ["Clutch of Ji-Kun"] = 5,
+    ["Reins of the Onyxian Drake"] = 2,
+}
+
+-- Сканирование полной таблицы «Достижения -> Статистика» (GetStatistic) для текущего персонажа
+-- и суммирование киллов боссов по всем персонажам аккаунта
+function addon:ScanAllCharacterStatistics()
+    if not self.db or not self.DropInfoByMount then return end
+    local charKey = self:GetCharKey()
+
+    -- 1. Собираем таблицу accountWideStatistics из RarityDB (если загружен) + наш предсохранённый слепок
+    local externalCharStats = {}
+    for cKey, stMap in pairs(SeededRarityCharStats) do
+        externalCharStats[cKey] = stMap
+    end
+    local rProfile = (_G.Rarity and _G.Rarity.db and _G.Rarity.db.profile)
+        or (_G.RarityDB and _G.RarityDB.profiles and _G.RarityDB.profiles.Default)
+    if rProfile and type(rProfile.accountWideStatistics) == "table" then
+        for _, pData in pairs(rProfile.accountWideStatistics) do
+            if type(pData) == "table" and pData.playerName and pData.server and type(pData.statistics) == "table" then
+                local cKey = pData.playerName .. " - " .. pData.server
+                externalCharStats[cKey] = pData.statistics
+            end
+        end
+    end
+
+    -- 2. Проходим по всем маунтам с боссами/статистикой
+    for mountID, info in pairs(self.DropInfoByMount) do
+        local record = self.db.attempts[mountID]
+        local hasStats = info.stats and #info.stats > 0
+
+        -- Проверяем базовый счётчик из Rarity
+        local rarityTotal = (info.rarityKey and SeededRarityMountTotals[info.rarityKey]) or 0
+        if rProfile and rProfile.groups and rProfile.groups.mounts and info.rarityKey then
+            local rEntry = rProfile.groups.mounts[info.rarityKey]
+            if rEntry and type(rEntry.attempts) == "number" and rEntry.attempts > rarityTotal then
+                rarityTotal = rEntry.attempts
+            end
+        end
+
+        if hasStats then
+            -- Сначала подтягиваем сохранённую статистику других персонажей из externalCharStats
+            for extCharKey, statTable in pairs(externalCharStats) do
+                local extSum = 0
+                for _, statID in ipairs(info.stats) do
+                    local v = statTable[statID]
+                    if type(v) == "number" and v > 0 then
+                        extSum = extSum + v
+                    end
+                end
+                if extSum > 0 then
+                    record = record or { total = 0, byChar = {} }
+                    record.byChar = record.byChar or {}
+                    if extSum > (record.byChar[extCharKey] or 0) then
+                        record.byChar[extCharKey] = extSum
+                    end
+                end
+            end
+
+            -- Теперь сканируем живую статистику ТЕКУЩЕГО персонажа через GetStatistic(statID)
+            if GetStatistic then
+                local currentCharStatSum = 0
+                for _, statID in ipairs(info.stats) do
+                    local ok, val = pcall(GetStatistic, statID)
+                    if ok and val then
+                        currentCharStatSum = currentCharStatSum + ParseStatisticValue(val)
+                    end
+                end
+                if currentCharStatSum > 0 then
+                    record = record or { total = 0, byChar = {} }
+                    record.byChar = record.byChar or {}
+                    if currentCharStatSum > (record.byChar[charKey] or 0) then
+                        record.byChar[charKey] = currentCharStatSum
+                    end
+                end
+            end
+        elseif info.quests and #info.quests > 0 and C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
+            -- Если это рарник(и) с суточными квестами КД, проверяем, сколько из них уже закрыто СЕГОДНЯ на текущем персонаже
+            local doneTodayOnChar = 0
+            for _, qid in ipairs(info.quests) do
+                if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                    doneTodayOnChar = doneTodayOnChar + 1
+                end
+            end
+            if doneTodayOnChar > 0 then
+                record = record or { total = 0, byChar = {} }
+                record.byChar = record.byChar or {}
+                if doneTodayOnChar > (record.byChar[charKey] or 0) then
+                    record.byChar[charKey] = doneTodayOnChar
+                end
+            end
+        end
+
+        if record or rarityTotal > 0 then
+            record = record or { total = 0, byChar = {} }
+            record.byChar = record.byChar or {}
+            local byCharSum = 0
+            for _, c in pairs(record.byChar) do
+                byCharSum = byCharSum + (tonumber(c) or 0)
+            end
+            local computed = math.max(record.manualTotal or 0, record.total or 0, byCharSum, rarityTotal)
+            if computed > 0 then
+                record.total = computed
+                self.db.attempts[mountID] = record
+            end
+        end
+    end
+end
+
+function addon:SetManualMountAttempts(mountID, count, resetToAuto)
+    if not mountID or not self.db then return end
+    local record = self.db.attempts[mountID] or { total = 0, byChar = {} }
+    record.byChar = record.byChar or {}
+
+    if resetToAuto then
+        record.manualTotal = nil
+        local byCharSum = 0
+        for _, c in pairs(record.byChar) do
+            byCharSum = byCharSum + (tonumber(c) or 0)
+        end
+        record.total = byCharSum
+        self.db.attempts[mountID] = record
+        self:ScanAllCharacterStatistics()
+    else
+        local num = math.max(0, math.floor(tonumber(count) or 0))
+        record.manualTotal = num
+        record.total = num
+        self.db.attempts[mountID] = record
+    end
+
+    local name = C_MountJournal.GetMountInfoByID(mountID) or ("Mount #" .. tostring(mountID))
+    print(string.format(L.CHAT_ATTEMPTS_SET, name, record.total or 0))
+
+    if self.UpdateLDBText then
+        self:UpdateLDBText()
+    end
+    if self.RefreshRadarUI then
+        self:RefreshRadarUI()
+    end
+end
+
 function addon:GetMountAttempts(mountID)
     if not mountID or not self.db then return 0, nil, nil end
     local info = self.DropInfoByMount[mountID]
@@ -1119,13 +1424,13 @@ function addon:GetMountAttempts(mountID)
     local mcTotal = 0
     local byCharSum = 0
     if record then
-        mcTotal = record.total or 0
+        mcTotal = math.max(record.manualTotal or 0, record.total or 0)
         if record.byChar then
             for _, c in pairs(record.byChar) do
                 byCharSum = byCharSum + (tonumber(c) or 0)
             end
         end
-        if byCharSum > mcTotal then
+        if byCharSum > mcTotal and not record.manualTotal then
             mcTotal = byCharSum
             record.total = mcTotal
         end
@@ -1133,34 +1438,49 @@ function addon:GetMountAttempts(mountID)
 
     local rarityAttempts = 0
     if info then
+        if info.rarityKey and SeededRarityMountTotals[info.rarityKey] then
+            rarityAttempts = SeededRarityMountTotals[info.rarityKey]
+        end
         local rEntry = info.rarityEntry
         if not rEntry and info.rarityKey and _G.Rarity and _G.Rarity.db and _G.Rarity.db.profile and _G.Rarity.db.profile.groups and _G.Rarity.db.profile.groups.mounts then
             rEntry = _G.Rarity.db.profile.groups.mounts[info.rarityKey]
             info.rarityEntry = rEntry
         end
-        if rEntry and type(rEntry.attempts) == "number" then
+        if rEntry and type(rEntry.attempts) == "number" and rEntry.attempts > rarityAttempts then
             rarityAttempts = rEntry.attempts
         end
 
         local statSum = 0
         if info.stats and #info.stats > 0 and GetStatistic then
             for _, statID in ipairs(info.stats) do
-                local val = GetStatistic(statID)
-                if val and SafeNotSecret(val) then
-                    local num = tonumber(val)
-                    if num and num > 0 then
-                        statSum = statSum + num
-                    end
+                local ok, val = pcall(GetStatistic, statID)
+                if ok and val then
+                    statSum = statSum + ParseStatisticValue(val)
                 end
             end
         end
-        if statSum > rarityAttempts then
+        if statSum > 0 then
+            local charKey = self:GetCharKey()
+            record = record or { total = 0, byChar = {} }
+            record.byChar = record.byChar or {}
+            if statSum > (record.byChar[charKey] or 0) then
+                record.byChar[charKey] = statSum
+                byCharSum = 0
+                for _, c in pairs(record.byChar) do
+                    byCharSum = byCharSum + (tonumber(c) or 0)
+                end
+            end
+            self.db.attempts[mountID] = record
+        end
+        if byCharSum > rarityAttempts then
+            rarityAttempts = byCharSum
+        elseif statSum > rarityAttempts then
             rarityAttempts = statSum
         end
     end
 
-    local finalAttempts = math.max(mcTotal, rarityAttempts)
-    if finalAttempts > 0 and finalAttempts > mcTotal then
+    local finalAttempts = (record and record.manualTotal) and math.max(record.manualTotal, record.total or 0) or math.max(mcTotal, byCharSum, rarityAttempts)
+    if finalAttempts > 0 and (not record or finalAttempts > (record.total or 0)) then
         record = record or { total = 0, byChar = {} }
         record.total = finalAttempts
         self.db.attempts[mountID] = record
@@ -1175,12 +1495,13 @@ function addon:RecordAttempt(mountID, sourceName)
     if isCollected then return end
 
     local now = GetTime()
-    if self.RecentAttemptLock[mountID] and (now - self.RecentAttemptLock[mountID]) < 30 then
+    if self.RecentAttemptLock[mountID] and (now - self.RecentAttemptLock[mountID]) < 90 then
         return
     end
     self.RecentAttemptLock[mountID] = now
 
     local info = self.DropInfoByMount[mountID]
+    local prevTotal = self:GetMountAttempts(mountID)
     local record = self.db.attempts[mountID] or { total = 0, byChar = {} }
     local charKey = self:GetCharKey()
 
@@ -1192,11 +1513,10 @@ function addon:RecordAttempt(mountID, sourceName)
         byCharSum = byCharSum + (tonumber(c) or 0)
     end
 
-    local rEntry = info and info.rarityEntry
-    if rEntry and type(rEntry.attempts) == "number" and rEntry.attempts > 0 then
-        record.total = math.max(byCharSum, rEntry.attempts)
+    if record.manualTotal then
+        record.manualTotal = record.manualTotal + 1
+        record.total = math.max(record.manualTotal, byCharSum)
     else
-        local prevTotal = self:GetMountAttempts(mountID)
         record.total = math.max((record.total or 0) + 1, prevTotal + 1, byCharSum)
     end
 
@@ -1320,7 +1640,80 @@ function addon:ScanUnitMount(unit)
     end
 end
 
-function addon:CheckUnitForMountDrop(unit)
+-- Сделать слепок уже закрытых на сегодня суточных квестов рарников (при входе в мир или смене зоны),
+-- чтобы при первом килле рарника (когда сервер мгновенно ставит флаг квеста при смерти моба до открытия окна лута)
+-- аддон точно знал, что до этого боя квест ещё НЕ был выполнен!
+function addon:SnapshotPreLockedRares()
+    if not C_QuestLog or not C_QuestLog.IsQuestFlaggedCompleted then return end
+    self.CompletedRareQuestsSnapshot = self.CompletedRareQuestsSnapshot or {}
+    self.RecentlySpottedUnlockedRares = self.RecentlySpottedUnlockedRares or {}
+    local now = GetTime()
+    if self.RareScannerNpcToMounts then
+        for npcID, rs in pairs(self.RareScannerNpcToMounts) do
+            local seenUnlocked = self.RecentlySpottedUnlockedRares[npcID] and ((now - self.RecentlySpottedUnlockedRares[npcID]) < 600)
+            if rs and type(rs.quests) == "table" then
+                for _, qid in ipairs(rs.quests) do
+                    local done = C_QuestLog.IsQuestFlaggedCompleted(qid)
+                    if done then
+                        if not seenUnlocked and not (self.JustCompletedLockoutQuestAt and self.JustCompletedLockoutQuestAt[qid] and (now - self.JustCompletedLockoutQuestAt[qid]) < 120) then
+                            self.CompletedRareQuestsSnapshot[qid] = true
+                        end
+                    else
+                        self.CompletedRareQuestsSnapshot[qid] = false
+                    end
+                end
+            end
+        end
+    end
+    if self.DropInfoByMount then
+        for _, info in pairs(self.DropInfoByMount) do
+            if info and type(info.quests) == "table" then
+                for _, qid in ipairs(info.quests) do
+                    if self.CompletedRareQuestsSnapshot[qid] == nil then
+                        self.CompletedRareQuestsSnapshot[qid] = (C_QuestLog.IsQuestFlaggedCompleted(qid) == true)
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Проверить после выхода из боя рарников, которых мы видели живыми и открытыми:
+-- если их суточный квест только что переключился в true (например, Волнуш убежал к подсолнуху или пуш-лут без трупа), засчитываем трай!
+function addon:CheckRecentlyKilledRares()
+    if not self.RecentlySpottedUnlockedRares then return end
+    local now = GetTime()
+    for npcID, spottedAt in pairs(self.RecentlySpottedUnlockedRares) do
+        if (now - spottedAt) < 600 then
+            local isLocked, lockQid = self:IsNpcLockedToday(npcID)
+            if isLocked then
+                self.RecentlySpottedUnlockedRares[npcID] = nil
+                if lockQid then
+                    self.CompletedRareQuestsSnapshot = self.CompletedRareQuestsSnapshot or {}
+                    self.CompletedRareQuestsSnapshot[lockQid] = true
+                    self.JustCompletedLockoutQuestAt = self.JustCompletedLockoutQuestAt or {}
+                    self.JustCompletedLockoutQuestAt[lockQid] = now
+                end
+                local rs = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
+                local srcName = (self.KnownNpcNames and self.KnownNpcNames[npcID])
+                    or (rs and rs.name and rs.name ~= "" and rs.name)
+                    or ("NPC #" .. tostring(npcID))
+                if self.MountsByNpc and self.MountsByNpc[npcID] then
+                    for _, mountID in ipairs(self.MountsByNpc[npcID]) do
+                        self:RecordAttempt(mountID, srcName)
+                    end
+                end
+                if self.RefreshWorldMapPins then
+                    self:RefreshWorldMapPins()
+                end
+            end
+        else
+            self.RecentlySpottedUnlockedRares[npcID] = nil
+        end
+    end
+end
+
+function addon:CheckUnitForMountDrop(unit, isRetry)
     if not unit or not SafeNotSecret(unit) or not UnitExists(unit) then return end
     if UnitIsPlayer(unit) then
         self:ScanUnitMount(unit)
@@ -1331,19 +1724,38 @@ function addon:CheckUnitForMountDrop(unit)
     local npcID = self:GetNPCIDFromGUID(guid)
     if not npcID then return end
 
+    local mounts = self.MountsByNpc[npcID]
+    local isAlive = not UnitIsDead(unit)
+    if isAlive and mounts then
+        local isLockedNow, lockQid = self:IsNpcLockedToday(npcID)
+        if not isLockedNow then
+            self.RecentlySpottedUnlockedRares = self.RecentlySpottedUnlockedRares or {}
+            self.RecentlySpottedUnlockedRares[npcID] = GetTime()
+            if lockQid then
+                self.CompletedRareQuestsSnapshot = self.CompletedRareQuestsSnapshot or {}
+                self.CompletedRareQuestsSnapshot[lockQid] = false
+            end
+        end
+    end
+
     local npcName = UnitName(unit)
-    if SafeNotSecret(npcName) and npcName and npcName ~= "" then
+    if IsValidNpcName(npcName) then
         self.KnownNpcNames = self.KnownNpcNames or {}
         self.KnownNpcNames[npcID] = npcName
     else
+        if isAlive and mounts and not isRetry then
+            C_Timer.After(0.25, function()
+                if UnitExists(unit) then
+                    self:CheckUnitForMountDrop(unit, true)
+                end
+            end)
+            return
+        end
         local rs = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
         npcName = (self.KnownNpcNames and self.KnownNpcNames[npcID]) or (rs and rs.name) or "Rare NPC"
     end
 
-    if UnitIsDead(unit) then return end
-
-    local mounts = self.MountsByNpc[npcID]
-    if not mounts then return end
+    if not isAlive or not mounts then return end
 
     -- Если этот конкретный рарник уже убит сегодня этим персонажем (КД до сброса), не вопим и не ставим метку на второй круг!
     if self:IsNpcLockedToday(npcID) then return end
@@ -1370,12 +1782,23 @@ function addon:CheckVignetteForMountDrop(vignetteGUID)
     if not mounts then return end
 
     -- Если этот конкретный рарник уже убит сегодня (КД до сброса), игнорируем его звезду на миникарте
-    if self:IsNpcLockedToday(npcID) then return end
+    local isLockedNow, lockQid = self:IsNpcLockedToday(npcID)
+    if isLockedNow then return end
 
-    local vName = SafeNotSecret(vInfo.name) and vInfo.name or "Rare NPC"
-    if vName ~= "Rare NPC" then
+    self.RecentlySpottedUnlockedRares = self.RecentlySpottedUnlockedRares or {}
+    self.RecentlySpottedUnlockedRares[npcID] = GetTime()
+    if lockQid then
+        self.CompletedRareQuestsSnapshot = self.CompletedRareQuestsSnapshot or {}
+        self.CompletedRareQuestsSnapshot[lockQid] = false
+    end
+
+    local vName = IsValidNpcName(vInfo.name) and vInfo.name or nil
+    if vName then
         self.KnownNpcNames = self.KnownNpcNames or {}
         self.KnownNpcNames[npcID] = vName
+    else
+        local rs = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
+        vName = (self.KnownNpcNames and self.KnownNpcNames[npcID]) or (rs and rs.name) or "Rare NPC"
     end
     local mapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
     local liveX, liveY = nil, nil
@@ -1456,9 +1879,241 @@ function addon:GetZoneUncollectedMounts(targetMapID)
     return results, mapID
 end
 
+-- Сканирование уровня, класса и активных КД инстансов/праздничных данжей текущего персонажа
+function addon:ScanCurrentCharacterLockouts()
+    if not self.db then return end
+    self.db.chars = self.db.chars or {}
+
+    local charKey = self:GetCharKey()
+    local name = UnitName("player") or "Unknown"
+    local realm = GetRealmName() or "Realm"
+    local _, classFile = UnitClass("player")
+    local level = UnitLevel("player") or 1
+    local now = time()
+
+    local cData = self.db.chars[charKey] or {}
+    cData.name = name
+    cData.realm = realm
+    cData.class = classFile or cData.class or "PRIEST"
+    cData.level = (level and level > 0) and level or (cData.level or 1)
+    cData.lastSeen = now
+    cData.savedInstances = cData.savedInstances or {}
+    cData.savedInstanceNames = cData.savedInstanceNames or {}
+    cData.savedLfg = cData.savedLfg or {}
+
+    -- Очищаем истекшие КД
+    for k, exp in pairs(cData.savedInstances) do
+        if type(exp) ~= "number" or exp <= now then
+            cData.savedInstances[k] = nil
+        end
+    end
+    for k, exp in pairs(cData.savedInstanceNames) do
+        if type(exp) ~= "number" or exp <= now then
+            cData.savedInstanceNames[k] = nil
+        end
+    end
+    for k, exp in pairs(cData.savedLfg) do
+        if type(exp) ~= "number" or exp <= now then
+            cData.savedLfg[k] = nil
+        end
+    end
+
+    -- 1. Сохранённые рейды и эпохальные подземелья (GetNumSavedInstances)
+    if GetNumSavedInstances and GetSavedInstanceInfo then
+        local numSaved = GetNumSavedInstances() or 0
+        for i = 1, numSaved do
+            local instName, _, reset, _, locked, extended, _, _, _, _, _, _, _, instanceId = GetSavedInstanceInfo(i)
+            if (locked or extended) and type(reset) == "number" and reset > 0 then
+                local expiresAt = now + reset
+                if type(instanceId) == "number" and instanceId > 0 then
+                    cData.savedInstances[instanceId] = math.max(cData.savedInstances[instanceId] or 0, expiresAt)
+                end
+                if SafeNotSecret(instName) and type(instName) == "string" and instName ~= "" then
+                    local lowerName = string.lower(instName)
+                    cData.savedInstanceNames[lowerName] = math.max(cData.savedInstanceNames[lowerName] or 0, expiresAt)
+                end
+            end
+        end
+    end
+
+    -- 2. Праздничные боссы в поиске подземелий (Всадник без головы 285, Корен Худовар 287, Королевская химическая компания 288)
+    if GetLFGDungeonRewards then
+        local resetSec = (GetQuestResetTime and GetQuestResetTime()) or 86400
+        if type(resetSec) ~= "number" or resetSec <= 0 or resetSec > 172800 then
+            resetSec = 86400
+        end
+        for _, lfgID in ipairs({ 285, 287, 288 }) do
+            local ok, doneToday = pcall(GetLFGDungeonRewards, lfgID)
+            if ok and doneToday then
+                cData.savedLfg[lfgID] = now + resetSec
+            end
+        end
+    end
+
+    self.db.chars[charKey] = cData
+end
+
+local function FormatClassColoredChar(name, classFile, level)
+    local shortName = tostring(name or "Character"):gsub("%s*%-.+$", "")
+    local colorPrefix = "|cffffffff"
+    if classFile and _G.RAID_CLASS_COLORS and _G.RAID_CLASS_COLORS[classFile] and _G.RAID_CLASS_COLORS[classFile].colorStr then
+        colorPrefix = "|" .. _G.RAID_CLASS_COLORS[classFile].colorStr
+    end
+    if level and level > 0 then
+        return string.format("%s%s|r |cffaaaaaa(%d)|r", colorPrefix, shortName, level)
+    end
+    return string.format("%s%s|r", colorPrefix, shortName)
+end
+
+local function IsCharLockedForDungeonEntry(cData, dEntry, now)
+    if not cData or not dEntry then return false end
+    if dEntry.lockoutType == "UNLIMITED" then
+        return false
+    end
+    if dEntry.lfgDungeonID and cData.savedLfg and cData.savedLfg[dEntry.lfgDungeonID] and cData.savedLfg[dEntry.lfgDungeonID] > now then
+        return true
+    end
+    if dEntry.instanceMapID and cData.savedInstances and cData.savedInstances[dEntry.instanceMapID] and cData.savedInstances[dEntry.instanceMapID] > now then
+        return true
+    end
+    if cData.savedInstanceNames then
+        local ruLower = dEntry.instanceRU and string.lower(dEntry.instanceRU) or nil
+        local enLower = dEntry.instanceEN and string.lower(dEntry.instanceEN) or nil
+        for savedName, exp in pairs(cData.savedInstanceNames) do
+            if exp and exp > now then
+                if (ruLower and (savedName == ruLower or string.find(ruLower, savedName, 1, true) or string.find(savedName, ruLower, 1, true)))
+                    or (enLower and (savedName == enLower or string.find(enLower, savedName, 1, true) or string.find(savedName, enLower, 1, true))) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- Получить полную сводку по данж/рейд/ивент-маунту + матрицу твинков аккаунта с учётом минимального уровня (minLevel)
+function addon:GetDungeonMountStatus(mountID)
+    local dEntry = self.MountDungeonsByMountID and self.MountDungeonsByMountID[mountID]
+    if not dEntry then return nil end
+
+    self:ScanCurrentCharacterLockouts()
+
+    local isRU = (self:GetActiveLocaleCode() == "ruRU")
+    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+    local now = time()
+    local minLevel = dEntry.minLevel or 10
+    local chance = dEntry.chance or 100
+    local chancePct = (chance > 0) and (100.0 / chance) or 1.0
+
+    local lockoutTitle = L.LOCKOUT_WEEKLY
+    if dEntry.lockoutType == "DAILY" then
+        lockoutTitle = L.LOCKOUT_DAILY
+    elseif dEntry.lockoutType == "UNLIMITED" then
+        lockoutTitle = L.LOCKOUT_UNLIMITED
+    end
+
+    local eventTitle = nil
+    if dEntry.sourceKind == "EVENT" or dEntry.eventRU or dEntry.eventEN then
+        eventTitle = (isRU and dEntry.eventRU) or dEntry.eventEN or dEntry.eventRU
+    end
+
+    local instanceTitle = (isRU and dEntry.instanceRU) or dEntry.instanceEN or dEntry.instanceRU or "Instance"
+    local bossTitle = (isRU and dEntry.bossRU) or dEntry.bossEN or dEntry.bossRU or "Boss"
+    local difficultyTitle = (isRU and dEntry.difficultyRU) or dEntry.difficultyEN or dEntry.difficultyRU or "Normal"
+    local zoneTitle = (isRU and dEntry.zoneRU) or dEntry.zoneEN or dEntry.zoneRU or instanceTitle
+    local howToGet = (isRU and dEntry.howToGetRU) or dEntry.howToGetEN or dEntry.howToGetRU or ""
+
+    local currentCharKey = self:GetCharKey()
+    local eligibleChars = {}
+    local underleveledChars = {}
+    local readyCount = 0
+    local isLockedOnCurrentChar = false
+
+    if self.db and type(self.db.chars) == "table" then
+        for charKey, cData in pairs(self.db.chars) do
+            if type(cData) == "table" then
+                local lvl = tonumber(cData.level) or 1
+                local isLocked = IsCharLockedForDungeonEntry(cData, dEntry, now)
+                if charKey == currentCharKey then
+                    isLockedOnCurrentChar = isLocked
+                end
+                local entry = {
+                    charKey = charKey,
+                    name = cData.name or charKey,
+                    realm = cData.realm or "",
+                    class = cData.class,
+                    level = lvl,
+                    isCurrent = (charKey == currentCharKey),
+                    isLocked = isLocked,
+                    coloredName = FormatClassColoredChar(cData.name or charKey, cData.class, lvl),
+                }
+                if lvl >= minLevel then
+                    table.insert(eligibleChars, entry)
+                    if not isLocked then
+                        readyCount = readyCount + 1
+                    end
+                else
+                    table.insert(underleveledChars, entry)
+                end
+            end
+        end
+    end
+
+    table.sort(eligibleChars, function(a, b)
+        if a.isCurrent ~= b.isCurrent then
+            return a.isCurrent
+        end
+        if a.isLocked ~= b.isLocked then
+            return not a.isLocked
+        end
+        if a.level ~= b.level then
+            return a.level > b.level
+        end
+        return tostring(a.name) < tostring(b.name)
+    end)
+
+    table.sort(underleveledChars, function(a, b)
+        if a.level ~= b.level then
+            return a.level > b.level
+        end
+        return tostring(a.name) < tostring(b.name)
+    end)
+
+    return {
+        mountID = mountID,
+        name = name or dEntry.nameRU or dEntry.nameEN or ("Mount #" .. tostring(mountID)),
+        spellID = spellID or dEntry.spellID,
+        icon = icon,
+        isCollected = isCollected,
+        sourceKind = dEntry.sourceKind or "RAID",
+        eventTitle = eventTitle,
+        instanceTitle = instanceTitle,
+        bossTitle = bossTitle,
+        difficultyTitle = difficultyTitle,
+        zoneTitle = zoneTitle,
+        howToGet = howToGet,
+        chance = chance,
+        chancePct = chancePct,
+        lockoutType = dEntry.lockoutType or "WEEKLY",
+        lockoutTitle = lockoutTitle,
+        minLevel = minLevel,
+        mapID = dEntry.mapID,
+        x = dEntry.x,
+        y = dEntry.y,
+        isLockedOnCurrentChar = isLockedOnCurrentChar,
+        eligibleChars = eligibleChars,
+        underleveledChars = underleveledChars,
+        readyCount = readyCount,
+        totalEligible = #eligibleChars,
+        entry = dEntry,
+    }
+end
+
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("PLAYER_LEVEL_UP")
+eventFrame:RegisterEvent("UPDATE_INSTANCE_INFO")
 eventFrame:RegisterEvent("NEW_MOUNT_ADDED")
 eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 eventFrame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
@@ -1468,6 +2123,7 @@ eventFrame:RegisterEvent("QUEST_TURNED_IN")
 eventFrame:RegisterEvent("QUEST_ACCEPTED")
 eventFrame:RegisterEvent("ENCOUNTER_END")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 local function CheckActiveQuestChainProgress()
     if addon.RefreshRadarUI then
@@ -1490,6 +2146,29 @@ local function CheckActiveQuestChainProgress()
     end
 end
 
+-- Хук на открытие сумок/сундуков/тыкв с маунтами (Заполненная добычей тыква, Коробка в виде сердца, Сундуки идеала и т.д.)
+local function OnPossibleMountContainerUsed(itemID)
+    if not itemID or not addon.MountsBySourceItem or not addon.MountsBySourceItem[itemID] then return end
+    local mountList = addon.MountsBySourceItem[itemID]
+    local itemName = (C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID)) or ("Item #" .. tostring(itemID))
+    C_Timer.After(0.6, function()
+        for _, mountID in ipairs(mountList) do
+            addon:RecordAttempt(mountID, itemName)
+        end
+    end)
+end
+
+if C_Container and C_Container.UseContainerItem and hooksecurefunc then
+    hooksecurefunc(C_Container, "UseContainerItem", function(bag, slot)
+        if C_Container.GetContainerItemID and SafeNotSecret(bag) and SafeNotSecret(slot) then
+            local ok, itemID = pcall(C_Container.GetContainerItemID, bag, slot)
+            if ok and itemID and SafeNotSecret(itemID) then
+                OnPossibleMountContainerUsed(itemID)
+            end
+        end
+    end)
+end
+
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         local loadedName = ...
@@ -1508,10 +2187,17 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             end
         elseif loadedName == "Rarity" then
             addon:BuildMountIndex()
+            addon:ScanAllCharacterStatistics()
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
+        if RequestRaidInfo then
+            pcall(RequestRaidInfo)
+        end
         C_Timer.After(1.5, function()
             addon:BuildMountIndex()
+            addon:SnapshotPreLockedRares()
+            addon:ScanAllCharacterStatistics()
+            addon:ScanCurrentCharacterLockouts()
             if C_AddOns and C_AddOns.IsAddOnLoaded then
                 if C_AddOns.IsAddOnLoaded("Blizzard_Collections") and addon.HookMountJournal then
                     addon:HookMountJournal()
@@ -1524,6 +2210,11 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 addon:UpdateLDBText()
             end
         end)
+    elseif event == "UPDATE_INSTANCE_INFO" or event == "PLAYER_LEVEL_UP" then
+        addon:ScanCurrentCharacterLockouts()
+        if addon.RefreshRadarUI then
+            addon:RefreshRadarUI()
+        end
     elseif event == "NEW_MOUNT_ADDED" then
         addon:BuildMountIndex()
         if addon.UpdateLDBText then
@@ -1533,12 +2224,17 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             addon:RefreshWorldMapPins()
         end
     elseif event == "ZONE_CHANGED_NEW_AREA" then
+        addon:SnapshotPreLockedRares()
         if addon.UpdateLDBText then
             addon:UpdateLDBText()
         end
         if addon.RefreshRadarUI then
             addon:RefreshRadarUI()
         end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        C_Timer.After(2.0, function()
+            addon:CheckRecentlyKilledRares()
+        end)
     elseif event == "PLAYER_TARGET_CHANGED" then
         addon:CheckUnitForMountDrop("target")
     elseif event == "UPDATE_MOUSEOVER_UNIT" then
@@ -1565,6 +2261,19 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                                     or ("NPC #" .. tostring(npcID))
                                 local isLocked, lockQid = addon:IsNpcLockedToday(npcID)
                                 local now = GetTime()
+                                local wasSpottedUnlocked = addon.RecentlySpottedUnlockedRares and addon.RecentlySpottedUnlockedRares[npcID] and ((now - addon.RecentlySpottedUnlockedRares[npcID]) < 600)
+                                local wasNotPreCompleted = lockQid and (not addon.CompletedRareQuestsSnapshot or addon.CompletedRareQuestsSnapshot[lockQid] ~= true)
+                                if isLocked and (wasSpottedUnlocked or wasNotPreCompleted) then
+                                    if addon.RecentlySpottedUnlockedRares then
+                                        addon.RecentlySpottedUnlockedRares[npcID] = nil
+                                    end
+                                    if lockQid then
+                                        addon.CompletedRareQuestsSnapshot = addon.CompletedRareQuestsSnapshot or {}
+                                        addon.CompletedRareQuestsSnapshot[lockQid] = true
+                                        addon.JustCompletedLockoutQuestAt = addon.JustCompletedLockoutQuestAt or {}
+                                        addon.JustCompletedLockoutQuestAt[lockQid] = now
+                                    end
+                                end
                                 local justTurnedIn = lockQid and addon.JustCompletedLockoutQuestAt and addon.JustCompletedLockoutQuestAt[lockQid] and ((now - addon.JustCompletedLockoutQuestAt[lockQid]) < 120)
                                 if isLocked and not justTurnedIn then
                                     addon.SkipLockoutNoticeAt = addon.SkipLockoutNoticeAt or {}
@@ -1578,6 +2287,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                                     for _, mountID in ipairs(addon.MountsByNpc[npcID]) do
                                         addon:RecordAttempt(mountID, srcName)
                                     end
+                                    if addon.RefreshWorldMapPins then
+                                        addon:RefreshWorldMapPins()
+                                    end
                                 end
                             end
                         end
@@ -1590,6 +2302,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if questID and SafeNotSecret(questID) then
             addon.JustCompletedLockoutQuestAt = addon.JustCompletedLockoutQuestAt or {}
             addon.JustCompletedLockoutQuestAt[questID] = GetTime()
+            addon.CompletedRareQuestsSnapshot = addon.CompletedRareQuestsSnapshot or {}
+            addon.CompletedRareQuestsSnapshot[questID] = true
 
             local matchedNpcName = nil
             if addon.RareScannerNpcToMounts then
@@ -1627,10 +2341,27 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         local _, encounterName, _, _, success = ...
         if success == 1 and SafeNotSecret(encounterName) and encounterName then
             for mountID, info in pairs(addon.DropInfoByMount) do
-                if info.boss and (info.boss == encounterName or string.find(encounterName, info.boss, 1, true)) then
+                local matched = false
+                for _, bName in ipairs({ info.boss, info.bossRU, info.bossEN }) do
+                    if bName and bName ~= "" and (bName == encounterName or string.find(encounterName, bName, 1, true) or string.find(bName, encounterName, 1, true)) then
+                        matched = true
+                        break
+                    end
+                end
+                if matched then
                     addon:RecordAttempt(mountID, encounterName)
                 end
             end
+            if RequestRaidInfo then
+                pcall(RequestRaidInfo)
+            end
+            C_Timer.After(2.0, function()
+                addon:ScanAllCharacterStatistics()
+                addon:ScanCurrentCharacterLockouts()
+                if addon.RefreshRadarUI then
+                    addon:RefreshRadarUI()
+                end
+            end)
         end
     end
 end)

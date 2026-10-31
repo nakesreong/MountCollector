@@ -184,6 +184,23 @@ function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText, is
             L.TT_QUEST_CHAIN_LABEL,
             string.format("|cff00ff96%d/%d|r — |cffffd100%s|r", qStatus.completedSteps, qStatus.totalSteps, curTitle)
         )
+    else
+        local dStatus = self.GetDungeonMountStatus and self:GetDungeonMountStatus(mountID)
+        if dStatus then
+            if dStatus.eventTitle then
+                tooltip:AddLine(string.format(L.REQUIRES_EVENT_FMT, dStatus.eventTitle))
+            end
+            tooltip:AddDoubleLine(
+                "|cffdddddd" .. dStatus.instanceTitle .. " (" .. dStatus.difficultyTitle .. "):|r",
+                "|cffffd100" .. dStatus.bossTitle .. "|r |cffaaaaaa(" .. dStatus.lockoutTitle .. ")|r"
+            )
+            if not isCollected and dStatus.totalEligible > 0 then
+                tooltip:AddDoubleLine(
+                    string.format("|cffdddddd" .. L.DUNGEON_ALTS_TITLE_FMT .. "|r", dStatus.minLevel, dStatus.instanceTitle, dStatus.readyCount, dStatus.totalEligible),
+                    dStatus.isLockedOnCurrentChar and L.ALT_STATUS_LOCKED or L.ALT_STATUS_READY
+                )
+            end
+        end
     end
 
     tooltip:Show()
