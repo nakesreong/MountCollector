@@ -863,21 +863,50 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
     local dispX = normX * 100.0
     local dispY = normY * 100.0
 
-    -- 1. Стандартная метка и 3D-ромбик Blizzard
-    if C_Map and C_Map.CanSetUserWaypointOnMap and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates then
-        local ok, canSet = pcall(C_Map.CanSetUserWaypointOnMap, mapID)
-        if not ok or canSet then
-            pcall(function()
-                local pt = UiMapPoint.CreateFromCoordinates(mapID, normX, normY)
-                C_Map.SetUserWaypoint(pt)
-                if C_SuperTracked and C_SuperTracked.SetSuperTrackedUserWaypoint then
-                    C_SuperTracked.SetSuperTrackedUserWaypoint(true)
+    -- 1. Стандартная метка и 3D-ромбик Blizzard (с авто-проекцией на родительскую карту для городов/подзон вроде Даларана или Дорногала)
+    local wpMapID, wpNormX, wpNormY = mapID, normX, normY
+    if C_Map and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates then
+        pcall(function()
+            local canSet = true
+            if C_Map.CanSetUserWaypointOnMap then
+                local ok, res = pcall(C_Map.CanSetUserWaypointOnMap, wpMapID)
+                if ok then canSet = res end
+            end
+            if not canSet and C_Map.GetWorldPosFromMapPos and C_Map.GetMapPosFromWorldPos and C_Map.GetMapInfo and CreateVector2D then
+                local instID, worldPos = C_Map.GetWorldPosFromMapPos(wpMapID, CreateVector2D(wpNormX, wpNormY))
+                local curMap = wpMapID
+                for _ = 1, 5 do
+                    local mInfo = C_Map.GetMapInfo(curMap)
+                    local parentID = mInfo and mInfo.parentMapID
+                    if not parentID or parentID <= 0 or parentID == curMap then break end
+                    curMap = parentID
+                    if C_Map.CanSetUserWaypointOnMap(curMap) and instID and worldPos then
+                        local _, parentVec = C_Map.GetMapPosFromWorldPos(instID, worldPos, curMap)
+                        if parentVec and parentVec.GetXY then
+                            local px, py = parentVec:GetXY()
+                            if px and py and px > 0 and px < 1 and py > 0 and py < 1 then
+                                wpMapID, wpNormX, wpNormY = curMap, px, py
+                                canSet = true
+                                break
+                            end
+                        end
+                    end
                 end
-            end)
-        end
+            end
+            local pt = UiMapPoint.CreateFromCoordinates(wpMapID, wpNormX, wpNormY)
+            C_Map.SetUserWaypoint(pt)
+            if C_SuperTracked and C_SuperTracked.SetSuperTrackedUserWaypoint then
+                C_SuperTracked.SetSuperTrackedUserWaypoint(true)
+                C_Timer.After(0.05, function()
+                    if C_SuperTracked and C_SuperTracked.SetSuperTrackedUserWaypoint and C_Map and C_Map.HasUserWaypoint and C_Map.HasUserWaypoint() then
+                        pcall(C_SuperTracked.SetSuperTrackedUserWaypoint, true)
+                    end
+                end)
+            end
+        end)
     end
 
-    -- 2. Стрелка TomTom (если установлен TomTom)
+    -- 2. Стрелка TomTom (опционально, если установлен TomTom)
     if _G.TomTom and _G.TomTom.AddWaypoint then
         pcall(function()
             if self.lastTomTomUid and _G.TomTom.RemoveWaypoint then
@@ -898,7 +927,10 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
         if self.lastWaypointChatKey ~= chatKey or not self.lastWaypointChatTime or (now - self.lastWaypointChatTime) > 15 then
             self.lastWaypointChatKey = chatKey
             self.lastWaypointChatTime = now
-            print(string.format(L.CHAT_WAYPOINT_SET, npcLabel, dispX, dispY, name))
+            local x10000 = math.max(0, math.min(10000, math.floor(wpNormX * 10000 + 0.5)))
+            local y10000 = math.max(0, math.min(10000, math.floor(wpNormY * 10000 + 0.5)))
+            local pinLink = string.format("|cffffff00|Hworldmap:%d:%d:%d|h[|A:Waypoint-MapPin-ChatIcon:13:13:0:0|a %s (%.1f, %.1f)]|h|r", wpMapID, x10000, y10000, npcLabel, dispX, dispY)
+            print(string.format("|cff00ccff[MountCollector]|r 3D-метка: %s -> |cffa335ee[%s]|r", pinLink, name))
         end
     end
     return true
@@ -1900,6 +1932,7 @@ function addon:ScanCurrentCharacterLockouts()
     cData.savedInstances = cData.savedInstances or {}
     cData.savedInstanceNames = cData.savedInstanceNames or {}
     cData.savedLfg = cData.savedLfg or {}
+    cData.savedQuests = cData.savedQuests or {}
 
     -- Очищаем истекшие КД
     for k, exp in pairs(cData.savedInstances) do
@@ -1916,6 +1949,20 @@ function addon:ScanCurrentCharacterLockouts()
         if type(exp) ~= "number" or exp <= now then
             cData.savedLfg[k] = nil
         end
+    end
+    for k, exp in pairs(cData.savedQuests) do
+        if type(exp) ~= "number" or exp <= now then
+            cData.savedQuests[k] = nil
+        end
+    end
+
+    local dailyResetSec = (GetQuestResetTime and GetQuestResetTime()) or 86400
+    if type(dailyResetSec) ~= "number" or dailyResetSec <= 0 or dailyResetSec > 172800 then
+        dailyResetSec = 86400
+    end
+    local weeklyResetSec = (C_DateAndTime and C_DateAndTime.GetSecondsUntilWeeklyReset and C_DateAndTime.GetSecondsUntilWeeklyReset()) or 604800
+    if type(weeklyResetSec) ~= "number" or weeklyResetSec <= 0 or weeklyResetSec > 700000 then
+        weeklyResetSec = 604800
     end
 
     -- 1. Сохранённые рейды и эпохальные подземелья (GetNumSavedInstances)
@@ -1938,14 +1985,26 @@ function addon:ScanCurrentCharacterLockouts()
 
     -- 2. Праздничные боссы в поиске подземелий (Всадник без головы 285, Корен Худовар 287, Королевская химическая компания 288)
     if GetLFGDungeonRewards then
-        local resetSec = (GetQuestResetTime and GetQuestResetTime()) or 86400
-        if type(resetSec) ~= "number" or resetSec <= 0 or resetSec > 172800 then
-            resetSec = 86400
-        end
         for _, lfgID in ipairs({ 285, 287, 288 }) do
             local ok, doneToday = pcall(GetLFGDungeonRewards, lfgID)
             if ok and doneToday then
-                cData.savedLfg[lfgID] = now + resetSec
+                cData.savedLfg[lfgID] = now + dailyResetSec
+            end
+        end
+    end
+
+    -- 3. Мировые боссы и праздничные квесты из MountDungeonsDB (Ша Злости, Галеон, Налак, Ундаста, Рухмар, Краулок, Беледар, Судьболом)
+    if C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted and type(self.MountDungeonsDB) == "table" then
+        for _, dEntry in ipairs(self.MountDungeonsDB) do
+            if type(dEntry.questIDs) == "table" and #dEntry.questIDs > 0 then
+                local expTime = (dEntry.lockoutType == "WEEKLY") and (now + weeklyResetSec) or (now + dailyResetSec)
+                for _, qid in ipairs(dEntry.questIDs) do
+                    if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                        cData.savedQuests[qid] = expTime
+                    else
+                        cData.savedQuests[qid] = nil
+                    end
+                end
             end
         end
     end
@@ -1972,6 +2031,13 @@ local function IsCharLockedForDungeonEntry(cData, dEntry, now)
     end
     if dEntry.lfgDungeonID and cData.savedLfg and cData.savedLfg[dEntry.lfgDungeonID] and cData.savedLfg[dEntry.lfgDungeonID] > now then
         return true
+    end
+    if type(dEntry.questIDs) == "table" and cData.savedQuests then
+        for _, qid in ipairs(dEntry.questIDs) do
+            if cData.savedQuests[qid] and cData.savedQuests[qid] > now then
+                return true
+            end
+        end
     end
     if dEntry.instanceMapID and cData.savedInstances and cData.savedInstances[dEntry.instanceMapID] and cData.savedInstances[dEntry.instanceMapID] > now then
         return true

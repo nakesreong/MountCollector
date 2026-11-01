@@ -589,7 +589,20 @@ local function GetOrCreateMapPin(parent, index)
         if button == "RightButton" then
             addon:OpenMountInJournal(self.mountID)
         else
-            addon:SetMountWaypoint(self.mountID, self.mapID, self.coordX, self.coordY, self.npcName, false)
+            local combinedNames = nil
+            if self.mountIDs and #self.mountIDs > 1 then
+                local names = {}
+                for _, mID in ipairs(self.mountIDs) do
+                    local mName, _, _, _, _, _, _, _, _, _, mCol = C_MountJournal.GetMountInfoByID(mID)
+                    if mName and not mCol then
+                        table.insert(names, mName)
+                    end
+                end
+                if #names > 1 then
+                    combinedNames = table.concat(names, ", ")
+                end
+            end
+            addon:SetMountWaypoint(self.mountID, self.mapID, self.coordX, self.coordY, self.npcName, false, combinedNames)
         end
     end)
 
@@ -1499,6 +1512,9 @@ local function GetOrCreateMountListRow(index)
     row:SetScript("OnClick", function(self, button)
         if not self.mountID then return end
         ui.selectedMountID = self.mountID
+        if ui.pinnedInspectMountID and ui.pinnedInspectMountID ~= self.mountID then
+            ui.pinnedInspectMountID = nil
+        end
         addon:RefreshRadarUI()
         if button == "RightButton" then
             addon:NavigateMountTarget(self.mountID, false)
@@ -1594,7 +1610,7 @@ function addon:RefreshRadarUI()
             for _, qChain in ipairs(self.MountQuestsDB) do
                 local mID = qChain.resolvedMountID or (qChain.spellID and self.MountBySpell[qChain.spellID]) or qChain.mountID
                 local st = mID and self:GetMountQuestChainStatus(mID)
-                if st then
+                if st and (not st.isCollected or ui.pinnedInspectMountID == mID) then
                     st.isPlayerClass = (st.classRestriction and st.classRestriction == playerClass) and true or false
                     if ui.searchText == "" or string.find(string.lower(st.name), ui.searchText, 1, true) or string.find(string.lower(st.category), ui.searchText, 1, true) then
                         local badge
@@ -1637,7 +1653,7 @@ function addon:RefreshRadarUI()
             for dbIdx, dEntry in ipairs(self.MountDungeonsDB) do
                 local mID = dEntry.resolvedMountID or (dEntry.spellID and self.MountBySpell[dEntry.spellID]) or dEntry.mountID
                 local st = mID and self:GetDungeonMountStatus(mID)
-                if st then
+                if st and (not st.isCollected or ui.pinnedInspectMountID == mID) then
                     local sTxt = ui.searchText or ""
                     local matchSearch = (sTxt == "")
                         or string.find(string.lower(st.name or ""), sTxt, 1, true)
