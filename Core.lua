@@ -556,7 +556,26 @@ function addon:GetMountQuestChainStatus(mountID)
     local totalSteps = #chain.steps
     local stepStates = {}
 
-    for idx, s in ipairs(chain.steps) do
+    local isAltTint = (chain.mountID and mountID ~= chain.mountID) or false
+    local altStep = isAltTint and ((chain.altMountSteps and chain.altMountSteps[mountID]) or chain.altVendorStep) or nil
+    local baseChainDone = false
+    if isAltTint and altStep then
+        local _, _, _, _, _, _, _, _, _, _, primaryCol = C_MountJournal.GetMountInfoByID(chain.mountID)
+        if primaryCol then
+            baseChainDone = true
+        else
+            local lastS = chain.steps[totalSteps]
+            if lastS and lastS.doneQuest and C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
+                if C_QuestLog.IsQuestFlaggedCompleted(lastS.doneQuest)
+                    or (C_QuestLog.IsQuestFlaggedCompletedOnAccount and C_QuestLog.IsQuestFlaggedCompletedOnAccount(lastS.doneQuest)) then
+                    baseChainDone = true
+                end
+            end
+        end
+    end
+
+    for idx, rawS in ipairs(chain.steps) do
+        local s = (idx == totalSteps and altStep and (baseChainDone or isCollected)) and altStep or rawS
         local isDone = false
         local isDoneAccountOnly = false
         local inLog = false
@@ -572,6 +591,13 @@ function addon:GetMountQuestChainStatus(mountID)
         if isCollected then
             isDone = true
             doneSub = totalSub
+        elseif baseChainDone and altStep then
+            if idx < totalSteps then
+                isDone = true
+                doneSub = totalSub
+            else
+                isDone = false
+            end
         else
             if s.doneQuest and C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
                 if C_QuestLog.IsQuestFlaggedCompleted(s.doneQuest) then
@@ -655,6 +681,12 @@ function addon:GetMountQuestChainStatus(mountID)
             end
             if itemStatusLine then
                 table.insert(detailParts, itemStatusLine)
+            end
+            if idx == totalSteps and altStep and baseChainDone then
+                local altLine = (isRU and altStep.luaDetailRU) or altStep.luaDetailEN
+                if altLine and altLine ~= "" then
+                    table.insert(detailParts, altLine)
+                end
             end
             if #detailParts > 0 then
                 luaStepDetail = table.concat(detailParts, "\n")
