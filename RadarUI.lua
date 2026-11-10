@@ -543,6 +543,11 @@ secureTargetBtn:HookScript("PostClick", function(self, button, down)
 end)
 
 alertFrame:SetScript("OnClick", HandleAlertClick)
+alertFrame:SetScript("OnHide", function()
+    if addon.SyncActiveTourAfterKillOrAlert then
+        addon:SyncActiveTourAfterKillOrAlert()
+    end
+end)
 
 function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, liveX, liveY)
     if not forceShow and (not self.db or not self.db.settings.alertRares) then return end
@@ -555,9 +560,6 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
 
     local name, _, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
     if not name or (isCollected and not forceShow) then return end
-
-    -- Останавливаем фоновый авто-облёт спавнов, чтобы 3D-ромбик зафиксировался на живом рарнике!
-    self.activeSpawnTour = nil
 
     -- Если с этого NPC падает сразу несколько несобранных маунтов, объединяем их названия в один алерт и одну метку
     local displayMountNames = name
@@ -736,7 +738,8 @@ function addon:RefreshWorldMapPins()
             local locked = self:IsMountRareLockedToday(mountID)
             if info and info.coords then
                 for _, c in ipairs(info.coords) do
-                    if c.m == mapID and c.x and c.x > 0 and c.y and c.y > 0 then
+                    local pinLocked = (c.npcID and self:IsNpcLockedToday(c.npcID)) or locked
+                    if not pinLocked and c.m == mapID and c.x and c.x > 0 and c.y and c.y > 0 then
                         local coordKey = string.format("%d:%.1f:%.1f", mapID, c.x, c.y)
                         local existingPin = pinByCoordKey[coordKey]
                         if existingPin then
@@ -758,7 +761,6 @@ function addon:RefreshWorldMapPins()
                                 existingPin:SetAlpha(1.0)
                             end
                         else
-                            local pinLocked = (c.npcID and self:IsNpcLockedToday(c.npcID)) or locked
                             pinIdx = pinIdx + 1
                             local pin = GetOrCreateMapPin(canvas, pinIdx)
                             pin.mountID = mountID
@@ -1034,7 +1036,8 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         local chStr = string.format(L.MD_CHANCE_PART, dStatus.chance)
         table.insert(metaLines, string.format(L.META_DROP_ATTEMPTS, attempts, chStr))
     else
-        local bossStr = (dropInfo and dropInfo.boss) or (bestCoord and bestCoord.n) or "—"
+        local bestCoordName = bestCoord and ((bestCoord.npcID and addon.KnownNpcNames and addon.KnownNpcNames[bestCoord.npcID]) or (bestCoord.n and bestCoord.n ~= "" and bestCoord.n)) or nil
+        local bossStr = bestCoordName or (dropInfo and dropInfo.boss) or "—"
         local zoneStr = "—"
         if bestCoord and bestCoord.m and C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(bestCoord.m) then
             zoneStr = string.format("%s [%.1f, %.1f]", C_Map.GetMapInfo(bestCoord.m).name or "", bestCoord.x or 0, bestCoord.y or 0)
@@ -1198,13 +1201,15 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
             coordText = string.format("|cff00ccff%s [%.1f, %.1f]|r", zName, bestCoord.x, bestCoord.y)
         end
         local cleanSource = (sourceText and sourceText ~= "") and sourceText:gsub("|n", "\n") or (description or "")
+        local bestTargetName = bestCoord and ((bestCoord.npcID and addon.KnownNpcNames and addon.KnownNpcNames[bestCoord.npcID]) or (bestCoord.n and bestCoord.n ~= "" and bestCoord.n)) or nil
+        local card1Boss = bestTargetName or (dropInfo and dropInfo.boss)
         table.insert(stepsToRender, {
             mountID = mountID,
             stepIndex = nil,
             badge = badge1,
             coords = coordText,
-            title = (dropInfo and dropInfo.boss) and (L.STEP_DROP_TITLE_PREFIX .. dropInfo.boss) or name,
-            npc = (bestCoord and bestCoord.n and bestCoord.n ~= "") and (L.STEP_TARGET_PREFIX .. bestCoord.n .. "|r") or "",
+            title = card1Boss and (L.STEP_DROP_TITLE_PREFIX .. card1Boss) or name,
+            npc = bestTargetName and (L.STEP_TARGET_PREFIX .. bestTargetName .. "|r") or "",
             desc = cleanSource,
             bg = isCollected and { 0.06, 0.12, 0.08, 0.92 } or { 0.12, 0.11, 0.06, 0.94 },
             br = isCollected and { 0.18, 0.58, 0.30, 0.95 } or { 0.85, 0.68, 0.15, 1.0 },
@@ -1226,7 +1231,7 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
             })
         end
 
-        -- 3. Отдельные кликабельные карточки для каждой точки спавна рарника / босса
+        -- 3. Отдельные кликабельные карточки только для НЕ убитых сегодня точек спавна рарника / босса
         if dropInfo and dropInfo.coords and #dropInfo.coords > 0 then
             local uniqueSpawns = {}
             for _, c in ipairs(dropInfo.coords) do
@@ -1234,31 +1239,35 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
                     local isDup = false
                     for _, u in ipairs(uniqueSpawns) do
                         if u.m == c.m and math.abs(u.x - c.x) < 0.8 and math.abs(u.y - c.y) < 0.8 then
+                            if not u.npcID and c.npcID then u.npcID = c.npcID end
+                            if (not u.n or u.n == "") and c.n and c.n ~= "" then u.n = c.n end
                             isDup = true
                             break
                         end
                     end
                     if not isDup then
-                        table.insert(uniqueSpawns, c)
+                        table.insert(uniqueSpawns, { m = c.m, x = c.x, y = c.y, n = c.n, npcID = c.npcID })
                     end
                 end
             end
 
-            table.sort(uniqueSpawns, function(a, b)
-                local lockA = (a.npcID and addon:IsNpcLockedToday(a.npcID)) or false
-                local lockB = (b.npcID and addon:IsNpcLockedToday(b.npcID)) or false
-                if lockA ~= lockB then
-                    return not lockA
+            local availSpawns = {}
+            for _, c in ipairs(uniqueSpawns) do
+                local spLocked = (c.npcID and addon:IsNpcLockedToday(c.npcID)) or lockedToday
+                if not spLocked then
+                    table.insert(availSpawns, c)
                 end
+            end
+
+            table.sort(availSpawns, function(a, b)
                 return (a.x or 0) < (b.x or 0)
             end)
 
-            for spIdx, c in ipairs(uniqueSpawns) do
+            for spIdx, c in ipairs(availSpawns) do
                 if spIdx <= 30 then
                     local zName = (C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(c.m)) and C_Map.GetMapInfo(c.m).name or ("Map #" .. tostring(c.m))
                     local knownNpc = (c.npcID and addon.KnownNpcNames and addon.KnownNpcNames[c.npcID]) or nil
                     local targetNpc = knownNpc or ((c.n and c.n ~= "") and c.n) or (dropInfo.boss or name)
-                    local spLocked = (c.npcID and addon:IsNpcLockedToday(c.npcID)) or lockedToday
                     table.insert(stepsToRender, {
                         mountID = mountID,
                         stepIndex = nil,
@@ -1266,13 +1275,13 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
                         customX = c.x,
                         customY = c.y,
                         customNpc = targetNpc,
-                        badge = spLocked and L.RARE_SPAWN_DONE_BADGE or L.RARE_SPAWN_AVAIL_BADGE,
+                        badge = L.RARE_SPAWN_AVAIL_BADGE,
                         coords = string.format("|cff00ccff%s [%.1f, %.1f]|r", zName, c.x, c.y),
                         title = string.format(L.STEP_SPAWN_POINT_FMT, spIdx, targetNpc),
                         npc = "",
                         desc = L.QUEST_STEP_CLICK_HINT,
-                        bg = spLocked and { 0.06, 0.06, 0.07, 0.88 } or { 0.07, 0.10, 0.08, 0.94 },
-                        br = spLocked and { 0.35, 0.22, 0.22, 0.85 } or { 0.22, 0.65, 0.38, 0.95 },
+                        bg = { 0.07, 0.10, 0.08, 0.94 },
+                        br = { 0.22, 0.65, 0.38, 0.95 },
                     })
                 end
             end

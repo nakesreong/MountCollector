@@ -916,12 +916,11 @@ function addon:GetBestMountCoords(mountID, preferredMapID)
     local unlockedAny = findBest(true, nil)
     if unlockedAny then return unlockedAny end
 
-    -- 3. Если все рарники сегодня уже убиты (КД), возвращаем ближайшую точку как фоллбэк
-    if preferredMapID then
-        local anyInPref = findBest(false, preferredMapID)
-        if anyInPref then return anyInPref end
+    -- 3. Если у маунта только 1 точка (босс данжа/рейда без многих спавнов), возвращаем её
+    if #info.coords == 1 then
+        return info.coords[1]
     end
-    return findBest(false, nil)
+    return nil
 end
 
 -- Поставить метку на карте и 3D-стрелку (Blizzard UserWaypoint + SuperTrack + TomTom)
@@ -1055,9 +1054,12 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
         for _, c in ipairs(info.coords) do
             if c.m and c.m > 0 and c.m < 5000 and c.x and c.x > 0 and c.y and c.y > 0 then
                 local key = string.format("%d:%.1f:%.1f", c.m, c.x, c.y)
-                if not seen[key] then
-                    seen[key] = true
+                local existingIdx = seen[key]
+                if not existingIdx then
                     table.insert(coords, c)
+                    seen[key] = #coords
+                elseif c.npcID and not coords[existingIdx].npcID then
+                    coords[existingIdx] = c
                 end
             end
         end
@@ -1083,7 +1085,15 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
             table.insert(availCoords, c)
         end
     end
-    local routeCoords = (#availCoords > 0) and availCoords or coords
+
+    if #availCoords == 0 then
+        self.activeSpawnTour = nil
+        if self.RefreshWorldMapPins then
+            self:RefreshWorldMapPins()
+        end
+        return false
+    end
+    local routeCoords = availCoords
 
     -- Сортируем маршрут облёта по ближайшему соседу (Nearest-Neighbor) от текущей позиции игрока
     local px, py = nil, nil
@@ -1207,10 +1217,17 @@ function addon:StartSpawnTourTicker()
             reached = true
         end
 
-        -- 1. Проверка реальной 3D-дистанции до активного ромбика через C_Navigation.GetDistance() (в ярдах!)
+        -- Если прямо сейчас на экране горит баннер живого рарника (мы с ним дерёмся или летим к нему),
+        -- не переключаем маршрут дальше, пока рарник не будет убит или баннер не закроется!
+        local alertActive = _G.MountCollectorAlertFrame and _G.MountCollectorAlertFrame:IsShown()
+        if alertActive and not reached then
+            return
+        end
+
+        -- 1. Проверка реальной 3D-дистанции до активного ромбика через C_Navigation.GetDistance() (в ярдах, с запасом под полёт на драконе ~65 ярдов!)
         if not reached and _G.C_Navigation and _G.C_Navigation.GetDistance then
             local okDist, navDist = pcall(_G.C_Navigation.GetDistance)
-            if okDist and SafeNotSecret(navDist) and type(navDist) == "number" and navDist > 0 and navDist <= 38 then
+            if okDist and SafeNotSecret(navDist) and type(navDist) == "number" and navDist > 0 and navDist <= 65 then
                 local now = GetTime()
                 if not tour.stepSetAt or (now - tour.stepSetAt) > 1.2 then
                     reached = true
@@ -1218,7 +1235,7 @@ function addon:StartSpawnTourTicker()
             end
         end
 
-        -- 2. Фоллбэк: проверка по координатам карты (если C_Navigation недоступен)
+        -- 2. Проверка по 2D-координатам карты (работает на любой высоте полёта!)
         if not reached and C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
             local pMap = C_Map.GetBestMapForUnit("player")
             local checkMap = pt.m or pMap
@@ -1229,8 +1246,11 @@ function addon:StartSpawnTourTicker()
                     if SafeNotSecret(rx) and SafeNotSecret(ry) and rx and ry and rx > 0 and ry > 0 then
                         local dx = (rx * 100.0) - pt.x
                         local dy = (ry * 100.0) - pt.y
-                        if (dx * dx + dy * dy) <= 12.25 then -- ~3.5 единицы карты (~38 ярдов)
-                            reached = true
+                        if (dx * dx + dy * dy) <= 20.25 then -- ~4.5 единицы карты (~48 ярдов по земле на любой высоте!)
+                            local now = GetTime()
+                            if not tour.stepSetAt or (now - tour.stepSetAt) > 1.2 then
+                                reached = true
+                            end
                         end
                     end
                 end
@@ -1267,12 +1287,58 @@ function addon:AdvanceSpawnTourStep(fromAutoProximity)
         end
         return true
     else
+        -- Проверяем, остались ли ещё НЕ убитые нами сегодня рарники (которых в первом круге убили другие игроки):
+        -- если остались, автоматически начинаем новый круг только по живым (не убитым нами сегодня)!
+        local remaining = {}
+        for _, c in ipairs(tour.points) do
+            if not (c.npcID and self:IsNpcLockedToday(c.npcID)) then
+                table.insert(remaining, c)
+            end
+        end
+        if #remaining > 0 then
+            tour.points = remaining
+            tour.index = 1
+            tour.total = #remaining
+            tour.stepSetAt = GetTime()
+            local firstPt = remaining[1]
+            local knownName = firstPt.npcID and self.KnownNpcNames and self.KnownNpcNames[firstPt.npcID]
+            local nLabel = (IsValidNpcName(knownName) and knownName) or ((firstPt.n and firstPt.n ~= "") and firstPt.n) or tour.name
+            self:SetMountWaypoint(tour.mountID, firstPt.m, firstPt.x, firstPt.y, string.format("[1/%d] %s", tour.total, nLabel), true)
+            print(string.format(L.CHAT_TOUR_NEXT, 1, tour.total, nLabel, firstPt.x, firstPt.y))
+            if self.RefreshWorldMapPins then
+                self:RefreshWorldMapPins()
+            end
+            return true
+        end
         print(string.format(L.CHAT_TOUR_FINISHED, tour.name, tour.total))
         self.activeSpawnTour = nil
         if self.RefreshWorldMapPins then
             self:RefreshWorldMapPins()
         end
         return false
+    end
+end
+
+function addon:SyncActiveTourAfterKillOrAlert()
+    if _G.MountCollectorAlertFrame and _G.MountCollectorAlertFrame:IsShown() then
+        local aNpc = _G.MountCollectorAlertFrame.alertNpcID
+        if aNpc and self:IsNpcLockedToday(aNpc) then
+            _G.MountCollectorAlertFrame:Hide()
+            return
+        end
+    end
+    local tour = self.activeSpawnTour
+    if not tour or not tour.points then return end
+    local curPt = tour.points[tour.index]
+    if curPt and curPt.npcID and self:IsNpcLockedToday(curPt.npcID) then
+        self:AdvanceSpawnTourStep(true)
+    elseif curPt and not (_G.MountCollectorAlertFrame and _G.MountCollectorAlertFrame:IsShown()) then
+        local knownName = curPt.npcID and self.KnownNpcNames and self.KnownNpcNames[curPt.npcID]
+        local nLabel = (IsValidNpcName(knownName) and knownName) or ((curPt.n and curPt.n ~= "") and curPt.n) or tour.name
+        self:SetMountWaypoint(tour.mountID, curPt.m, curPt.x, curPt.y, string.format("[%d/%d] %s", tour.index, tour.total, nLabel), true)
+        if self.RefreshWorldMapPins then
+            self:RefreshWorldMapPins()
+        end
     end
 end
 
@@ -1991,6 +2057,7 @@ function addon:CheckRecentlyKilledRares()
                 if self.RefreshWorldMapPins then
                     self:RefreshWorldMapPins()
                 end
+                self:SyncActiveTourAfterKillOrAlert()
             end
         else
             self.RecentlySpottedUnlockedRares[npcID] = nil
@@ -2710,6 +2777,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                                     if addon.RefreshWorldMapPins then
                                         addon:RefreshWorldMapPins()
                                     end
+                                    addon:SyncActiveTourAfterKillOrAlert()
                                 end
                             end
                         end
@@ -2753,6 +2821,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             if addon.RefreshWorldMapPins then
                 addon:RefreshWorldMapPins()
             end
+            addon:SyncActiveTourAfterKillOrAlert()
         end
         C_Timer.After(0.5, CheckActiveQuestChainProgress)
     elseif event == "QUEST_ACCEPTED" then
