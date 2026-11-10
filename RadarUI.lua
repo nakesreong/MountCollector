@@ -856,11 +856,40 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
     local dStatus = (not qStatus) and addon:GetDungeonMountStatus(mountID) or nil
     local bestCoord = addon:GetBestMountCoords(mountID)
 
-    if panel.btnNavNow then
-        panel.btnNavNow:SetText(dStatus and L.DUNGEON_ENTRANCE_BTN or L.QUEST_NAV_BTN)
+    if panel.btnSetAttempts then
+        if qStatus then
+            panel.btnSetAttempts:Hide()
+            if panel.secLabel and panel.btnDebug then
+                panel.secLabel:SetPoint("RIGHT", panel.btnDebug, "LEFT", -6, 0)
+            end
+        else
+            panel.btnSetAttempts:Show()
+            if panel.secLabel then
+                panel.secLabel:SetPoint("RIGHT", panel.btnSetAttempts, "LEFT", -6, 0)
+            end
+        end
     end
-    if panel.btnNavStart then
-        panel.btnNavStart:SetText(qStatus and L.QUEST_START_BTN or L.RARE_PIN_ALL_BTN)
+
+    if isCollected then
+        if panel.btnNavNow then panel.btnNavNow:Hide() end
+        if panel.btnNavStart then panel.btnNavStart:Hide() end
+        if panel.btnBar then panel.btnBar:SetHeight(24) end
+        if panel.scrollFrame then
+            panel.scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 38)
+        end
+    else
+        if panel.btnNavNow then
+            panel.btnNavNow:SetText(dStatus and L.DUNGEON_ENTRANCE_BTN or L.QUEST_NAV_BTN)
+            panel.btnNavNow:Show()
+        end
+        if panel.btnNavStart then
+            panel.btnNavStart:SetText(qStatus and L.QUEST_START_BTN or L.RARE_PIN_ALL_BTN)
+            panel.btnNavStart:Show()
+        end
+        if panel.btnBar then panel.btnBar:SetHeight(54) end
+        if panel.scrollFrame then
+            panel.scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 68)
+        end
     end
 
     panel.iconFrame:Show()
@@ -1241,6 +1270,7 @@ local function CreateMountInspectorWidget(parent, scrollName, cardWidth, isDocke
     local scrollFrame = CreateFrame("ScrollFrame", scrollName, panel, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", headerBox, "BOTTOMLEFT", 0, -28)
     scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 68)
+    panel.scrollFrame = scrollFrame
 
     local scrollContent = CreateFrame("Frame", nil, scrollFrame)
     scrollContent:SetSize(cardWidth, 1)
@@ -1252,6 +1282,7 @@ local function CreateMountInspectorWidget(parent, scrollName, cardWidth, isDocke
     btnBar:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 8)
     btnBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, 8)
     btnBar:SetHeight(54)
+    panel.btnBar = btnBar
 
     local halfW = math.floor((cardWidth + 16) / 2) - 3
 

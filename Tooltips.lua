@@ -473,7 +473,9 @@ function addon:HookMountJournal()
             end
             questBtn:Show()
 
-            if qStatus then
+            if isCollected then
+                routeBtn:Hide()
+            elseif qStatus then
                 routeBtn.mountID = mountID
                 routeBtn.isQuestMount = true
                 routeBtn:SetText(L.MD_BTN_CONTINUE_ROUTE)

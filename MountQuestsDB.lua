@@ -2290,7 +2290,7 @@ addon.MountQuestsDB = {
         categoryRU = "Оплот Класса (Legion)",
         categoryEN = "Class Hall (Legion)",
         classRestriction = "HUNTER",
-        summaryRU = "Классовый волкоястреб Охотника: Кампания Приюта Стрелка + Ночная охотница Сиренна + сценарий «Ночь дикой охоты».",
+        summaryRU = "Классовый звероястреб Охотника: Кампания Приюта Стрелка + Ночная охотница Сиренна + сценарий «Ночь дикой охоты».",
         summaryEN = "Hunter Class Mount: Trueshot Lodge Campaign + Champion Nighthuntress Syrenne + 'Night of the Wilds'.",
         steps = {
             {
@@ -2324,7 +2324,7 @@ addon.MountQuestsDB = {
             {
                 titleRU = "Шаг 3: Финал — «Ночь дикой охоты» (46337) -> Маунт!",
                 titleEN = "Step 3: Finale — 'Night of the Wilds' (46337) -> Mount!",
-                descRU = "Поговорите с Кариэль Ветер Стрел в Приюте Стрелка [43.8, 47.6] и пройдите испытание охоты (46336, 46337)! После сдачи квеста у Пана Добрая Рука [42.2, 48.8] также открывается покупка Свирепого (147807) и Лютого (147806) волкоястребов по 1000 ресурсов оплота.",
+                descRU = "Поговорите с Кариэль Ветер Стрел в Приюте Стрелка [43.8, 47.6] и пройдите испытание охоты (46336, 46337)! После сдачи квеста у Пана Добрая Рука [42.2, 48.8] также открывается покупка Яростного (147807) и Лютого (147806) звероястребов по 1000 ресурсов оплота.",
                 descEN = "Speak with Kariel Winthalus at Trueshot Lodge [43.8, 47.6] and complete 'Night of the Wilds' (46337)! Afterward, Pan the Kind Hand [42.2, 48.8] sells the Fierce (147807) and Dire (147806) Wolfhawks for 1,000 Order Resources each.",
                 npcRU = "Кариэль Ветер Стрел",
                 npcEN = "Kariel Winthalus",
