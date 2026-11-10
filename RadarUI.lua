@@ -525,14 +525,6 @@ local function HandleAlertClick(_, button)
         if IsShiftKeyDown and IsShiftKeyDown() then
             addon:OpenMountInJournal(alertFrame.currentMountID)
         end
-        if UnitExists and UnitExists("target") and alertFrame.alertNpcID then
-            local targetNpcID = addon:GetNPCIDFromGUID(UnitGUID("target"))
-            if targetNpcID and targetNpcID == alertFrame.alertNpcID and SetRaidTarget and GetRaidTargetIndex then
-                if GetRaidTargetIndex("target") ~= 8 then
-                    pcall(SetRaidTarget, "target", 8)
-                end
-            end
-        end
     end
 end
 
