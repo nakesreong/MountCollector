@@ -1,5 +1,12 @@
 # Changelog — MountCollector
 
+## [v1.6.1] - 2026-11-10
+### Fixed
+- **Auto-Exit Spawn Tour on Manual Map Pin or Quest Tracking (`Core.lua`)**:
+  - Added `CheckAndCancelTourIfUserOverrode`: the 3D rare spawn tour now automatically exits if you manually place your own custom pin on the World Map (`Ctrl+Click`), remove the map pin, or click a quest in the Objective Tracker to track quests, without overriding your custom waypoint.
+
+---
+
 ## [v1.6.0] - 2026-11-10
 ### Added
 - **World Bosses & Alt Lockout Matrix (`MountDungeonsDB.lua`, `Core.lua`)**:
