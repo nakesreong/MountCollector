@@ -990,6 +990,12 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
             end
             local pt = UiMapPoint.CreateFromCoordinates(wpMapID, wpNormX, wpNormY)
             C_Map.SetUserWaypoint(pt)
+            self.lastAddonWaypoint = {
+                mapID = wpMapID,
+                x = wpNormX,
+                y = wpNormY,
+                setAt = GetTime(),
+            }
             local superTrackAPI = _G.C_SuperTrack or _G.C_SuperTracked
             if superTrackAPI and superTrackAPI.SetSuperTrackedUserWaypoint then
                 superTrackAPI.SetSuperTrackedUserWaypoint(true)
@@ -1189,10 +1195,66 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
     return true
 end
 
+-- Проверить, не переключился ли игрок вручную на свою метку на карте или на отслеживание квеста
+function addon:CheckAndCancelTourIfUserOverrode()
+    if not self.activeSpawnTour then return true end
+    local lastWP = self.lastAddonWaypoint
+    if not lastWP or (GetTime() - (lastWP.setAt or 0)) <= 1.0 then
+        return false
+    end
+
+    -- 1. Игрок вручную удалил метку с карты
+    if C_Map and C_Map.HasUserWaypoint and not C_Map.HasUserWaypoint() then
+        self.activeSpawnTour = nil
+        if self.RefreshWorldMapPins then self:RefreshWorldMapPins() end
+        return true
+    end
+
+    -- 2. Игрок поставил СВОЮ точку на карте (координаты или карта отличаются от точки нашего тура)
+    local isStillAddonPin = true
+    if C_Map and C_Map.GetUserWaypoint then
+        local ok, wp = pcall(C_Map.GetUserWaypoint)
+        if ok and wp and wp.uiMapID and wp.position and wp.position.GetXY then
+            local wx, wy = wp.position:GetXY()
+            if SafeNotSecret(wx) and SafeNotSecret(wy) and wx and wy then
+                if wp.uiMapID ~= lastWP.mapID or math.abs(wx - lastWP.x) > 0.008 or math.abs(wy - lastWP.y) > 0.008 then
+                    isStillAddonPin = false
+                end
+            end
+        end
+    end
+    if not isStillAddonPin then
+        -- Не трогаем новую пользовательскую метку, просто тихо выходим из режима облёта рарников!
+        self.activeSpawnTour = nil
+        if self.RefreshWorldMapPins then self:RefreshWorldMapPins() end
+        return true
+    end
+
+    -- 3. Игрок кликнул по квесту в трекере заданий (или снял SuperTrack с метки): выходим из тура и убираем нашу старую метку
+    local stAPI = _G.C_SuperTrack or _G.C_SuperTracked
+    if stAPI and stAPI.IsSuperTrackingUserWaypoint and not stAPI.IsSuperTrackingUserWaypoint() then
+        self.activeSpawnTour = nil
+        if isStillAddonPin and C_Map and C_Map.ClearUserWaypoint then
+            pcall(C_Map.ClearUserWaypoint)
+        end
+        if self.RefreshWorldMapPins then self:RefreshWorldMapPins() end
+        return true
+    end
+
+    return false
+end
+
 -- Авто-переключение 3D-ромбика Blizzard по мере облёта точек спавна (без TomTom)
 function addon:StartSpawnTourTicker()
     if self.spawnTourTicker then return end
     self.spawnTourTicker = C_Timer.NewTicker(0.75, function()
+        if self:CheckAndCancelTourIfUserOverrode() then
+            if self.spawnTourTicker then
+                self.spawnTourTicker:Cancel()
+                self.spawnTourTicker = nil
+            end
+            return
+        end
         local tour = self.activeSpawnTour
         if not tour or not tour.points or tour.index > tour.total then
             if self.spawnTourTicker then
@@ -1203,14 +1265,6 @@ function addon:StartSpawnTourTicker()
         end
         local pt = tour.points[tour.index]
         if not pt then return end
-
-        -- Удерживаем активность 3D-ромбика Blizzard, если игра сбросила SuperTrack
-        local stAPI = _G.C_SuperTrack or _G.C_SuperTracked
-        if stAPI and stAPI.IsSuperTrackingUserWaypoint and stAPI.SetSuperTrackedUserWaypoint then
-            if C_Map and C_Map.HasUserWaypoint and C_Map.HasUserWaypoint() and not stAPI.IsSuperTrackingUserWaypoint() then
-                pcall(stAPI.SetSuperTrackedUserWaypoint, true)
-            end
-        end
 
         local reached = false
         if pt.npcID and self:IsNpcLockedToday(pt.npcID) then
@@ -1327,6 +1381,7 @@ function addon:SyncActiveTourAfterKillOrAlert()
             return
         end
     end
+    if self:CheckAndCancelTourIfUserOverrode() then return end
     local tour = self.activeSpawnTour
     if not tour or not tour.points then return end
     local curPt = tour.points[tour.index]
