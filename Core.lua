@@ -231,6 +231,8 @@ function addon:BuildMountIndex()
     wipe(self.MountDungeonsByMountID)
     wipe(self.MountsByNpc)
     wipe(self.MountsByMap)
+    self.NpcByRareName = self.NpcByRareName or {}
+    wipe(self.NpcByRareName)
 
     local mountIDs = C_MountJournal.GetMountIDs()
     if not mountIDs then return end
@@ -328,6 +330,9 @@ function addon:BuildMountIndex()
                     info.npcs[npcID] = true
                     self.MountsByNpc[npcID] = self.MountsByNpc[npcID] or {}
                     AddUniqueToList(self.MountsByNpc[npcID], mountID)
+                    if rsData.name and IsValidNpcName(rsData.name) then
+                        self.NpcByRareName[string.lower(rsData.name)] = npcID
+                    end
 
                     for _, qid in ipairs(rsData.quests or {}) do
                         AddUniqueToList(info.quests, qid)
@@ -475,14 +480,41 @@ function addon:BuildMountIndex()
                 if dEntry.itemID and dEntry.itemID > 0 and not self.MountByItem[dEntry.itemID] then
                     self.MountByItem[dEntry.itemID] = mID
                 end
-                if dEntry.mapID and dEntry.x and dEntry.y and #info.coords == 0 then
-                    table.insert(info.coords, {
-                        m = dEntry.mapID,
-                        x = dEntry.x,
-                        y = dEntry.y,
-                        n = dEntry.instanceEN or dEntry.instanceRU or info.boss or info.name,
-                    })
+                if dEntry.npcID and dEntry.npcID > 0 then
+                    info.npcs[dEntry.npcID] = true
+                    self.MountsByNpc[dEntry.npcID] = self.MountsByNpc[dEntry.npcID] or {}
+                    AddUniqueToList(self.MountsByNpc[dEntry.npcID], mID)
+                    if dEntry.bossRU and IsValidNpcName(dEntry.bossRU) then
+                        self.NpcByRareName[string.lower(dEntry.bossRU)] = dEntry.npcID
+                    end
+                    if dEntry.bossEN and IsValidNpcName(dEntry.bossEN) then
+                        self.NpcByRareName[string.lower(dEntry.bossEN)] = dEntry.npcID
+                    end
                 end
+                if dEntry.mapID and dEntry.x and dEntry.y then
+                    AddUniqueToList(info.maps, dEntry.mapID)
+                    if dEntry.sourceKind == "WORLD_BOSS" then
+                        self.MountsByMap[dEntry.mapID] = self.MountsByMap[dEntry.mapID] or {}
+                        AddUniqueToList(self.MountsByMap[dEntry.mapID], mID)
+                    end
+                    if #info.coords == 0 then
+                        table.insert(info.coords, {
+                            m = dEntry.mapID,
+                            x = dEntry.x,
+                            y = dEntry.y,
+                            n = dEntry.bossRU or dEntry.bossEN or dEntry.instanceRU or dEntry.instanceEN or info.boss or info.name,
+                            npcID = dEntry.npcID,
+                        })
+                    end
+                end
+            end
+        end
+    end
+
+    if self.KnownNpcNames then
+        for nid, kName in pairs(self.KnownNpcNames) do
+            if IsValidNpcName(kName) then
+                self.NpcByRareName[string.lower(kName)] = nid
             end
         end
     end
@@ -1051,7 +1083,48 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
     end
     local routeCoords = (#availCoords > 0) and availCoords or coords
 
-    local primaryCoord = self:GetBestMountCoords(mountID, playerMapID) or routeCoords[1]
+    -- Сортируем маршрут облёта по ближайшему соседу (Nearest-Neighbor) от текущей позиции игрока
+    local px, py = nil, nil
+    if playerMapID and C_Map and C_Map.GetPlayerMapPosition then
+        local okPos, pos = pcall(C_Map.GetPlayerMapPosition, playerMapID, "player")
+        if okPos and pos and pos.GetXY then
+            local rx, ry = pos:GetXY()
+            if SafeNotSecret(rx) and SafeNotSecret(ry) and rx and ry and rx > 0 and ry > 0 then
+                px, py = rx * 100.0, ry * 100.0
+            end
+        end
+    end
+
+    if #routeCoords > 1 and px and py then
+        local pool = {}
+        for _, c in ipairs(routeCoords) do
+            table.insert(pool, c)
+        end
+        local sorted = {}
+        local curX, curY, curMap = px, py, playerMapID
+        while #pool > 0 do
+            local bestIdx = 1
+            local bestScore = math.huge
+            for i, cand in ipairs(pool) do
+                local mapPenalty = (cand.m == curMap) and 0 or 100000
+                local dx = (cand.x or 50) - curX
+                local dy = (cand.y or 50) - curY
+                local score = mapPenalty + (dx * dx + dy * dy)
+                if score < bestScore then
+                    bestScore = score
+                    bestIdx = i
+                end
+            end
+            local chosen = table.remove(pool, bestIdx)
+            table.insert(sorted, chosen)
+            curX = chosen.x or curX
+            curY = chosen.y or curY
+            curMap = chosen.m or curMap
+        end
+        routeCoords = sorted
+    end
+
+    local primaryCoord = routeCoords[1] or self:GetBestMountCoords(mountID, playerMapID)
 
     if _G.TomTom and _G.TomTom.AddWaypoint then
         for idx, c in ipairs(routeCoords) do
@@ -1075,7 +1148,22 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
         end
     end
 
-    self:SetMountWaypoint(mountID, primaryCoord.m, primaryCoord.x, primaryCoord.y, primaryCoord.n or (info and info.boss), false)
+    if #routeCoords > 1 then
+        self.activeSpawnTour = {
+            mountID = mountID,
+            name = name,
+            points = routeCoords,
+            index = 1,
+            total = #routeCoords,
+        }
+        self:StartSpawnTourTicker()
+        local pLabel = (primaryCoord.n and primaryCoord.n ~= "") and primaryCoord.n or (info and info.boss) or name
+        self:SetMountWaypoint(mountID, primaryCoord.m, primaryCoord.x, primaryCoord.y, string.format("[1/%d] %s", #routeCoords, pLabel), true)
+        print(string.format(L.CHAT_TOUR_STARTED, name, #routeCoords, pLabel, primaryCoord.x, primaryCoord.y))
+    else
+        self.activeSpawnTour = nil
+        self:SetMountWaypoint(mountID, primaryCoord.m, primaryCoord.x, primaryCoord.y, primaryCoord.n or (info and info.boss), false)
+    end
 
     if openWorldMap and primaryCoord.m and OpenWorldMap then
         pcall(OpenWorldMap, primaryCoord.m)
@@ -1085,6 +1173,70 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
     end
 
     return true
+end
+
+-- Авто-переключение 3D-ромбика Blizzard по мере облёта точек спавна (без TomTom)
+function addon:StartSpawnTourTicker()
+    if self.spawnTourTicker then return end
+    self.spawnTourTicker = C_Timer.NewTicker(1.0, function()
+        local tour = self.activeSpawnTour
+        if not tour or not tour.points or tour.index > tour.total then
+            if self.spawnTourTicker then
+                self.spawnTourTicker:Cancel()
+                self.spawnTourTicker = nil
+            end
+            return
+        end
+        local pt = tour.points[tour.index]
+        if not pt then return end
+
+        local reached = false
+        if pt.npcID and self:IsNpcLockedToday(pt.npcID) then
+            reached = true
+        elseif C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
+            local pMap = C_Map.GetBestMapForUnit("player")
+            if pMap and pt.m then
+                local okPos, pos = pcall(C_Map.GetPlayerMapPosition, pt.m, "player")
+                if okPos and pos and pos.GetXY then
+                    local rx, ry = pos:GetXY()
+                    if SafeNotSecret(rx) and SafeNotSecret(ry) and rx and ry and rx > 0 and ry > 0 then
+                        local dx = (rx * 100.0) - pt.x
+                        local dy = (ry * 100.0) - pt.y
+                        if (dx * dx + dy * dy) <= 10.5 then -- ~3.2 единицы карты (~35 ярдов)
+                            reached = true
+                        end
+                    end
+                end
+            end
+        end
+
+        if reached then
+            tour.index = tour.index + 1
+            while tour.index <= tour.total do
+                local nextCand = tour.points[tour.index]
+                if nextCand and nextCand.npcID and self:IsNpcLockedToday(nextCand.npcID) then
+                    tour.index = tour.index + 1
+                else
+                    break
+                end
+            end
+            if tour.index <= tour.total then
+                local nextPt = tour.points[tour.index]
+                local nLabel = (nextPt.n and nextPt.n ~= "") and nextPt.n or tour.name
+                self:SetMountWaypoint(tour.mountID, nextPt.m, nextPt.x, nextPt.y, string.format("[%d/%d] %s", tour.index, tour.total, nLabel), true)
+                print(string.format(L.CHAT_TOUR_NEXT, tour.index, tour.total, nLabel, nextPt.x, nextPt.y))
+                if self.RefreshWorldMapPins then
+                    self:RefreshWorldMapPins()
+                end
+            else
+                print(string.format(L.CHAT_TOUR_FINISHED, tour.name, tour.total))
+                self.activeSpawnTour = nil
+                if self.RefreshWorldMapPins then
+                    self:RefreshWorldMapPins()
+                end
+            end
+        end
+    end)
 end
 
 -- Проверить особые условия получения маунта (предметы в сумках, фазы зон, ковенанты, КД рарника)
@@ -1838,6 +1990,8 @@ function addon:CheckUnitForMountDrop(unit, isRetry)
     if IsValidNpcName(npcName) then
         self.KnownNpcNames = self.KnownNpcNames or {}
         self.KnownNpcNames[npcID] = npcName
+        self.NpcByRareName = self.NpcByRareName or {}
+        self.NpcByRareName[string.lower(npcName)] = npcID
     else
         if isAlive and mounts and not isRetry then
             C_Timer.After(0.25, function()
@@ -1865,14 +2019,31 @@ function addon:CheckUnitForMountDrop(unit, isRetry)
     end
 end
 
-function addon:CheckVignetteForMountDrop(vignetteGUID)
+function addon:CheckVignetteForMountDrop(vignetteGUID, isRetry)
     if not vignetteGUID or not SafeNotSecret(vignetteGUID) then return end
     if not C_VignetteInfo or not C_VignetteInfo.GetVignetteInfo then return end
     local vInfo = C_VignetteInfo.GetVignetteInfo(vignetteGUID)
-    if not vInfo or not SafeNotSecret(vInfo.objectGUID) then return end
+    if not vInfo then
+        if not isRetry then
+            C_Timer.After(0.35, function()
+                self:CheckVignetteForMountDrop(vignetteGUID, true)
+            end)
+        end
+        return
+    end
 
-    local npcID = self:GetNPCIDFromGUID(vInfo.objectGUID)
-    if not npcID then return end
+    local npcID = SafeNotSecret(vInfo.objectGUID) and self:GetNPCIDFromGUID(vInfo.objectGUID) or nil
+    if not npcID and IsValidNpcName(vInfo.name) and self.NpcByRareName then
+        npcID = self.NpcByRareName[string.lower(vInfo.name)]
+    end
+    if not npcID then
+        if not isRetry then
+            C_Timer.After(0.35, function()
+                self:CheckVignetteForMountDrop(vignetteGUID, true)
+            end)
+        end
+        return
+    end
 
     local mounts = self.MountsByNpc[npcID]
     if not mounts then return end
@@ -1892,19 +2063,33 @@ function addon:CheckVignetteForMountDrop(vignetteGUID)
     if vName then
         self.KnownNpcNames = self.KnownNpcNames or {}
         self.KnownNpcNames[npcID] = vName
+        self.NpcByRareName = self.NpcByRareName or {}
+        self.NpcByRareName[string.lower(vName)] = npcID
     else
         local rs = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
         vName = (self.KnownNpcNames and self.KnownNpcNames[npcID]) or (rs and rs.name) or "Rare NPC"
     end
+
     local mapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
     local liveX, liveY = nil, nil
     if mapID and C_VignetteInfo.GetVignettePosition then
-        local ok, pos = pcall(C_VignetteInfo.GetVignettePosition, vignetteGUID, mapID)
-        if ok and pos and pos.GetXY then
-            local vx, vy = pos:GetXY()
-            if SafeNotSecret(vx) and SafeNotSecret(vy) and vx and vy and vx > 0 and vy > 0 then
-                liveX = vx * 100.0
-                liveY = vy * 100.0
+        local tryMaps = { mapID }
+        if C_Map.GetMapInfo then
+            local mInfo = C_Map.GetMapInfo(mapID)
+            if mInfo and mInfo.parentMapID and mInfo.parentMapID > 0 then
+                table.insert(tryMaps, mInfo.parentMapID)
+            end
+        end
+        for _, candMap in ipairs(tryMaps) do
+            local ok, pos = pcall(C_VignetteInfo.GetVignettePosition, vignetteGUID, candMap)
+            if ok and pos and pos.GetXY then
+                local vx, vy = pos:GetXY()
+                if SafeNotSecret(vx) and SafeNotSecret(vy) and vx and vy and vx > 0 and vy > 0 then
+                    mapID = candMap
+                    liveX = vx * 100.0
+                    liveY = vy * 100.0
+                    break
+                end
             end
         end
     end
@@ -1913,6 +2098,39 @@ function addon:CheckVignetteForMountDrop(vignetteGUID)
         local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
         if not isCollected then
             self:TriggerRareMountAlert(mountID, npcID, vName, false, mapID, liveX, liveY)
+            break
+        end
+    end
+end
+
+-- Просканировать все активные виньетки миникарты/карты (радиус 250-400+ ярдов, как в RareScanner)
+function addon:ScanAllActiveVignettes()
+    if not C_VignetteInfo or not C_VignetteInfo.GetVignettes then return end
+    local ok, vignettes = pcall(C_VignetteInfo.GetVignettes)
+    if not ok or type(vignettes) ~= "table" then return end
+    for _, vGUID in ipairs(vignettes) do
+        self:CheckVignetteForMountDrop(vGUID, false)
+    end
+end
+
+-- Дальнобойный детект рарников по крику / эмоции / фразе в чат на всю локацию
+function addon:CheckMonsterChatForMountDrop(senderName)
+    if not IsValidNpcName(senderName) or not self.NpcByRareName then return end
+    local npcID = self.NpcByRareName[string.lower(senderName)]
+    if not npcID then return end
+    local mounts = self.MountsByNpc and self.MountsByNpc[npcID]
+    if not mounts then return end
+    if self:IsNpcLockedToday(npcID) then return end
+
+    self.KnownNpcNames = self.KnownNpcNames or {}
+    self.KnownNpcNames[npcID] = senderName
+
+    local mapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    for _, mountID in ipairs(mounts) do
+        local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+        if not isCollected then
+            local c = self:GetBestMountCoords(mountID, mapID)
+            self:TriggerRareMountAlert(mountID, npcID, senderName, false, c and c.m or mapID, c and c.x, c and c.y)
             break
         end
     end
@@ -2248,6 +2466,13 @@ eventFrame:RegisterEvent("NEW_MOUNT_ADDED")
 eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 eventFrame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
 eventFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+eventFrame:RegisterEvent("UNIT_TARGET")
+eventFrame:RegisterEvent("VIGNETTE_MINIMAP_UPDATED")
+eventFrame:RegisterEvent("VIGNETTES_UPDATED")
+eventFrame:RegisterEvent("CHAT_MSG_MONSTER_YELL")
+eventFrame:RegisterEvent("CHAT_MSG_MONSTER_EMOTE")
+eventFrame:RegisterEvent("CHAT_MSG_MONSTER_SAY")
+eventFrame:RegisterEvent("CHAT_MSG_MONSTER_WHISPER")
 eventFrame:RegisterEvent("LOOT_READY")
 eventFrame:RegisterEvent("QUEST_TURNED_IN")
 eventFrame:RegisterEvent("QUEST_ACCEPTED")
@@ -2342,6 +2567,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             if addon.RefreshRadarUI then
                 addon:RefreshRadarUI()
             end
+            addon:ScanAllActiveVignettes()
         end)
     elseif event == "UPDATE_INSTANCE_INFO" or event == "PLAYER_LEVEL_UP" then
         addon:ScanCurrentCharacterLockouts()
@@ -2358,6 +2584,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         addon:SnapshotPreLockedRares()
+        addon:ScanAllActiveVignettes()
         if addon.UpdateLDBText then
             addon:UpdateLDBText()
         end
@@ -2365,6 +2592,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             addon:RefreshRadarUI()
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
+        if addon.FlushPendingAlertTarget then
+            addon:FlushPendingAlertTarget()
+        end
         C_Timer.After(2.0, function()
             addon:CheckRecentlyKilledRares()
         end)
@@ -2375,6 +2605,19 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "NAME_PLATE_UNIT_ADDED" then
         local unit = ...
         addon:CheckUnitForMountDrop(unit)
+    elseif event == "UNIT_TARGET" then
+        local unit = ...
+        if unit and SafeNotSecret(unit) and unit ~= "player" then
+            addon:CheckUnitForMountDrop(unit .. "target")
+        end
+    elseif event == "VIGNETTE_MINIMAP_UPDATED" then
+        local vignetteGUID = ...
+        addon:CheckVignetteForMountDrop(vignetteGUID, false)
+    elseif event == "VIGNETTES_UPDATED" then
+        addon:ScanAllActiveVignettes()
+    elseif event == "CHAT_MSG_MONSTER_YELL" or event == "CHAT_MSG_MONSTER_EMOTE" or event == "CHAT_MSG_MONSTER_SAY" or event == "CHAT_MSG_MONSTER_WHISPER" then
+        local _, senderName = ...
+        addon:CheckMonsterChatForMountDrop(senderName)
     elseif event == "LOOT_READY" then
         if GetNumLootItems and GetLootSourceInfo then
             local seenGuids = {}

@@ -455,16 +455,77 @@ alertStats:SetJustifyH("LEFT")
 
 local closeAlertBtn = CreateFlatButton(alertFrame, 20, 20, "X", false)
 closeAlertBtn:SetPoint("TOPRIGHT", alertFrame, "TOPRIGHT", -4, -4)
+closeAlertBtn:SetFrameLevel(alertFrame:GetFrameLevel() + 6)
 closeAlertBtn:SetScript("OnClick", function() alertFrame:Hide() end)
 
-alertFrame:SetScript("OnClick", function(self, button)
-    if button == "RightButton" then
-        self:Hide()
-    elseif self.currentMountID then
-        addon:SetMountWaypoint(self.currentMountID, self.alertMapID, self.alertX, self.alertY, self.alertNpcName, false)
-        addon:OpenMountInJournal(self.currentMountID)
-    end
+-- Защищённая кнопка SecureActionButtonTemplate поверх баннера для взятия рарника в цель (/targetexact) по клику ЛКМ!
+local secureTargetBtn = CreateFrame("Button", "MountCollectorAlertSecureBtn", alertFrame, "SecureActionButtonTemplate")
+secureTargetBtn:SetAllPoints(alertFrame)
+secureTargetBtn:SetFrameLevel(alertFrame:GetFrameLevel() + 2)
+secureTargetBtn:RegisterForClicks("AnyUp", "AnyDown")
+secureTargetBtn:RegisterForDrag("LeftButton")
+secureTargetBtn:SetScript("OnDragStart", function() alertFrame:StartMoving() end)
+secureTargetBtn:SetScript("OnDragStop", function() alertFrame:StopMovingOrSizing() end)
+
+secureTargetBtn:SetScript("OnEnter", function()
+    alertFrame:SetBackdropBorderColor(0.0, 0.95, 1.0, 1.0)
 end)
+secureTargetBtn:SetScript("OnLeave", function()
+    alertFrame:SetBackdropBorderColor(1.0, 0.82, 0.0, 1.0)
+end)
+
+function addon:UpdateAlertSecureTarget(npcName)
+    local cleanName = (type(npcName) == "string") and npcName:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("%s*%b()", "") or ""
+    if cleanName == "" or cleanName == "Rare NPC" or cleanName == "Неизвестно" or cleanName:find("^NPC #") then
+        cleanName = ""
+    end
+    if InCombatLockdown and InCombatLockdown() then
+        self.pendingAlertTargetName = cleanName
+        return
+    end
+    self.pendingAlertTargetName = nil
+    secureTargetBtn:SetAttribute("type1", "macro")
+    if cleanName ~= "" then
+        secureTargetBtn:SetAttribute("macrotext1", "/targetexact " .. cleanName .. "\n/target " .. cleanName)
+    else
+        secureTargetBtn:SetAttribute("macrotext1", "")
+    end
+    secureTargetBtn:SetAttribute("type2", "macro")
+    secureTargetBtn:SetAttribute("macrotext2", "")
+end
+
+function addon:FlushPendingAlertTarget()
+    if self.pendingAlertTargetName ~= nil and not (InCombatLockdown and InCombatLockdown()) then
+        self:UpdateAlertSecureTarget(self.pendingAlertTargetName)
+    end
+end
+
+local function HandleAlertClick(_, button)
+    if button == "RightButton" then
+        alertFrame:Hide()
+    elseif alertFrame.currentMountID then
+        addon:SetMountWaypoint(alertFrame.currentMountID, alertFrame.alertMapID, alertFrame.alertX, alertFrame.alertY, alertFrame.alertNpcName, false)
+        if IsShiftKeyDown and IsShiftKeyDown() then
+            addon:OpenMountInJournal(alertFrame.currentMountID)
+        end
+        if UnitExists and UnitExists("target") and alertFrame.alertNpcID then
+            local targetNpcID = addon:GetNPCIDFromGUID(UnitGUID("target"))
+            if targetNpcID and targetNpcID == alertFrame.alertNpcID and SetRaidTarget and GetRaidTargetIndex then
+                if GetRaidTargetIndex("target") ~= 8 then
+                    pcall(SetRaidTarget, "target", 8)
+                end
+            end
+        end
+    end
+end
+
+secureTargetBtn:HookScript("PostClick", function(self, button, down)
+    local useKeyDown = C_CVar and C_CVar.GetCVarBool and C_CVar.GetCVarBool("ActionButtonUseKeyDown")
+    if (down and not useKeyDown) or (not down and useKeyDown) then return end
+    HandleAlertClick(self, button)
+end)
+
+alertFrame:SetScript("OnClick", HandleAlertClick)
 
 function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, liveX, liveY)
     if not forceShow and (not self.db or not self.db.settings.alertRares) then return end
@@ -477,6 +538,9 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
 
     local name, _, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
     if not name or (isCollected and not forceShow) then return end
+
+    -- Останавливаем фоновый авто-облёт спавнов, чтобы 3D-ромбик зафиксировался на живом рарнике!
+    self.activeSpawnTour = nil
 
     -- Если с этого NPC падает сразу несколько несобранных маунтов, объединяем их названия в один алерт и одну метку
     local displayMountNames = name
@@ -499,10 +563,13 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
     local chanceStr = (dropInfo and dropInfo.chance) and string.format("1/%d | ", dropInfo.chance) or ""
 
     alertFrame.currentMountID = mountID
+    alertFrame.alertNpcID = npcID
     alertFrame.alertMapID = mapID
     alertFrame.alertX = liveX
     alertFrame.alertY = liveY
     alertFrame.alertNpcName = npcName
+
+    self:UpdateAlertSecureTarget(npcName)
 
     alertIcon:SetTexture(icon or "Interface\\ICONS\\Ability_Mount_SpectralTiger")
     alertHeader:SetText(string.format(L.ALERT_HEADER_NEARBY, npcName or "Rare NPC"))
@@ -548,6 +615,11 @@ local function GetOrCreateMapPin(parent, index)
     pin.icon:SetPoint("TOPLEFT", pin, "TOPLEFT", 2, -2)
     pin.icon:SetPoint("BOTTOMRIGHT", pin, "BOTTOMRIGHT", -2, 2)
     pin.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    pin.badge = pin:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    pin.badge:SetPoint("BOTTOMRIGHT", pin, "BOTTOMRIGHT", -1, 1)
+    pin.badge:SetTextColor(1.0, 0.92, 0.15, 1.0)
+    pin.badge:SetText("")
 
     pin:SetScript("OnEnter", function(self)
         if not self.mountID then return end
@@ -677,11 +749,38 @@ function addon:RefreshWorldMapPins()
                             pin.npcName = knownNpcName or ((c.n and c.n ~= "") and c.n) or info.boss or name
                             pin.icon:SetTexture(icon or "Interface\\ICONS\\Ability_Mount_SpectralTiger")
 
+                            local tourStepNum = nil
+                            local isCurrentTourStep = false
+                            if self.activeSpawnTour and self.activeSpawnTour.mountID == mountID and self.activeSpawnTour.points then
+                                for tIdx, tPt in ipairs(self.activeSpawnTour.points) do
+                                    if tPt.m == mapID and math.abs((tPt.x or 0) - c.x) < 0.15 and math.abs((tPt.y or 0) - c.y) < 0.15 then
+                                        tourStepNum = tIdx
+                                        isCurrentTourStep = (tIdx == self.activeSpawnTour.index)
+                                        break
+                                    end
+                                end
+                            end
+
+                            if pin.badge then
+                                if tourStepNum and not pinLocked then
+                                    pin.badge:SetText(tostring(tourStepNum))
+                                    pin.badge:Show()
+                                else
+                                    pin.badge:SetText("")
+                                    pin.badge:Hide()
+                                end
+                            end
+
                             if pinLocked then
                                 pin:SetSize(22, 22)
                                 pin.icon:SetDesaturated(true)
                                 pin:SetBackdropBorderColor(0.45, 0.45, 0.45, 0.75)
                                 pin:SetAlpha(0.55)
+                            elseif isCurrentTourStep then
+                                pin:SetSize(30, 30)
+                                pin.icon:SetDesaturated(false)
+                                pin:SetBackdropBorderColor(0.0, 1.0, 0.55, 1.0)
+                                pin:SetAlpha(1.0)
                             elseif isHighlighted then
                                 pin:SetSize(28, 28)
                                 pin.icon:SetDesaturated(false)
