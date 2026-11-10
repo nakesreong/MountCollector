@@ -1,5 +1,25 @@
 # Changelog — MountCollector
 
+## [v1.6.0] - 2026-11-10
+### Added
+- **World Bosses & Alt Lockout Matrix (`MountDungeonsDB.lua`, `Core.lua`)**:
+  - Added iconic World Bosses with mount drops (*Sha of Anger*, *Galleon*, *Nalak*, *Oondasta*, *Rukhmar*, *SolarSpire Hawk*, etc.) to the **Dungeon & Raid Loot** tab with full weekly per-character lockout tracking across all Warband alts.
+- **Long-Range Rare Detection (`VIGNETTE_MINIMAP_UPDATED`, `VIGNETTES_UPDATED`, Monster Yells/Emotes)**:
+  - Expanded rare detection range from nameplate distance (~60 yds) to full minimap/zone vignette and monster yell range (250–400+ yds, matching *RareScanner*).
+- **Click-to-Target Alert Banner (`SecureActionButtonTemplate`)**:
+  - Left-clicking the rare alert banner now targets the rare directly (`/targetexact`) and sets a 3D waypoint; dynamic height scaling prevents text overflow on long localized mount lists.
+- **Smart Auto-Advancing 3D Spawn Tour without TomTom (`C_SuperTrack` + `C_Navigation`)**:
+  - Works out of the box with Blizzard's native 3D diamond tracker (`C_SuperTrack.SetSuperTrackedUserWaypoint(true)`): automatically advances to the next spawn point as you fly over (`<= 65` yds 3D / `4.5` map units 2D), strictly skips rares already killed today on the current character, pauses while engaging a live rare, and automatically loops a new pass over remaining unkilled rares if other players killed some spawns on the first pass.
+- **Legion Class Hall Alt Tints & Class Filtering (`MountQuestsDB.lua`)**:
+  - Filtered out other classes' Legion Order Hall mount chains so only the current character's class mounts appear; added dedicated vendor/rare boss steps (`altVendorStep` / `altMountSteps`) for uncollected extra Class Hall mount tints (*Hunter*, *Paladin*, *Rogue*, *Warlock*).
+
+### Updated
+- **Armory / Data for Azeroth Mount Rarity DB (`Libs/MountsRarity-2.0.lua` `v202611080622`)**:
+  - Updated global ownership percentages across **1,559 mounts** and added 4 new mount IDs (`2698`, `3133`, `3141`, `3142` — total **1,574 mounts**).
+- Hid already-collected mounts from active farming tabs (`Quest Chains`, `Dungeon & Raid Loot`, `Current Zone`) and hid route buttons when inspecting an already-collected mount in the Mount Journal dock.
+
+---
+
 ## [v1.4.2] - 2026-10-30
 ### Updated
 - **Обновление базы глобальной рарности Armory / Data for Azeroth (`Libs/MountsRarity-2.0.lua` `v202610290603`)**:
