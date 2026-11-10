@@ -58,9 +58,10 @@ local function CreateFlatButton(parent, width, height, text, isGoldAccent)
         btn.defaultBorder = { 0.24, 0.24, 0.28, 1.0 }
     end
 
+    local padX = (width and width <= 28) and 1 or 6
     btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    btn.label:SetPoint("LEFT", btn, "LEFT", 6, 0)
-    btn.label:SetPoint("RIGHT", btn, "RIGHT", -6, 0)
+    btn.label:SetPoint("LEFT", btn, "LEFT", padX, 0)
+    btn.label:SetPoint("RIGHT", btn, "RIGHT", -padX, 0)
     btn.label:SetJustifyH("CENTER")
     btn.label:SetWordWrap(false)
     btn.label:SetText(text or "")
@@ -404,11 +405,19 @@ function addon:NavigateMountTarget(mountID, forceFirstStep)
         end
         return
     end
+    local info = self.DropInfoByMount and self.DropInfoByMount[mountID]
     if forceFirstStep then
         self:PinAllMountSpawns(mountID, true)
         return
     end
-    local info = self.DropInfoByMount and self.DropInfoByMount[mountID]
+    if self.activeSpawnTour and self.activeSpawnTour.mountID == mountID and self.AdvanceSpawnTourStep then
+        self:AdvanceSpawnTourStep(false)
+        return
+    end
+    if info and type(info.coords) == "table" and #info.coords > 1 then
+        self:PinAllMountSpawns(mountID, false)
+        return
+    end
     local c = self:GetBestMountCoords(mountID)
     if c then
         self:SetMountWaypoint(mountID, c.m, c.x, c.y, c.n or (info and info.boss), false)
@@ -421,10 +430,10 @@ end
 -- 1. ВСПЛЫВАЮЩИЙ РАДАР-БАННЕР ПРИ ОБНАРУЖЕНИИ РАРНИКА / БОССА
 -- ============================================================================
 local alertFrame = CreateFrame("Button", "MountCollectorAlertFrame", UIParent, "BackdropTemplate")
-alertFrame:SetSize(390, 72)
-alertFrame:SetPoint("TOP", UIParent, "TOP", 0, -140)
+alertFrame:SetSize(440, 82)
+alertFrame:SetPoint("TOP", UIParent, "TOP", 0, -130)
 alertFrame:SetFrameStrata("HIGH")
-ApplyFlatBackdrop(alertFrame, 0.05, 0.05, 0.07, 0.96, 1.0, 0.82, 0.0, 1.0)
+ApplyFlatBackdrop(alertFrame, 0.05, 0.05, 0.07, 0.97, 1.0, 0.82, 0.0, 1.0)
 alertFrame:EnableMouse(true)
 alertFrame:SetMovable(true)
 alertFrame:RegisterForDrag("LeftButton")
@@ -433,28 +442,36 @@ alertFrame:SetScript("OnDragStart", alertFrame.StartMoving)
 alertFrame:SetScript("OnDragStop", alertFrame.StopMovingOrSizing)
 alertFrame:Hide()
 
-local alertIcon = alertFrame:CreateTexture(nil, "ARTWORK")
-alertIcon:SetSize(50, 50)
-alertIcon:SetPoint("LEFT", alertFrame, "LEFT", 10, 0)
+local alertIconBorder = CreateFrame("Frame", nil, alertFrame, "BackdropTemplate")
+alertIconBorder:SetSize(54, 54)
+alertIconBorder:SetPoint("TOPLEFT", alertFrame, "TOPLEFT", 10, -10)
+ApplyFlatBackdrop(alertIconBorder, 0.02, 0.02, 0.03, 1.0, 0.85, 0.68, 0.15, 1.0)
+
+local alertIcon = alertIconBorder:CreateTexture(nil, "ARTWORK")
+alertIcon:SetPoint("TOPLEFT", alertIconBorder, "TOPLEFT", 2, -2)
+alertIcon:SetPoint("BOTTOMRIGHT", alertIconBorder, "BOTTOMRIGHT", -2, 2)
 alertIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-local alertHeader = alertFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-alertHeader:SetPoint("TOPLEFT", alertIcon, "TOPRIGHT", 10, -2)
-alertHeader:SetPoint("RIGHT", alertFrame, "RIGHT", -24, 0)
+local alertHeader = alertFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+alertHeader:SetPoint("TOPLEFT", alertIconBorder, "TOPRIGHT", 10, -1)
+alertHeader:SetPoint("RIGHT", alertFrame, "RIGHT", -30, 0)
 alertHeader:SetJustifyH("LEFT")
+alertHeader:SetWordWrap(true)
 
 local alertMountName = alertFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-alertMountName:SetPoint("TOPLEFT", alertHeader, "BOTTOMLEFT", 0, -3)
-alertMountName:SetPoint("RIGHT", alertFrame, "RIGHT", -10, 0)
+alertMountName:SetPoint("TOPLEFT", alertHeader, "BOTTOMLEFT", 0, -4)
+alertMountName:SetPoint("RIGHT", alertFrame, "RIGHT", -12, 0)
 alertMountName:SetJustifyH("LEFT")
+alertMountName:SetWordWrap(true)
 
 local alertStats = alertFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-alertStats:SetPoint("TOPLEFT", alertMountName, "BOTTOMLEFT", 0, -3)
-alertStats:SetPoint("RIGHT", alertFrame, "RIGHT", -10, 0)
+alertStats:SetPoint("TOPLEFT", alertMountName, "BOTTOMLEFT", 0, -4)
+alertStats:SetPoint("RIGHT", alertFrame, "RIGHT", -12, 0)
 alertStats:SetJustifyH("LEFT")
+alertStats:SetWordWrap(true)
 
 local closeAlertBtn = CreateFlatButton(alertFrame, 20, 20, "X", false)
-closeAlertBtn:SetPoint("TOPRIGHT", alertFrame, "TOPRIGHT", -4, -4)
+closeAlertBtn:SetPoint("TOPRIGHT", alertFrame, "TOPRIGHT", -5, -5)
 closeAlertBtn:SetFrameLevel(alertFrame:GetFrameLevel() + 6)
 closeAlertBtn:SetScript("OnClick", function() alertFrame:Hide() end)
 
@@ -575,6 +592,12 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
     alertHeader:SetText(string.format(L.ALERT_HEADER_NEARBY, npcName or "Rare NPC"))
     alertMountName:SetText(string.format(L.ALERT_NOT_COLLECTED, displayMountNames))
     alertStats:SetText(string.format(L.ALERT_STATS_LINE, attempts, chanceStr, pctText))
+
+    local h1 = alertHeader:GetStringHeight() or 16
+    local h2 = alertMountName:GetStringHeight() or 16
+    local h3 = alertStats:GetStringHeight() or 16
+    local contentH = math.max(74, 10 + h1 + 4 + h2 + 4 + h3 + 12)
+    alertFrame:SetHeight(contentH)
 
     alertFrame:Show()
     if self.db and self.db.settings.alertSound and PlaySound then
@@ -1494,14 +1517,9 @@ tabAllBtn:SetPoint("LEFT", tabZoneBtn, "RIGHT", 5, 0)
 local btnPinZone = CreateFlatButton(radarFrame, 104, 24, "", false)
 btnPinZone:SetPoint("LEFT", tabAllBtn, "RIGHT", 5, 0)
 btnPinZone:SetScript("OnClick", function()
-    local zoneMounts, mapID = addon:GetZoneUncollectedMounts()
-    for _, m in ipairs(zoneMounts) do
-        if not m.locked then
-            addon:SetMountWaypoint(m.mountID, mapID, nil, nil, m.boss, true)
-        end
-    end
-    if zoneMounts[1] then
-        addon:SetMountWaypoint(zoneMounts[1].mountID, mapID, nil, nil, zoneMounts[1].boss, false)
+    local zoneMounts = addon:GetZoneUncollectedMounts()
+    if zoneMounts and zoneMounts[1] then
+        addon:PinAllMountSpawns(zoneMounts[1].mountID, true)
     end
 end)
 

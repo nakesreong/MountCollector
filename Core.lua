@@ -991,11 +991,13 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
             end
             local pt = UiMapPoint.CreateFromCoordinates(wpMapID, wpNormX, wpNormY)
             C_Map.SetUserWaypoint(pt)
-            if C_SuperTracked and C_SuperTracked.SetSuperTrackedUserWaypoint then
-                C_SuperTracked.SetSuperTrackedUserWaypoint(true)
+            local superTrackAPI = _G.C_SuperTrack or _G.C_SuperTracked
+            if superTrackAPI and superTrackAPI.SetSuperTrackedUserWaypoint then
+                superTrackAPI.SetSuperTrackedUserWaypoint(true)
                 C_Timer.After(0.05, function()
-                    if C_SuperTracked and C_SuperTracked.SetSuperTrackedUserWaypoint and C_Map and C_Map.HasUserWaypoint and C_Map.HasUserWaypoint() then
-                        pcall(C_SuperTracked.SetSuperTrackedUserWaypoint, true)
+                    local stAPI = _G.C_SuperTrack or _G.C_SuperTracked
+                    if stAPI and stAPI.SetSuperTrackedUserWaypoint and C_Map and C_Map.HasUserWaypoint and C_Map.HasUserWaypoint() then
+                        pcall(stAPI.SetSuperTrackedUserWaypoint, true)
                     end
                 end)
             end
@@ -1155,9 +1157,11 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
             points = routeCoords,
             index = 1,
             total = #routeCoords,
+            stepSetAt = GetTime(),
         }
         self:StartSpawnTourTicker()
-        local pLabel = (primaryCoord.n and primaryCoord.n ~= "") and primaryCoord.n or (info and info.boss) or name
+        local knownName = primaryCoord.npcID and self.KnownNpcNames and self.KnownNpcNames[primaryCoord.npcID]
+        local pLabel = (IsValidNpcName(knownName) and knownName) or ((primaryCoord.n and primaryCoord.n ~= "") and primaryCoord.n) or (info and info.boss) or name
         self:SetMountWaypoint(mountID, primaryCoord.m, primaryCoord.x, primaryCoord.y, string.format("[1/%d] %s", #routeCoords, pLabel), true)
         print(string.format(L.CHAT_TOUR_STARTED, name, #routeCoords, pLabel, primaryCoord.x, primaryCoord.y))
     else
@@ -1178,7 +1182,7 @@ end
 -- Авто-переключение 3D-ромбика Blizzard по мере облёта точек спавна (без TomTom)
 function addon:StartSpawnTourTicker()
     if self.spawnTourTicker then return end
-    self.spawnTourTicker = C_Timer.NewTicker(1.0, function()
+    self.spawnTourTicker = C_Timer.NewTicker(0.75, function()
         local tour = self.activeSpawnTour
         if not tour or not tour.points or tour.index > tour.total then
             if self.spawnTourTicker then
@@ -1190,19 +1194,42 @@ function addon:StartSpawnTourTicker()
         local pt = tour.points[tour.index]
         if not pt then return end
 
+        -- Удерживаем активность 3D-ромбика Blizzard, если игра сбросила SuperTrack
+        local stAPI = _G.C_SuperTrack or _G.C_SuperTracked
+        if stAPI and stAPI.IsSuperTrackingUserWaypoint and stAPI.SetSuperTrackedUserWaypoint then
+            if C_Map and C_Map.HasUserWaypoint and C_Map.HasUserWaypoint() and not stAPI.IsSuperTrackingUserWaypoint() then
+                pcall(stAPI.SetSuperTrackedUserWaypoint, true)
+            end
+        end
+
         local reached = false
         if pt.npcID and self:IsNpcLockedToday(pt.npcID) then
             reached = true
-        elseif C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
+        end
+
+        -- 1. Проверка реальной 3D-дистанции до активного ромбика через C_Navigation.GetDistance() (в ярдах!)
+        if not reached and _G.C_Navigation and _G.C_Navigation.GetDistance then
+            local okDist, navDist = pcall(_G.C_Navigation.GetDistance)
+            if okDist and SafeNotSecret(navDist) and type(navDist) == "number" and navDist > 0 and navDist <= 38 then
+                local now = GetTime()
+                if not tour.stepSetAt or (now - tour.stepSetAt) > 1.2 then
+                    reached = true
+                end
+            end
+        end
+
+        -- 2. Фоллбэк: проверка по координатам карты (если C_Navigation недоступен)
+        if not reached and C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
             local pMap = C_Map.GetBestMapForUnit("player")
-            if pMap and pt.m then
-                local okPos, pos = pcall(C_Map.GetPlayerMapPosition, pt.m, "player")
+            local checkMap = pt.m or pMap
+            if checkMap then
+                local okPos, pos = pcall(C_Map.GetPlayerMapPosition, checkMap, "player")
                 if okPos and pos and pos.GetXY then
                     local rx, ry = pos:GetXY()
                     if SafeNotSecret(rx) and SafeNotSecret(ry) and rx and ry and rx > 0 and ry > 0 then
                         local dx = (rx * 100.0) - pt.x
                         local dy = (ry * 100.0) - pt.y
-                        if (dx * dx + dy * dy) <= 10.5 then -- ~3.2 единицы карты (~35 ярдов)
+                        if (dx * dx + dy * dy) <= 12.25 then -- ~3.5 единицы карты (~38 ярдов)
                             reached = true
                         end
                     end
@@ -1211,32 +1238,42 @@ function addon:StartSpawnTourTicker()
         end
 
         if reached then
-            tour.index = tour.index + 1
-            while tour.index <= tour.total do
-                local nextCand = tour.points[tour.index]
-                if nextCand and nextCand.npcID and self:IsNpcLockedToday(nextCand.npcID) then
-                    tour.index = tour.index + 1
-                else
-                    break
-                end
-            end
-            if tour.index <= tour.total then
-                local nextPt = tour.points[tour.index]
-                local nLabel = (nextPt.n and nextPt.n ~= "") and nextPt.n or tour.name
-                self:SetMountWaypoint(tour.mountID, nextPt.m, nextPt.x, nextPt.y, string.format("[%d/%d] %s", tour.index, tour.total, nLabel), true)
-                print(string.format(L.CHAT_TOUR_NEXT, tour.index, tour.total, nLabel, nextPt.x, nextPt.y))
-                if self.RefreshWorldMapPins then
-                    self:RefreshWorldMapPins()
-                end
-            else
-                print(string.format(L.CHAT_TOUR_FINISHED, tour.name, tour.total))
-                self.activeSpawnTour = nil
-                if self.RefreshWorldMapPins then
-                    self:RefreshWorldMapPins()
-                end
-            end
+            self:AdvanceSpawnTourStep(true)
         end
     end)
+end
+
+function addon:AdvanceSpawnTourStep(fromAutoProximity)
+    local tour = self.activeSpawnTour
+    if not tour or not tour.points then return false end
+    tour.index = (tour.index or 1) + 1
+    while tour.index <= tour.total do
+        local nextCand = tour.points[tour.index]
+        if nextCand and nextCand.npcID and self:IsNpcLockedToday(nextCand.npcID) then
+            tour.index = tour.index + 1
+        else
+            break
+        end
+    end
+    if tour.index <= tour.total then
+        local nextPt = tour.points[tour.index]
+        tour.stepSetAt = GetTime()
+        local knownName = nextPt.npcID and self.KnownNpcNames and self.KnownNpcNames[nextPt.npcID]
+        local nLabel = (IsValidNpcName(knownName) and knownName) or ((nextPt.n and nextPt.n ~= "") and nextPt.n) or tour.name
+        self:SetMountWaypoint(tour.mountID, nextPt.m, nextPt.x, nextPt.y, string.format("[%d/%d] %s", tour.index, tour.total, nLabel), true)
+        print(string.format(L.CHAT_TOUR_NEXT, tour.index, tour.total, nLabel, nextPt.x, nextPt.y))
+        if self.RefreshWorldMapPins then
+            self:RefreshWorldMapPins()
+        end
+        return true
+    else
+        print(string.format(L.CHAT_TOUR_FINISHED, tour.name, tour.total))
+        self.activeSpawnTour = nil
+        if self.RefreshWorldMapPins then
+            self:RefreshWorldMapPins()
+        end
+        return false
+    end
 end
 
 -- Проверить особые условия получения маунта (предметы в сумках, фазы зон, ковенанты, КД рарника)
@@ -2010,10 +2047,17 @@ function addon:CheckUnitForMountDrop(unit, isRetry)
     -- Если этот конкретный рарник уже убит сегодня этим персонажем (КД до сброса), не вопим и не ставим метку на второй круг!
     if self:IsNpcLockedToday(npcID) then return end
 
+    local npcMapID, npcX, npcY = nil, nil, nil
+    local rsEntry = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
+    if rsEntry and type(rsEntry.coords) == "table" and rsEntry.coords[1] then
+        local rc = rsEntry.coords[1]
+        npcMapID, npcX, npcY = rc.m, rc.x, rc.y
+    end
+
     for _, mountID in ipairs(mounts) do
         local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
         if not isCollected then
-            self:TriggerRareMountAlert(mountID, npcID, npcName, false)
+            self:TriggerRareMountAlert(mountID, npcID, npcName, false, npcMapID, npcX, npcY)
             break
         end
     end
