@@ -1607,16 +1607,17 @@ function addon:RefreshRadarUI()
     if ui.currentTab == "QUESTS" then
         local _, playerClass = UnitClass("player")
         if type(self.MountQuestsDB) == "table" then
-            for _, qChain in ipairs(self.MountQuestsDB) do
+            for dbIdx, qChain in ipairs(self.MountQuestsDB) do
                 local mID = qChain.resolvedMountID or (qChain.spellID and self.MountBySpell[qChain.spellID]) or qChain.mountID
                 local st = mID and self:GetMountQuestChainStatus(mID)
-                if st and (not st.isCollected or ui.pinnedInspectMountID == mID) then
+                local isOtherClass = (st and st.classRestriction and st.classRestriction ~= playerClass) and true or false
+                if st and (not isOtherClass or ui.pinnedInspectMountID == mID) and (not st.isCollected or ui.pinnedInspectMountID == mID) then
                     st.isPlayerClass = (st.classRestriction and st.classRestriction == playerClass) and true or false
                     if ui.searchText == "" or string.find(string.lower(st.name), ui.searchText, 1, true) or string.find(string.lower(st.category), ui.searchText, 1, true) then
                         local badge
                         if st.isCollected then
                             badge = L.TAG_COLLECTED
-                        elseif st.hasStarted or st.completedSteps > 0 then
+                        elseif st.hasStarted then
                             badge = string.format(L.QUEST_CHAIN_STATUS_IN_PROGRESS, st.completedSteps, st.totalSteps)
                         else
                             badge = string.format(L.QUEST_CHAIN_STATUS_AVAILABLE, st.totalSteps)
@@ -1629,6 +1630,7 @@ function addon:RefreshRadarUI()
                             isPlayerClass = st.isPlayerClass,
                             hasStarted = st.hasStarted,
                             completedSteps = st.completedSteps,
+                            dbOrder = dbIdx,
                             subLine = string.format("%s |cff888888• %s|r", badge, st.category),
                         })
                     end
@@ -1646,7 +1648,10 @@ function addon:RefreshRadarUI()
             if a.hasStarted ~= b.hasStarted then
                 return a.hasStarted
             end
-            return (a.completedSteps or 0) > (b.completedSteps or 0)
+            if (a.completedSteps or 0) ~= (b.completedSteps or 0) then
+                return (a.completedSteps or 0) > (b.completedSteps or 0)
+            end
+            return (a.dbOrder or 0) < (b.dbOrder or 0)
         end)
     elseif ui.currentTab == "DUNGEONS" then
         if type(self.MountDungeonsDB) == "table" then

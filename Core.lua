@@ -118,6 +118,20 @@ function addon:InitDB()
             db.knownNpcNames[k] = nil
         end
     end
+    for _, rData in pairs(db.realmCensus) do
+        if type(rData) == "table" then
+            for _, mEntry in pairs(rData) do
+                if type(mEntry) == "table" and type(mEntry.players) == "table" then
+                    for pName in pairs(mEntry.players) do
+                        if not IsValidNpcName(pName) then
+                            mEntry.players[pName] = nil
+                            mEntry.count = math.max(0, (mEntry.count or 1) - 1)
+                        end
+                    end
+                end
+            end
+        end
+    end
     if not db.knownNpcNames[250780] then
         db.knownNpcNames[250780] = "Волнуш"
     end
@@ -386,14 +400,32 @@ function addon:BuildMountIndex()
     -- 5. Индексируем квестовые цепочки и инкубацию яиц из MountQuestsDB
     if type(self.MountQuestsDB) == "table" then
         for _, qChain in ipairs(self.MountQuestsDB) do
-            local mID = (qChain.spellID and self.MountBySpell[qChain.spellID])
-                or (qChain.itemID and C_MountJournal.GetMountFromItem and C_MountJournal.GetMountFromItem(qChain.itemID))
+            local mID = (qChain.mountID and C_MountJournal.GetMountInfoByID(qChain.mountID) and qChain.mountID)
+                or (qChain.spellID and self.MountBySpell[qChain.spellID])
                 or (qChain.spellID and C_MountJournal.GetMountFromSpell and C_MountJournal.GetMountFromSpell(qChain.spellID))
+                or (qChain.itemID and C_MountJournal.GetMountFromItem and C_MountJournal.GetMountFromItem(qChain.itemID))
                 or (qChain.itemID and self.MountByItem[qChain.itemID])
                 or qChain.mountID
             if mID and C_MountJournal.GetMountInfoByID(mID) then
-                qChain.resolvedMountID = mID
                 self.MountQuestsByMountID[mID] = qChain
+                if type(qChain.altMountIDs) == "table" then
+                    for _, altID in ipairs(qChain.altMountIDs) do
+                        if altID and C_MountJournal.GetMountInfoByID(altID) then
+                            self.MountQuestsByMountID[altID] = qChain
+                        end
+                    end
+                    local _, _, _, _, _, _, _, _, _, _, primaryCol = C_MountJournal.GetMountInfoByID(mID)
+                    if primaryCol then
+                        for _, altID in ipairs(qChain.altMountIDs) do
+                            local altName, _, _, _, _, _, _, _, _, _, altCol = C_MountJournal.GetMountInfoByID(altID)
+                            if altName and not altCol then
+                                mID = altID
+                                break
+                            end
+                        end
+                    end
+                end
+                qChain.resolvedMountID = mID
             end
         end
     end
@@ -1641,7 +1673,7 @@ function addon:ScanUnitMount(unit)
     if not C_UnitAuras or not C_UnitAuras.GetAuraDataByIndex then return end
 
     local unitName, unitRealm = UnitName(unit)
-    if not SafeNotSecret(unitName) or not unitName then return end
+    if not IsValidNpcName(unitName) then return end
     local realm = (SafeNotSecret(unitRealm) and unitRealm and unitRealm ~= "") and unitRealm or (GetRealmName() or "Realm")
 
     for i = 1, 40 do
@@ -2274,6 +2306,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             end
             if addon.UpdateLDBText then
                 addon:UpdateLDBText()
+            end
+            if addon.RefreshRadarUI then
+                addon:RefreshRadarUI()
             end
         end)
     elseif event == "UPDATE_INSTANCE_INFO" or event == "PLAYER_LEVEL_UP" then
