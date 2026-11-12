@@ -106,25 +106,39 @@ function addon:BuildSettingsControls(parent, isEmbeddedInRadar)
         return cb
     end
 
-    local cb1 = CreateOptionCheckbox("showInTooltips", "CFG_SHOW_TOOLTIPS", secTooltips, -2)
-    local cb2 = CreateOptionCheckbox("showInJournalRowHover", "CFG_SHOW_ROW_HOVER", cb1, 2)
-    local cb3 = CreateOptionCheckbox("showInMountDisplay", "CFG_SHOW_MOUNT_DISPLAY", cb2, 2)
-    local cb4 = CreateOptionCheckbox("showGlobalRarity", "CFG_SHOW_GLOBAL_RARITY", cb3, 2)
-    local cb5 = CreateOptionCheckbox("showServerRarity", "CFG_SHOW_SERVER_RARITY", cb4, 2)
-    local cb6 = CreateOptionCheckbox("showAttempts", "CFG_SHOW_ATTEMPTS", cb5, 2)
+    local cb1 = CreateOptionCheckbox("showInTooltips", "CFG_SHOW_TOOLTIPS", secTooltips, -1)
+    local cb2 = CreateOptionCheckbox("showInJournalRowHover", "CFG_SHOW_ROW_HOVER", cb1, 4)
+    local cb3 = CreateOptionCheckbox("showInMountDisplay", "CFG_SHOW_MOUNT_DISPLAY", cb2, 4)
+    local cb4 = CreateOptionCheckbox("showGlobalRarity", "CFG_SHOW_GLOBAL_RARITY", cb3, 4)
+    local cb5 = CreateOptionCheckbox("showServerRarity", "CFG_SHOW_SERVER_RARITY", cb4, 4)
+    local cb6 = CreateOptionCheckbox("showAttempts", "CFG_SHOW_ATTEMPTS", cb5, 4)
 
     -- Секция 2: Радар рарников, Карта мира и Миникарта
     local secRadar = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    secRadar:SetPoint("TOPLEFT", cb6, "BOTTOMLEFT", 0, -6)
+    secRadar:SetPoint("TOPLEFT", cb6, "BOTTOMLEFT", 0, -4)
     controls.secRadar = secRadar
 
-    local cb7 = CreateOptionCheckbox("alertRares", "CFG_ALERT_RARES", secRadar, -2)
-    local cb8 = CreateOptionCheckbox("alertSound", "CFG_ALERT_SOUND", cb7, 2)
-    local cb9 = CreateOptionCheckbox("autoWaypoint", "CFG_AUTO_WAYPOINT", cb8, 2)
-    local cb10 = CreateOptionCheckbox("showWorldMapPins", "CFG_WORLD_MAP_PINS", cb9, 2)
-    local cb11 = CreateOptionCheckbox("showNpcTooltip", "CFG_SHOW_NPC_TT", cb10, 2)
-    local cb12 = CreateOptionCheckbox("announceAttempts", "CFG_ANNOUNCE_ATTEMPTS", cb11, 2)
-    local cb13 = CreateOptionCheckbox("_minimap", "CFG_SHOW_MINIMAP", cb12, 2, function(checked)
+    local cb7 = CreateOptionCheckbox("alertRares", "CFG_ALERT_RARES", secRadar, -1)
+    local cbBanner = CreateOptionCheckbox("showAlertBanner", "CFG_SHOW_ALERT_BANNER", cb7, 4, function(checked)
+        if not addon.db or not addon.db.settings then return end
+        addon.db.settings.showAlertBanner = checked
+        if not checked and _G.MountCollectorAlertFrame and _G.MountCollectorAlertFrame:IsShown() then
+            _G.MountCollectorAlertFrame:Hide()
+        end
+    end)
+    local cbAutoTarget = CreateOptionCheckbox("autoTargetOnApproach", "CFG_AUTO_TARGET_RARE", cbBanner, 4, function(checked)
+        if not addon.db or not addon.db.settings then return end
+        addon.db.settings.autoTargetOnApproach = checked
+        if not checked and addon.ClearAutoTargetOverrideBinding then
+            addon:ClearAutoTargetOverrideBinding()
+        end
+    end)
+    local cb8 = CreateOptionCheckbox("alertSound", "CFG_ALERT_SOUND", cbAutoTarget, 4)
+    local cb9 = CreateOptionCheckbox("autoWaypoint", "CFG_AUTO_WAYPOINT", cb8, 4)
+    local cb10 = CreateOptionCheckbox("showWorldMapPins", "CFG_WORLD_MAP_PINS", cb9, 4)
+    local cb11 = CreateOptionCheckbox("showNpcTooltip", "CFG_SHOW_NPC_TT", cb10, 4)
+    local cb12 = CreateOptionCheckbox("announceAttempts", "CFG_ANNOUNCE_ATTEMPTS", cb11, 4)
+    local cb13 = CreateOptionCheckbox("_minimap", "CFG_SHOW_MINIMAP", cb12, 4, function(checked)
         if not addon.db or not addon.db.minimap then return end
         addon.db.minimap.hide = not checked
         if not LDBIcon and LibStub then
@@ -133,6 +147,9 @@ function addon:BuildSettingsControls(parent, isEmbeddedInRadar)
         if LDBIcon then
             if checked then
                 LDBIcon:Show("MountCollector")
+                if addon.EnsureRoundMinimapButton then
+                    addon:EnsureRoundMinimapButton()
+                end
             else
                 LDBIcon:Hide("MountCollector")
             end
@@ -143,10 +160,10 @@ function addon:BuildSettingsControls(parent, isEmbeddedInRadar)
 
     -- Нижние кнопки действий
     local btnOpenRadar = CreateStyledButton(parent, 195, 24, "", false)
-    btnOpenRadar:SetPoint("TOPLEFT", cb13, "BOTTOMLEFT", 4, -6)
+    btnOpenRadar:SetPoint("TOPLEFT", cb13, "BOTTOMLEFT", 4, -4)
     btnOpenRadar:SetScript("OnClick", function()
         if isEmbeddedInRadar then
-            -- Если мы уже внутри окна /mc на вкладке Настройки — возвращаемся к списку цепочек
+            -- Если мы уже внутри окна /mc на вкладке Настройки — возвращаемся к предыдущей вкладке
             if addon.ToggleConfigFrame then
                 addon:ToggleConfigFrame()
             end
@@ -173,6 +190,12 @@ function addon:BuildSettingsControls(parent, isEmbeddedInRadar)
         secRadar:SetText("|cffffd100" .. L.CFG_SEC_RADAR .. "|r")
         btnOpenRadar:SetText(isEmbeddedInRadar and L.QUEST_BACK_BTN or L.CFG_BTN_OPEN_RADAR)
         btnTestAlert:SetText(L.CFG_BTN_TEST_ALERT)
+        if btnOpenRadar.label and btnOpenRadar.label.GetStringWidth then
+            btnOpenRadar:SetWidth(math.max(180, math.ceil(btnOpenRadar.label:GetStringWidth() or 150) + 20))
+        end
+        if btnTestAlert.label and btnTestAlert.label.GetStringWidth then
+            btnTestAlert:SetWidth(math.max(190, math.ceil(btnTestAlert.label:GetStringWidth() or 160) + 20))
+        end
 
         local curLang = (addon.db and addon.db.settings and addon.db.settings.language) or "auto"
         for _, btn in ipairs(langButtons) do

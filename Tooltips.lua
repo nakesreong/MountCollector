@@ -384,8 +384,10 @@ function addon:HookMountJournal()
                     if not self.mountID then return end
                     if self.isQuestMount and addon.NavigateMountQuestStep then
                         addon:NavigateMountQuestStep(self.mountID, nil, false)
+                    elseif self.isDungeonMount and addon.NavigateMountTarget then
+                        addon:NavigateMountTarget(self.mountID, false)
                     elseif addon.PinAllMountSpawns then
-                        addon:PinAllMountSpawns(self.mountID, true)
+                        addon:PinAllMountSpawns(self.mountID, false)
                     end
                 end)
                 infoBtn.MountCollectorRouteBtn = rBtn
@@ -465,6 +467,9 @@ function addon:HookMountJournal()
 
             questBtn.mountID = mountID
             questBtn:SetText(L.MD_BTN_SOURCE_MC)
+            if questBtn.label and questBtn.label.GetStringWidth then
+                questBtn:SetWidth(math.max(156, math.ceil(questBtn.label:GetStringWidth() or 140) + 18))
+            end
             questBtn:ClearAllPoints()
             if summaryFS:IsShown() then
                 questBtn:SetPoint("TOPLEFT", summaryFS, "BOTTOMLEFT", 0, -6)
@@ -473,19 +478,39 @@ function addon:HookMountJournal()
             end
             questBtn:Show()
 
+            local dStatus = (not qStatus and addon.GetDungeonMountStatus) and addon:GetDungeonMountStatus(mountID) or nil
             if isCollected then
                 routeBtn:Hide()
             elseif qStatus then
                 routeBtn.mountID = mountID
                 routeBtn.isQuestMount = true
+                routeBtn.isDungeonMount = false
                 routeBtn:SetText(L.MD_BTN_CONTINUE_ROUTE)
+                if routeBtn.label and routeBtn.label.GetStringWidth then
+                    routeBtn:SetWidth(math.max(156, math.ceil(routeBtn.label:GetStringWidth() or 140) + 18))
+                end
+                routeBtn:ClearAllPoints()
+                routeBtn:SetPoint("LEFT", questBtn, "RIGHT", 6, 0)
+                routeBtn:Show()
+            elseif dStatus and dStatus.sourceKind ~= "WORLD_BOSS" then
+                routeBtn.mountID = mountID
+                routeBtn.isQuestMount = false
+                routeBtn.isDungeonMount = true
+                routeBtn:SetText(L.DUNGEON_ENTRANCE_BTN)
+                if routeBtn.label and routeBtn.label.GetStringWidth then
+                    routeBtn:SetWidth(math.max(156, math.ceil(routeBtn.label:GetStringWidth() or 140) + 18))
+                end
                 routeBtn:ClearAllPoints()
                 routeBtn:SetPoint("LEFT", questBtn, "RIGHT", 6, 0)
                 routeBtn:Show()
             elseif dropInfo and dropInfo.coords and #dropInfo.coords > 0 then
                 routeBtn.mountID = mountID
                 routeBtn.isQuestMount = false
+                routeBtn.isDungeonMount = false
                 routeBtn:SetText(L.MD_BTN_PIN_SPAWNS)
+                if routeBtn.label and routeBtn.label.GetStringWidth then
+                    routeBtn:SetWidth(math.max(156, math.ceil(routeBtn.label:GetStringWidth() or 140) + 18))
+                end
                 routeBtn:ClearAllPoints()
                 routeBtn:SetPoint("LEFT", questBtn, "RIGHT", 6, 0)
                 routeBtn:Show()

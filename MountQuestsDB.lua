@@ -245,8 +245,8 @@ addon.MountQuestsDB = {
     -- ========================================================================
     {
         mountID = 2222,
-        spellID = 450836,
-        itemID = 228941,
+        spellID = 451489,
+        itemID = 224150,
         wowheadUrl = "https://www.wowhead.com/ru/item=224150",
         categoryRU = "Квестовый гринд (TWW)",
         categoryEN = "Quest Grind (TWW)",
@@ -314,7 +314,7 @@ addon.MountQuestsDB = {
     {
         mountID = 1329,
         spellID = 316802,
-        itemID = 170157,
+        itemID = 174859,
         wowheadUrl = "https://www.wowhead.com/ru/item=170157",
         categoryRU = "Дружба 7 дней (BfA)",
         categoryEN = "7-Day Friendship (BfA)",
@@ -356,8 +356,8 @@ addon.MountQuestsDB = {
     -- ========================================================================
     {
         mountID = 1834,
-        spellID = 423455,
-        itemID = 209793,
+        spellID = 427041,
+        itemID = 210774,
         wowheadUrl = "https://www.wowhead.com/ru/item=209793",
         categoryRU = "Инкубация 5 этапов (DF)",
         categoryEN = "5-Stage Incubation (DF)",
@@ -411,7 +411,7 @@ addon.MountQuestsDB = {
     -- ========================================================================
     {
         mountID = 1414,
-        spellID = 332478,
+        spellID = 339588,
         itemID = 182614,
         wowheadUrl = "https://www.wowhead.com/ru/item=182614",
         categoryRU = "Дружба 6 дней (Shadowlands)",
@@ -504,7 +504,7 @@ addon.MountQuestsDB = {
     -- 7. ВЕРНЫЙ ОБЖОРА (7 дней выращивания порождённого в Ревендрете — SL)
     -- ========================================================================
     {
-        mountID = 1443,
+        mountID = 1391,
         spellID = 333027,
         itemID = 182589,
         wowheadUrl = "https://www.wowhead.com/ru/item=182589",
@@ -547,7 +547,7 @@ addon.MountQuestsDB = {
     -- ========================================================================
     {
         mountID = 1639,
-        spellID = 383616,
+        spellID = 374247,
         itemID = 192799,
         wowheadUrl = "https://www.wowhead.com/ru/item=192799",
         categoryRU = "Дружба 5 дней (DF)",
@@ -590,7 +590,7 @@ addon.MountQuestsDB = {
     {
         mountID = 1656,
         spellID = 376873,
-        itemID = 202074,
+        itemID = 198870,
         wowheadUrl = "https://www.wowhead.com/ru/item=202074",
         categoryRU = "Секрет / Цепочка (DF)",
         categoryEN = "Secret Chain (DF)",
@@ -712,7 +712,7 @@ addon.MountQuestsDB = {
     -- ========================================================================
     {
         mountID = 1043,
-        spellID = 281476,
+        spellID = 267270,
         itemID = 159146,
         wowheadUrl = "https://www.wowhead.com/ru/item=159146",
         categoryRU = "Инкубация 14 дней (BfA, Орда)",
@@ -767,7 +767,7 @@ addon.MountQuestsDB = {
     -- ========================================================================
     {
         mountID = 1013,
-        spellID = 304724,
+        spellID = 259741,
         itemID = 170069,
         wowheadUrl = "https://www.wowhead.com/ru/item=170069",
         categoryRU = "Инкубация / Улей (BfA, Альянс)",
@@ -809,7 +809,7 @@ addon.MountQuestsDB = {
     -- ========================================================================
     {
         mountID = 802,
-        spellID = 213115,
+        spellID = 215159,
         itemID = 138258,
         wowheadUrl = "https://www.wowhead.com/ru/item=138258",
         categoryRU = "Секрет / Кристаллы (Legion)",
@@ -839,6 +839,7 @@ addon.MountQuestsDB = {
     {
         mountID = 795,
         spellID = 213163,
+        itemID = 137578,
         wowheadUrl = "https://www.wowhead.com/ru/spell=213163",
         categoryRU = "Инкубация 15 дней (Legion)",
         categoryEN = "15-Day Hatchling Chain (Legion)",
@@ -880,6 +881,7 @@ addon.MountQuestsDB = {
     {
         mountID = 793,
         spellID = 213158,
+        itemID = 137577,
         wowheadUrl = "https://www.wowhead.com/ru/spell=213158",
         categoryRU = "Инкубация 15 дней (Legion)",
         categoryEN = "15-Day Hatchling Chain (Legion)",
@@ -921,6 +923,7 @@ addon.MountQuestsDB = {
     {
         mountID = 796,
         spellID = 213165,
+        itemID = 137580,
         wowheadUrl = "https://www.wowhead.com/ru/spell=213165",
         categoryRU = "Инкубация 15 дней (Legion)",
         categoryEN = "15-Day Hatchling Chain (Legion)",
@@ -962,6 +965,7 @@ addon.MountQuestsDB = {
     {
         mountID = 794,
         spellID = 213164,
+        itemID = 137579,
         wowheadUrl = "https://www.wowhead.com/ru/spell=213164",
         categoryRU = "Инкубация 15 дней (Legion)",
         categoryEN = "15-Day Hatchling Chain (Legion)",
@@ -1058,7 +1062,7 @@ addon.MountQuestsDB = {
     {
         mountID = 311,
         spellID = 64659,
-        itemID = 46109,
+        itemID = 46102,
         wowheadUrl = "https://www.wowhead.com/ru/item=46109",
         categoryRU = "Инкубация 20 дней (Орда)",
         categoryEN = "20-Day Hatchling (Horde)",
@@ -1098,7 +1102,7 @@ addon.MountQuestsDB = {
     -- 20. ЗИМНИЙ САБЛЕЗУБ (20 дней воспитания детёныша в Зимних Ключах — Альянс)
     -- ========================================================================
     {
-        mountID = 45,
+        mountID = 55,
         spellID = 17229,
         itemID = 13086,
         wowheadUrl = "https://www.wowhead.com/ru/item=13086",
@@ -1185,8 +1189,8 @@ addon.MountQuestsDB = {
     -- ========================================================================
     {
         mountID = 2144,
-        spellID = 427771,
-        itemID = 212453,
+        spellID = 446052,
+        itemID = 219391,
         wowheadUrl = "https://www.wowhead.com/ru/item=212453",
         categoryRU = "Квестовая цепочка (TWW)",
         categoryEN = "Questline (TWW)",
@@ -1214,7 +1218,7 @@ addon.MountQuestsDB = {
     -- ========================================================================
     {
         mountID = 2165,
-        spellID = 448685,
+        spellID = 447151,
         itemID = 223153,
         wowheadUrl = "https://www.wowhead.com/ru/item=223153",
         categoryRU = "Фарм предмета (TWW)",
@@ -1316,7 +1320,7 @@ addon.MountQuestsDB = {
     {
         mountID = 1674,
         spellID = 385738,
-        itemID = 201815,
+        itemID = 201454,
         wowheadUrl = "https://www.wowhead.com/ru/item=201815",
         categoryRU = "Особые условия / Обмен (DF)",
         categoryEN = "Special / Trade (DF)",
@@ -1375,7 +1379,7 @@ addon.MountQuestsDB = {
     -- ========================================================================
     {
         mountID = 1469,
-        spellID = 374162,
+        spellID = 350219,
         itemID = 192777,
         wowheadUrl = "https://www.wowhead.com/ru/item=192777",
         categoryRU = "Особые условия / Секрет (DF)",
@@ -1415,9 +1419,9 @@ addon.MountQuestsDB = {
     -- 29. ЗАДИРИСТАЯ УЛИТКА МИРА (Членство Разрушителей Мира — Dragonflight)
     -- ========================================================================
     {
-        mountID = 1629,
-        spellID = 374155,
-        itemID = 200236,
+        mountID = 1612,
+        spellID = 373859,
+        itemID = 192601,
         wowheadUrl = "https://www.wowhead.com/ru/item=200236",
         categoryRU = "Квестовая цепочка (DF)",
         categoryEN = "Questline (DF)",
@@ -1456,9 +1460,9 @@ addon.MountQuestsDB = {
     -- 30. ПЭТТИ (Тайны Азерота: все 15 расследований — Dragonflight)
     -- ========================================================================
     {
-        mountID = 1795,
+        mountID = 1794,
         spellID = 418078,
-        itemID = 207869,
+        itemID = 208152,
         wowheadUrl = "https://www.wowhead.com/ru/item=207869",
         categoryRU = "Секретная цепочка (DF)",
         categoryEN = "Secret Questline (DF)",
@@ -1668,9 +1672,9 @@ addon.MountQuestsDB = {
     -- 36. МЕРЦАЮЩИЙ ТУМАННЫЙ БЕГУН (Лабиринт синих фонарей в Арденвельде — SL)
     -- ========================================================================
     {
-        mountID = 1306,
+        mountID = 1360,
         spellID = 332252,
-        itemID = 180728,
+        itemID = 180727,
         wowheadUrl = "https://www.wowhead.com/ru/item=180728",
         categoryRU = "Секрет / Лабиринт (SL)",
         categoryEN = "Secret / Maze (SL)",
@@ -1933,6 +1937,7 @@ addon.MountQuestsDB = {
     -- 42. ЛЛОТИЕНСКИЙ РЫСКУН (Порванное приглашение и Лиса Вольпин — Legion)
     -- ========================================================================
     {
+        mountID = 656,
         spellID = 171850,
         itemID = 137573,
         wowheadUrl = "https://www.wowhead.com/ru/item=137573",
@@ -1975,6 +1980,7 @@ addon.MountQuestsDB = {
     -- 43. МАНАСАБЛЕЗУБ ЧАРОДЕЯ (Кампания «Восстание» в Сурамаре — Legion)
     -- ========================================================================
     {
+        mountID = 881,
         spellID = 230987,
         itemID = 142436,
         wowheadUrl = "https://www.wowhead.com/ru/item=142436",
@@ -2006,7 +2012,7 @@ addon.MountQuestsDB = {
     {
         mountID = 1253,
         spellID = 299159,
-        itemID = 168829,
+        itemID = 168827,
         wowheadUrl = "https://www.wowhead.com/ru/item=168829",
         categoryRU = "Инкубация / Сборка 12 дней (BfA)",
         categoryEN = "12-Day Assembly Chain (BfA)",
@@ -2050,7 +2056,8 @@ addon.MountQuestsDB = {
     {
         mountID = 885,
         spellID = 231435,
-        altMountIDs = { 891, 892, 893 },
+        itemID = 143502,
+        altMountIDs = { 892, 893, 894 },
         altVendorStep = {
             titleRU = "Шаг 4: Цепочка пройдена! Купить расцветку у Далфорса [75.6, 52.6]",
             titleEN = "Step 4: Chain Complete! Buy tint from Crusader Lord Dalfors [75.6, 52.6]",
@@ -2132,9 +2139,9 @@ addon.MountQuestsDB = {
     {
         mountID = 898,
         spellID = 232412,
-        altMountIDs = { 894, 896 },
+        altMountIDs = { 931, 930 },
         altMountSteps = {
-            [894] = {
+            [931] = {
                 titleRU = "Шаг 3: Цепочка пройдена! Купить расцветку у Калидуса [37.6, 31.8]",
                 titleEN = "Step 3: Chain Complete! Buy tint from Calydus [37.6, 31.8]",
                 descRU = "Квестовая цепочка Оплота Чернокнижника уже пройдена! Осталось только купить «Проклятого коня гнева» (147802) у Калидуса в Разломе Зловещего Шрама [37.6, 31.8] за 1000 ресурсов оплота.",
@@ -2147,7 +2154,7 @@ addon.MountQuestsDB = {
                 zoneEN = "Dreadscar Rift",
                 mapID = 717, x = 37.6, y = 31.8,
             },
-            [896] = {
+            [930] = {
                 titleRU = "Шаг 3: Цепочка пройдена! Выбить расцветку с Лорда Хельдрина [45.0, 68.2]",
                 titleEN = "Step 3: Chain Complete! Loot tint from Lord Hel'nurath [45.0, 68.2]",
                 descRU = "Квестовая цепочка Оплота Чернокнижника уже пройдена! «Опаленный серой конь гнева» (142233) со 100% шансом падает чернокнижникам с редкого босса Лорда Хельдрина на Расколотом берегу [45.0, 68.2].",
@@ -2216,6 +2223,7 @@ addon.MountQuestsDB = {
     {
         mountID = 866,
         spellID = 229387,
+        itemID = 142231,
         wowheadUrl = "https://www.wowhead.com/ru/spell=229387",
         categoryRU = "Оплот Класса (Legion)",
         categoryEN = "Class Hall (Legion)",
@@ -2326,6 +2334,7 @@ addon.MountQuestsDB = {
     {
         mountID = 865,
         spellID = 229386,
+        itemID = 142227,
         altMountIDs = { 870, 872 },
         altVendorStep = {
             titleRU = "Шаг 3: Цепочка пройдена! Купить расцветку у Пана Добрая Рука [42.2, 48.8]",
@@ -2450,6 +2459,7 @@ addon.MountQuestsDB = {
     {
         mountID = 864,
         spellID = 229385,
+        itemID = 142225,
         wowheadUrl = "https://www.wowhead.com/ru/spell=229385",
         categoryRU = "Оплот Класса (Legion)",
         categoryEN = "Class Hall (Legion)",
@@ -2505,7 +2515,8 @@ addon.MountQuestsDB = {
     {
         mountID = 884,
         spellID = 231434,
-        altMountIDs = { 889, 890, 897 },
+        itemID = 143493,
+        altMountIDs = { 889, 890, 891 },
         altVendorStep = {
             titleRU = "Шаг 3: Цепочка пройдена! Купить расцветку у Заниры Безупречной [37.8, 29.0]",
             titleEN = "Step 3: Chain Complete! Buy tint from Zanira the Flawless [37.8, 29.0]",
@@ -2574,6 +2585,7 @@ addon.MountQuestsDB = {
     {
         mountID = 888,
         spellID = 231442,
+        itemID = 143489,
         wowheadUrl = "https://www.wowhead.com/ru/spell=231442",
         categoryRU = "Оплот Класса (Legion)",
         categoryEN = "Class Hall (Legion)",
@@ -2629,6 +2641,7 @@ addon.MountQuestsDB = {
     {
         mountID = 867,
         spellID = 229388,
+        itemID = 142232,
         wowheadUrl = "https://www.wowhead.com/ru/spell=229388",
         categoryRU = "Оплот Класса (Legion)",
         categoryEN = "Class Hall (Legion)",

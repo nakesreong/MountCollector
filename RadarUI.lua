@@ -2,118 +2,19 @@ local _, addon = ...
 
 -- ============================================================================
 -- MountCollector — RadarUI.lua
--- Графический интерфейс аддона (тёмный плоский ElvUI / «Транспорт» стиль):
---   1. Базовые UI-примитивы (ApplyFlatBackdrop, CreateFlatButton, CopyLinkPopup)
---   2. Всплывающий радар-баннер при обнаружении рарника / босса с маунтом
---   3. Интерактивные иконки рарников на Карте Мира (WorldMapFrame)
---   4. Универсальный инспектор маунта (досье, чек-лист шагов, кнопки TomTom/Wowhead)
---   5. Главное двухколоночное окно /mc со встроенной вкладкой «Настройки»
---   6. Боковая док-колонка справа от стандартного окна «Транспорт» (MountJournal)
---   7. LibDataBroker-1.1 и иконка у миникарты (LibDBIcon-1.0)
+-- Главный графический интерфейс аддона (тёмный плоский ElvUI / «Транспорт» стиль):
+--   1. Всплывающие диалоги (ShowCopyLinkPopup, ShowMountDebugWindow, ShowSetAttemptsPopup)
+--   2. Универсальный инспектор маунта с динамической высотой заголовков и карточек
+--      (CreateMountInspectorWidget, PopulateMountInspectorPanel)
+--   3. Главное двухколоночное окно /mc с адаптивной панелью вкладок (LayoutTopTabBar):
+--      [В текущей зоне] -> [Ворлдбоссы] -> [Данж-лут] -> [Цепочки и Квесты] -> [Все траи] -> [Настройки]
+--   4. Боковая док-колонка справа от стандартного окна «Транспорт» (MountJournal)
 -- ============================================================================
 
 local L = addon.L
-local LibStub = _G.LibStub
-local LDB = LibStub and LibStub("LibDataBroker-1.1", true)
-local LDBIcon = LibStub and LibStub("LibDBIcon-1.0", true)
-
-local ui = {
-    currentTab = "QUESTS",
-    previousTab = "QUESTS",
-    selectedMountID = nil,
-    searchText = "",
-    rowPool = {},
-    stepRowPool = {},
-    dockStepPool = {},
-    mapPinPool = {},
-    worldMapHooked = false,
-    dockHiddenByUser = false,
-}
-
--- ============================================================================
--- БАЗОВЫЕ ХЕЛПЕРЫ СТИЛЯ (ТЁМНЫЙ ПЛОСКИЙ ELVUI / COLLECTIONS JOURNAL ДИЗАЙН)
--- ============================================================================
-local function ApplyFlatBackdrop(frame, bgR, bgG, bgB, bgA, brR, brG, brB, brA)
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    frame:SetBackdropColor(bgR or 0.06, bgG or 0.06, bgB or 0.07, bgA or 0.96)
-    frame:SetBackdropBorderColor(brR or 0.20, brG or 0.20, brB or 0.22, brA or 1.0)
-end
-
-local function CreateFlatButton(parent, width, height, text, isGoldAccent)
-    local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    btn:SetSize(width, height)
-    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-
-    if isGoldAccent then
-        ApplyFlatBackdrop(btn, 0.16, 0.13, 0.05, 0.96, 0.85, 0.68, 0.15, 1.0)
-        btn.defaultBg = { 0.16, 0.13, 0.05, 0.96 }
-        btn.defaultBorder = { 0.85, 0.68, 0.15, 1.0 }
-    else
-        ApplyFlatBackdrop(btn, 0.10, 0.10, 0.12, 0.96, 0.24, 0.24, 0.28, 1.0)
-        btn.defaultBg = { 0.10, 0.10, 0.12, 0.96 }
-        btn.defaultBorder = { 0.24, 0.24, 0.28, 1.0 }
-    end
-
-    local padX = (width and width <= 28) and 1 or 6
-    btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    btn.label:SetPoint("LEFT", btn, "LEFT", padX, 0)
-    btn.label:SetPoint("RIGHT", btn, "RIGHT", -padX, 0)
-    btn.label:SetJustifyH("CENTER")
-    btn.label:SetWordWrap(false)
-    btn.label:SetText(text or "")
-    if isGoldAccent then
-        btn.label:SetTextColor(1.0, 0.85, 0.2, 1.0)
-    else
-        btn.label:SetTextColor(0.92, 0.92, 0.95, 1.0)
-    end
-
-    btn:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(0.20, 0.18, 0.10, 0.98)
-        self:SetBackdropBorderColor(1.0, 0.82, 0.0, 1.0)
-        self.label:SetTextColor(1.0, 0.90, 0.35, 1.0)
-    end)
-    btn:SetScript("OnLeave", function(self)
-        if self.isActiveTab then
-            self:SetBackdropColor(0.18, 0.15, 0.06, 0.98)
-            self:SetBackdropBorderColor(1.0, 0.82, 0.0, 1.0)
-            self.label:SetTextColor(1.0, 0.86, 0.20, 1.0)
-        else
-            self:SetBackdropColor(unpack(self.defaultBg))
-            self:SetBackdropBorderColor(unpack(self.defaultBorder))
-            if isGoldAccent then
-                self.label:SetTextColor(1.0, 0.85, 0.2, 1.0)
-            else
-                self.label:SetTextColor(0.92, 0.92, 0.95, 1.0)
-            end
-        end
-    end)
-
-    function btn:SetText(str)
-        self.label:SetText(str or "")
-    end
-
-    function btn:SetActiveTab(active)
-        self.isActiveTab = active
-        if active then
-            self:SetBackdropColor(0.18, 0.15, 0.06, 0.98)
-            self:SetBackdropBorderColor(1.0, 0.82, 0.0, 1.0)
-            self.label:SetTextColor(1.0, 0.86, 0.20, 1.0)
-        else
-            self:SetBackdropColor(unpack(self.defaultBg))
-            self:SetBackdropBorderColor(unpack(self.defaultBorder))
-            self.label:SetTextColor(0.88, 0.88, 0.92, 1.0)
-        end
-    end
-
-    return btn
-end
-
-addon.ApplyFlatBackdrop = ApplyFlatBackdrop
-addon.CreateFlatButton = CreateFlatButton
+local ui = addon.UIState
+local ApplyFlatBackdrop = addon.ApplyFlatBackdrop
+local CreateFlatButton = addon.CreateFlatButton
 
 function addon:OpenMountInJournal(mountID)
     if not mountID then return end
@@ -387,459 +288,6 @@ function addon:ShowSetAttemptsPopup(mountID)
     f.editBox:HighlightText()
 end
 
--- Универсальная навигация для любого маунта (квестового, данжевого или дропового)
-function addon:NavigateMountTarget(mountID, forceFirstStep)
-    if not mountID then return end
-    local qStatus = self:GetMountQuestChainStatus(mountID)
-    if qStatus then
-        local stepIdx = forceFirstStep and 1 or qStatus.currentStepIndex or 1
-        self:NavigateMountQuestStep(mountID, stepIdx, false)
-        return
-    end
-    local dStatus = self:GetDungeonMountStatus(mountID)
-    if dStatus and dStatus.mapID and dStatus.x and dStatus.y then
-        if forceFirstStep then
-            self:SetMountWaypoint(mountID, dStatus.mapID, dStatus.x, dStatus.y, dStatus.instanceTitle, false)
-        else
-            self:SetMountWaypoint(mountID, dStatus.mapID, dStatus.x, dStatus.y, dStatus.instanceTitle .. " — " .. dStatus.bossTitle, false)
-        end
-        return
-    end
-    local info = self.DropInfoByMount and self.DropInfoByMount[mountID]
-    if forceFirstStep then
-        self:PinAllMountSpawns(mountID, true)
-        return
-    end
-    if self.activeSpawnTour and self.activeSpawnTour.mountID == mountID and self.AdvanceSpawnTourStep then
-        self:AdvanceSpawnTourStep(false)
-        return
-    end
-    if info and type(info.coords) == "table" and #info.coords > 1 then
-        self:PinAllMountSpawns(mountID, false)
-        return
-    end
-    local c = self:GetBestMountCoords(mountID)
-    if c then
-        self:SetMountWaypoint(mountID, c.m, c.x, c.y, c.n or (info and info.boss), false)
-    else
-        self:SetMountWaypoint(mountID, nil, nil, nil, info and info.boss, false)
-    end
-end
-
--- ============================================================================
--- 1. ВСПЛЫВАЮЩИЙ РАДАР-БАННЕР ПРИ ОБНАРУЖЕНИИ РАРНИКА / БОССА
--- ============================================================================
-local alertFrame = CreateFrame("Button", "MountCollectorAlertFrame", UIParent, "BackdropTemplate")
-alertFrame:SetSize(440, 82)
-alertFrame:SetPoint("TOP", UIParent, "TOP", 0, -130)
-alertFrame:SetFrameStrata("HIGH")
-ApplyFlatBackdrop(alertFrame, 0.05, 0.05, 0.07, 0.97, 1.0, 0.82, 0.0, 1.0)
-alertFrame:EnableMouse(true)
-alertFrame:SetMovable(true)
-alertFrame:RegisterForDrag("LeftButton")
-alertFrame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-alertFrame:SetScript("OnDragStart", alertFrame.StartMoving)
-alertFrame:SetScript("OnDragStop", alertFrame.StopMovingOrSizing)
-alertFrame:Hide()
-
-local alertIconBorder = CreateFrame("Frame", nil, alertFrame, "BackdropTemplate")
-alertIconBorder:SetSize(54, 54)
-alertIconBorder:SetPoint("TOPLEFT", alertFrame, "TOPLEFT", 10, -10)
-ApplyFlatBackdrop(alertIconBorder, 0.02, 0.02, 0.03, 1.0, 0.85, 0.68, 0.15, 1.0)
-
-local alertIcon = alertIconBorder:CreateTexture(nil, "ARTWORK")
-alertIcon:SetPoint("TOPLEFT", alertIconBorder, "TOPLEFT", 2, -2)
-alertIcon:SetPoint("BOTTOMRIGHT", alertIconBorder, "BOTTOMRIGHT", -2, 2)
-alertIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-local alertHeader = alertFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-alertHeader:SetPoint("TOPLEFT", alertIconBorder, "TOPRIGHT", 10, -1)
-alertHeader:SetPoint("RIGHT", alertFrame, "RIGHT", -30, 0)
-alertHeader:SetJustifyH("LEFT")
-alertHeader:SetWordWrap(true)
-
-local alertMountName = alertFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-alertMountName:SetPoint("TOPLEFT", alertHeader, "BOTTOMLEFT", 0, -4)
-alertMountName:SetPoint("RIGHT", alertFrame, "RIGHT", -12, 0)
-alertMountName:SetJustifyH("LEFT")
-alertMountName:SetWordWrap(true)
-
-local alertStats = alertFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-alertStats:SetPoint("TOPLEFT", alertMountName, "BOTTOMLEFT", 0, -4)
-alertStats:SetPoint("RIGHT", alertFrame, "RIGHT", -12, 0)
-alertStats:SetJustifyH("LEFT")
-alertStats:SetWordWrap(true)
-
-local closeAlertBtn = CreateFlatButton(alertFrame, 20, 20, "X", false)
-closeAlertBtn:SetPoint("TOPRIGHT", alertFrame, "TOPRIGHT", -5, -5)
-closeAlertBtn:SetFrameLevel(alertFrame:GetFrameLevel() + 6)
-closeAlertBtn:SetScript("OnClick", function() alertFrame:Hide() end)
-
--- Защищённая кнопка SecureActionButtonTemplate поверх баннера для взятия рарника в цель (/targetexact) по клику ЛКМ!
-local secureTargetBtn = CreateFrame("Button", "MountCollectorAlertSecureBtn", alertFrame, "SecureActionButtonTemplate")
-secureTargetBtn:SetAllPoints(alertFrame)
-secureTargetBtn:SetFrameLevel(alertFrame:GetFrameLevel() + 2)
-secureTargetBtn:RegisterForClicks("AnyUp", "AnyDown")
-secureTargetBtn:RegisterForDrag("LeftButton")
-secureTargetBtn:SetScript("OnDragStart", function() alertFrame:StartMoving() end)
-secureTargetBtn:SetScript("OnDragStop", function() alertFrame:StopMovingOrSizing() end)
-
-secureTargetBtn:SetScript("OnEnter", function()
-    alertFrame:SetBackdropBorderColor(0.0, 0.95, 1.0, 1.0)
-end)
-secureTargetBtn:SetScript("OnLeave", function()
-    alertFrame:SetBackdropBorderColor(1.0, 0.82, 0.0, 1.0)
-end)
-
-function addon:UpdateAlertSecureTarget(npcName)
-    local cleanName = (type(npcName) == "string") and npcName:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("%s*%b()", "") or ""
-    if cleanName == "" or cleanName == "Rare NPC" or cleanName == "Неизвестно" or cleanName:find("^NPC #") then
-        cleanName = ""
-    end
-    if InCombatLockdown and InCombatLockdown() then
-        self.pendingAlertTargetName = cleanName
-        return
-    end
-    self.pendingAlertTargetName = nil
-    secureTargetBtn:SetAttribute("type1", "macro")
-    if cleanName ~= "" then
-        secureTargetBtn:SetAttribute("macrotext1", "/targetexact " .. cleanName .. "\n/target " .. cleanName)
-    else
-        secureTargetBtn:SetAttribute("macrotext1", "")
-    end
-    secureTargetBtn:SetAttribute("type2", "macro")
-    secureTargetBtn:SetAttribute("macrotext2", "")
-end
-
-function addon:FlushPendingAlertTarget()
-    if self.pendingAlertTargetName ~= nil and not (InCombatLockdown and InCombatLockdown()) then
-        self:UpdateAlertSecureTarget(self.pendingAlertTargetName)
-    end
-end
-
-local function HandleAlertClick(_, button)
-    if button == "RightButton" then
-        alertFrame:Hide()
-    elseif alertFrame.currentMountID then
-        addon:SetMountWaypoint(alertFrame.currentMountID, alertFrame.alertMapID, alertFrame.alertX, alertFrame.alertY, alertFrame.alertNpcName, false)
-        if IsShiftKeyDown and IsShiftKeyDown() then
-            addon:OpenMountInJournal(alertFrame.currentMountID)
-        end
-    end
-end
-
-secureTargetBtn:HookScript("PostClick", function(self, button, down)
-    local useKeyDown = C_CVar and C_CVar.GetCVarBool and C_CVar.GetCVarBool("ActionButtonUseKeyDown")
-    if (down and not useKeyDown) or (not down and useKeyDown) then return end
-    HandleAlertClick(self, button)
-end)
-
-alertFrame:SetScript("OnClick", HandleAlertClick)
-alertFrame:SetScript("OnHide", function()
-    if addon.SyncActiveTourAfterKillOrAlert then
-        addon:SyncActiveTourAfterKillOrAlert()
-    end
-end)
-
-function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, liveX, liveY)
-    if not forceShow and (not self.db or not self.db.settings.alertRares) then return end
-    local key = (npcID and npcID > 0 and npcID ~= 99999) and ("npc:" .. tostring(npcID)) or (tostring(npcID or 0) .. ":" .. tostring(mountID or 0))
-    local now = GetTime()
-    if not forceShow and self.RecentAlertLock[key] and (now - self.RecentAlertLock[key]) < 120 then
-        return
-    end
-    self.RecentAlertLock[key] = now
-
-    local name, _, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
-    if not name or (isCollected and not forceShow) then return end
-
-    -- Если с этого NPC падает сразу несколько несобранных маунтов, объединяем их названия в один алерт и одну метку
-    local displayMountNames = name
-    if not forceShow and npcID and self.MountsByNpc and self.MountsByNpc[npcID] and #self.MountsByNpc[npcID] > 1 then
-        local namesList = {}
-        for _, mID in ipairs(self.MountsByNpc[npcID]) do
-            local mName, _, _, _, _, _, _, _, _, _, mCol = C_MountJournal.GetMountInfoByID(mID)
-            if mName and not mCol then
-                table.insert(namesList, mName)
-            end
-        end
-        if #namesList > 1 then
-            displayMountNames = table.concat(namesList, ", ")
-        end
-    end
-
-    local attempts, _, dropInfo = self:GetMountAttempts(mountID)
-    local globalPct = self:GetGlobalRarity(mountID)
-    local pctText = self:FormatRarityTier(globalPct)
-    local chanceStr = (dropInfo and dropInfo.chance) and string.format("1/%d | ", dropInfo.chance) or ""
-
-    alertFrame.currentMountID = mountID
-    alertFrame.alertNpcID = npcID
-    alertFrame.alertMapID = mapID
-    alertFrame.alertX = liveX
-    alertFrame.alertY = liveY
-    alertFrame.alertNpcName = npcName
-
-    self:UpdateAlertSecureTarget(npcName)
-
-    alertIcon:SetTexture(icon or "Interface\\ICONS\\Ability_Mount_SpectralTiger")
-    alertHeader:SetText(string.format(L.ALERT_HEADER_NEARBY, npcName or "Rare NPC"))
-    alertMountName:SetText(string.format(L.ALERT_NOT_COLLECTED, displayMountNames))
-    alertStats:SetText(string.format(L.ALERT_STATS_LINE, attempts, chanceStr, pctText))
-
-    local h1 = alertHeader:GetStringHeight() or 16
-    local h2 = alertMountName:GetStringHeight() or 16
-    local h3 = alertStats:GetStringHeight() or 16
-    local contentH = math.max(74, 10 + h1 + 4 + h2 + 4 + h3 + 12)
-    alertFrame:SetHeight(contentH)
-
-    alertFrame:Show()
-    if self.db and self.db.settings.alertSound and PlaySound then
-        PlaySound(8959, "Master")
-    end
-
-    if self.db and self.db.settings.autoWaypoint then
-        self:SetMountWaypoint(mountID, mapID, liveX, liveY, npcName, false, displayMountNames)
-    end
-
-    if self.alertHideTimer then
-        self.alertHideTimer:Cancel()
-    end
-    self.alertHideTimer = C_Timer.NewTimer(15, function()
-        if alertFrame:IsShown() then
-            alertFrame:Hide()
-        end
-    end)
-end
-
--- ============================================================================
--- 2. ИКОНКИ РАРНИКОВ И БОССОВ НА КАРТЕ МИРА (WORLD MAP PINS)
--- ============================================================================
-local function GetOrCreateMapPin(parent, index)
-    if ui.mapPinPool[index] then
-        ui.mapPinPool[index]:SetParent(parent)
-        return ui.mapPinPool[index]
-    end
-
-    local pin = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    pin:SetSize(24, 24)
-    pin:SetFrameStrata("HIGH")
-    pin:SetFrameLevel(2500)
-    pin:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    ApplyFlatBackdrop(pin, 0.05, 0.05, 0.08, 0.95, 1.0, 0.78, 0.0, 1.0)
-
-    pin.icon = pin:CreateTexture(nil, "ARTWORK")
-    pin.icon:SetPoint("TOPLEFT", pin, "TOPLEFT", 2, -2)
-    pin.icon:SetPoint("BOTTOMRIGHT", pin, "BOTTOMRIGHT", -2, 2)
-    pin.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-    pin.badge = pin:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    pin.badge:SetPoint("BOTTOMRIGHT", pin, "BOTTOMRIGHT", -1, 1)
-    pin.badge:SetTextColor(1.0, 0.92, 0.15, 1.0)
-    pin.badge:SetText("")
-
-    pin:SetScript("OnEnter", function(self)
-        if not self.mountID then return end
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        local mName, _, mIcon = C_MountJournal.GetMountInfoByID(self.mountID)
-        local iconTag = mIcon and string.format("|T%s:18:18:0:0|t ", mIcon) or ""
-        local displayMounts = iconTag .. (mName or "Mount")
-        if self.mountIDs and #self.mountIDs > 1 then
-            local parts = {}
-            for _, mID in ipairs(self.mountIDs) do
-                local n, _, ic = C_MountJournal.GetMountInfoByID(mID)
-                if n then
-                    local it = ic and string.format("|T%s:16:16:0:0|t ", ic) or ""
-                    table.insert(parts, it .. n)
-                end
-            end
-            if #parts > 1 then
-                displayMounts = table.concat(parts, " / ")
-            end
-        end
-        local npcLine = self.npcName and ("|cffffd100" .. self.npcName .. "|r — ") or ""
-        GameTooltip:SetText(npcLine .. displayMounts, 1, 1, 1)
-        if self.npcID then
-            local npcLocked = addon:IsNpcLockedToday(self.npcID)
-            GameTooltip:AddDoubleLine(L.TT_STATUS_TODAY, npcLocked and L.TT_NPC_STATUS_LOCKED or L.TT_NPC_STATUS_AVAIL)
-        end
-        addon:AppendMountCollectorLines(GameTooltip, self.mountID, true, false)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(L.MAP_PIN_HINT)
-        GameTooltip:Show()
-    end)
-
-    pin:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-
-    pin:SetScript("OnClick", function(self, button)
-        if not self.mountID then return end
-        if button == "RightButton" then
-            addon:OpenMountInJournal(self.mountID)
-        else
-            local combinedNames = nil
-            if self.mountIDs and #self.mountIDs > 1 then
-                local names = {}
-                for _, mID in ipairs(self.mountIDs) do
-                    local mName, _, _, _, _, _, _, _, _, _, mCol = C_MountJournal.GetMountInfoByID(mID)
-                    if mName and not mCol then
-                        table.insert(names, mName)
-                    end
-                end
-                if #names > 1 then
-                    combinedNames = table.concat(names, ", ")
-                end
-            end
-            addon:SetMountWaypoint(self.mountID, self.mapID, self.coordX, self.coordY, self.npcName, false, combinedNames)
-        end
-    end)
-
-    ui.mapPinPool[index] = pin
-    return pin
-end
-
-function addon:RefreshWorldMapPins()
-    for _, pin in ipairs(ui.mapPinPool) do
-        pin:Hide()
-    end
-
-    if not self.db or not self.db.settings or not self.db.settings.showWorldMapPins then return end
-    if not _G.WorldMapFrame or not WorldMapFrame:IsShown() then return end
-
-    local mapID = WorldMapFrame:GetMapID()
-    if not mapID then return end
-
-    local canvas = WorldMapFrame.ScrollContainer and WorldMapFrame.ScrollContainer.Child
-    if not canvas then return end
-
-    local list = self.MountsByMap[mapID]
-    if not list or #list == 0 then return end
-
-    local cw = canvas:GetWidth()
-    local ch = canvas:GetHeight()
-    if not cw or not ch or cw <= 0 or ch <= 0 then return end
-
-    local pinIdx = 0
-    local pinByCoordKey = {}
-    for _, mountID in ipairs(list) do
-        local name, _, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
-        local isHighlighted = (self.highlightedMapMountID and self.highlightedMapMountID == mountID)
-        if name and (not isCollected or isHighlighted) then
-            local info = self.DropInfoByMount[mountID]
-            local locked = self:IsMountRareLockedToday(mountID)
-            if info and info.coords then
-                for _, c in ipairs(info.coords) do
-                    local pinLocked = (c.npcID and self:IsNpcLockedToday(c.npcID)) or locked
-                    if not pinLocked and c.m == mapID and c.x and c.x > 0 and c.y and c.y > 0 then
-                        local coordKey = string.format("%d:%.1f:%.1f", mapID, c.x, c.y)
-                        local existingPin = pinByCoordKey[coordKey]
-                        if existingPin then
-                            existingPin.mountIDs = existingPin.mountIDs or { existingPin.mountID }
-                            local alreadyAdded = false
-                            for _, mID in ipairs(existingPin.mountIDs) do
-                                if mID == mountID then
-                                    alreadyAdded = true
-                                    break
-                                end
-                            end
-                            if not alreadyAdded then
-                                table.insert(existingPin.mountIDs, mountID)
-                            end
-                            if isHighlighted and not existingPin.pinLocked then
-                                existingPin:SetSize(28, 28)
-                                existingPin.icon:SetDesaturated(false)
-                                existingPin:SetBackdropBorderColor(0.0, 0.95, 1.0, 1.0)
-                                existingPin:SetAlpha(1.0)
-                            end
-                        else
-                            pinIdx = pinIdx + 1
-                            local pin = GetOrCreateMapPin(canvas, pinIdx)
-                            pin.mountID = mountID
-                            pin.mountIDs = { mountID }
-                            pin.npcID = c.npcID
-                            pin.pinLocked = pinLocked
-                            pin.mapID = mapID
-                            pin.coordX = c.x
-                            pin.coordY = c.y
-                            local knownNpcName = (c.npcID and self.KnownNpcNames and self.KnownNpcNames[c.npcID]) or nil
-                            pin.npcName = knownNpcName or ((c.n and c.n ~= "") and c.n) or info.boss or name
-                            pin.icon:SetTexture(icon or "Interface\\ICONS\\Ability_Mount_SpectralTiger")
-
-                            local tourStepNum = nil
-                            local isCurrentTourStep = false
-                            if self.activeSpawnTour and self.activeSpawnTour.mountID == mountID and self.activeSpawnTour.points then
-                                for tIdx, tPt in ipairs(self.activeSpawnTour.points) do
-                                    if tPt.m == mapID and math.abs((tPt.x or 0) - c.x) < 0.15 and math.abs((tPt.y or 0) - c.y) < 0.15 then
-                                        tourStepNum = tIdx
-                                        isCurrentTourStep = (tIdx == self.activeSpawnTour.index)
-                                        break
-                                    end
-                                end
-                            end
-
-                            if pin.badge then
-                                if tourStepNum and not pinLocked then
-                                    pin.badge:SetText(tostring(tourStepNum))
-                                    pin.badge:Show()
-                                else
-                                    pin.badge:SetText("")
-                                    pin.badge:Hide()
-                                end
-                            end
-
-                            if pinLocked then
-                                pin:SetSize(22, 22)
-                                pin.icon:SetDesaturated(true)
-                                pin:SetBackdropBorderColor(0.45, 0.45, 0.45, 0.75)
-                                pin:SetAlpha(0.55)
-                            elseif isCurrentTourStep then
-                                pin:SetSize(30, 30)
-                                pin.icon:SetDesaturated(false)
-                                pin:SetBackdropBorderColor(0.0, 1.0, 0.55, 1.0)
-                                pin:SetAlpha(1.0)
-                            elseif isHighlighted then
-                                pin:SetSize(28, 28)
-                                pin.icon:SetDesaturated(false)
-                                pin:SetBackdropBorderColor(0.0, 0.95, 1.0, 1.0)
-                                pin:SetAlpha(1.0)
-                            else
-                                pin:SetSize(24, 24)
-                                pin.icon:SetDesaturated(false)
-                                pin:SetBackdropBorderColor(1.0, 0.78, 0.0, 1.0)
-                                pin:SetAlpha(1.0)
-                            end
-
-                            local px = (c.x / 100.0) * cw
-                            local py = -(c.y / 100.0) * ch
-                            pin:ClearAllPoints()
-                            pin:SetPoint("CENTER", canvas, "TOPLEFT", px, py)
-                            pin:Show()
-                            pinByCoordKey[coordKey] = pin
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
-function addon:InitWorldMapPins()
-    if ui.worldMapHooked or not _G.WorldMapFrame then return end
-    ui.worldMapHooked = true
-
-    hooksecurefunc(WorldMapFrame, "OnMapChanged", function()
-        addon:RefreshWorldMapPins()
-    end)
-    WorldMapFrame:HookScript("OnShow", function()
-        addon:RefreshWorldMapPins()
-    end)
-    if WorldMapFrame.ScrollContainer then
-        WorldMapFrame.ScrollContainer:HookScript("OnSizeChanged", function()
-            addon:RefreshWorldMapPins()
-        end)
-    end
-end
 
 -- ============================================================================
 -- 3. РЕНДЕР ПРАВОЙ КОЛОНКИ (ДОСЬЕ + ЧЕК-ЛИСТ ШАГОВ + КНОПКИ НАВИГАЦИИ)
@@ -936,9 +384,15 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
     end
     if panel.btnDebug then
         panel.btnDebug:SetText(L.QUEST_DEBUG_BTN)
+        if panel.btnDebug.AutoSizeWidth then
+            panel.btnDebug:AutoSizeWidth(92, 175, 16)
+        end
     end
     if panel.btnSetAttempts then
         panel.btnSetAttempts:SetText(L.BTN_SET_ATTEMPTS)
+        if panel.btnSetAttempts.AutoSizeWidth then
+            panel.btnSetAttempts:AutoSizeWidth(86, 155, 16)
+        end
     end
     if panel.btnNavNow then
         panel.btnNavNow:SetText(L.QUEST_NAV_BTN)
@@ -976,15 +430,22 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         if qStatus then
             panel.btnSetAttempts:Hide()
             if panel.secLabel and panel.btnDebug then
+                panel.secLabel:ClearAllPoints()
+                panel.secLabel:SetPoint("TOPLEFT", panel.headerBox, "BOTTOMLEFT", 2, -8)
                 panel.secLabel:SetPoint("RIGHT", panel.btnDebug, "LEFT", -6, 0)
             end
         else
             panel.btnSetAttempts:Show()
             if panel.secLabel then
+                panel.secLabel:ClearAllPoints()
+                panel.secLabel:SetPoint("TOPLEFT", panel.headerBox, "BOTTOMLEFT", 2, -8)
                 panel.secLabel:SetPoint("RIGHT", panel.btnSetAttempts, "LEFT", -6, 0)
             end
         end
     end
+
+    local fullW = cardWidth + 16
+    local halfW = math.floor(fullW / 2) - 3
 
     if isCollected then
         if panel.btnNavNow then panel.btnNavNow:Hide() end
@@ -993,12 +454,42 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         if panel.scrollFrame then
             panel.scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 38)
         end
-    else
+    elseif dStatus and dStatus.sourceKind ~= "WORLD_BOSS" and not (dStatus.entry and dStatus.entry.isWorldBoss) then
+        -- Для боссов подземелий и рейдов скрываем «Отметить все спавны» и растягиваем «Отметить вход в данж» на всю ширину
         if panel.btnNavNow then
-            panel.btnNavNow:SetText(dStatus and L.DUNGEON_ENTRANCE_BTN or L.QUEST_NAV_BTN)
+            panel.btnNavNow:SetWidth(fullW)
+            panel.btnNavNow:SetText(L.DUNGEON_ENTRANCE_BTN)
             panel.btnNavNow:Show()
         end
         if panel.btnNavStart then
+            panel.btnNavStart:Hide()
+        end
+        if panel.btnBar then panel.btnBar:SetHeight(54) end
+        if panel.scrollFrame then
+            panel.scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 68)
+        end
+    elseif dStatus and (dStatus.sourceKind == "WORLD_BOSS" or (dStatus.entry and dStatus.entry.isWorldBoss)) and dStatus.spellID ~= 448941 then
+        -- Для ворлдбоссов с фиксированной точкой спавна
+        if panel.btnNavNow then
+            panel.btnNavNow:SetWidth(fullW)
+            panel.btnNavNow:SetText(L.WORLDBOSS_SPAWN_BTN or L.QUEST_NAV_BTN)
+            panel.btnNavNow:Show()
+        end
+        if panel.btnNavStart then
+            panel.btnNavStart:Hide()
+        end
+        if panel.btnBar then panel.btnBar:SetHeight(54) end
+        if panel.scrollFrame then
+            panel.scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 68)
+        end
+    else
+        if panel.btnNavNow then
+            panel.btnNavNow:SetWidth(halfW)
+            panel.btnNavNow:SetText((dStatus and dStatus.sourceKind == "WORLD_BOSS") and (L.WORLDBOSS_SPAWN_BTN or L.QUEST_NAV_BTN) or L.QUEST_NAV_BTN)
+            panel.btnNavNow:Show()
+        end
+        if panel.btnNavStart then
+            panel.btnNavStart:SetWidth(halfW)
             panel.btnNavStart:SetText(qStatus and L.QUEST_START_BTN or L.RARE_PIN_ALL_BTN)
             panel.btnNavStart:Show()
         end
@@ -1048,8 +539,13 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
 
     panel.metaFS:SetText(table.concat(metaLines, "\n"))
     if panel.headerBox then
-        local metaH = panel.metaFS:GetStringHeight() or 40
-        panel.headerBox:SetHeight(math.max(114, 66 + metaH))
+        local nameH = math.ceil(panel.nameFS:GetStringHeight() or 20)
+        local topBlockH = math.max(44, nameH + 4)
+        panel.metaFS:ClearAllPoints()
+        panel.metaFS:SetPoint("TOPLEFT", panel.headerBox, "TOPLEFT", 10, -(10 + topBlockH + 8))
+        panel.metaFS:SetPoint("RIGHT", panel.headerBox, "RIGHT", -10, 0)
+        local metaH = math.ceil(panel.metaFS:GetStringHeight() or 40)
+        panel.headerBox:SetHeight(math.max(98, 10 + topBlockH + 8 + metaH + 12))
     end
 
     -- Заполняем карточки шагов (Сделано / Надо сделать)
@@ -1345,9 +841,10 @@ local function CreateMountInspectorWidget(parent, scrollName, cardWidth, isDocke
     panel.iconTex = iconTex
 
     local nameFS = headerBox:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    nameFS:SetPoint("LEFT", iconFrame, "RIGHT", 10, 0)
+    nameFS:SetPoint("TOPLEFT", iconFrame, "TOPRIGHT", 10, -2)
     nameFS:SetPoint("RIGHT", headerBox, "RIGHT", -10, 0)
     nameFS:SetJustifyH("LEFT")
+    nameFS:SetJustifyV("TOP")
     nameFS:SetWordWrap(true)
     panel.nameFS = nameFS
 
@@ -1464,9 +961,11 @@ end
 
 -- ============================================================================
 -- 4. ГЛАВНОЕ ДВУХКОЛОНОЧНОЕ ОКНО /mc (В СТИЛЕ «ТРАНСПОРТ» ELVUI)
+-- Адаптивная мультиязычная вёрстка: кнопки вкладок сами считают ширину по тексту,
+-- а окно автоматически масштабируется, если разрешение экрана меньше базового!
 -- ============================================================================
 local radarFrame = CreateFrame("Frame", "MountCollectorRadarFrame", UIParent, "BackdropTemplate")
-radarFrame:SetSize(840, 540)
+radarFrame:SetSize(880, 550)
 radarFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
 radarFrame:SetFrameStrata("DIALOG")
 ApplyFlatBackdrop(radarFrame, 0.05, 0.05, 0.06, 0.96, 0.18, 0.18, 0.20, 1.0)
@@ -1475,6 +974,14 @@ radarFrame:SetMovable(true)
 radarFrame:RegisterForDrag("LeftButton")
 radarFrame:SetScript("OnDragStart", radarFrame.StartMoving)
 radarFrame:SetScript("OnDragStop", radarFrame.StopMovingOrSizing)
+radarFrame:SetScript("OnShow", function(self)
+    local uiW = UIParent and UIParent:GetWidth() or 1920
+    local uiH = UIParent and UIParent:GetHeight() or 1080
+    local scaleW = (uiW > 0 and uiW < 920) and ((uiW - 24) / 880) or 1.0
+    local scaleH = (uiH > 0 and uiH < 600) and ((uiH - 36) / 550) or 1.0
+    local targetScale = math.max(0.72, math.min(1.0, scaleW, scaleH))
+    self:SetScale(targetScale)
+end)
 radarFrame:Hide()
 ui.radarFrame = radarFrame
 
@@ -1494,8 +1001,9 @@ radarClose:SetPoint("RIGHT", topBar, "RIGHT", -4, 0)
 radarClose:SetScript("OnClick", function() radarFrame:Hide() end)
 
 -- Панель вкладок и счётчика «Всего: X»
+-- Порядок вкладок: 1. В текущей зоне -> 2. Ворлдбоссы -> 3. Данж-лут -> 4. Цепочки и Квесты -> 5. Все траи аккаунта | Настройки
 local totalBox = CreateFrame("Frame", nil, radarFrame, "BackdropTemplate")
-totalBox:SetSize(112, 24)
+totalBox:SetSize(96, 24)
 totalBox:SetPoint("TOPLEFT", radarFrame, "TOPLEFT", 12, -36)
 ApplyFlatBackdrop(totalBox, 0.03, 0.03, 0.04, 0.95, 0.18, 0.18, 0.20, 1.0)
 
@@ -1503,38 +1011,58 @@ local totalFS = totalBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 totalFS:SetPoint("CENTER", totalBox, "CENTER", 0, 0)
 totalFS:SetTextColor(1.0, 0.82, 0.0, 1.0)
 
-local tabQuestsBtn = CreateFlatButton(radarFrame, 138, 24, "", false)
-tabQuestsBtn:SetPoint("LEFT", totalBox, "RIGHT", 6, 0)
+local tabZoneBtn = CreateFlatButton(radarFrame, 120, 24, "", false)
+tabZoneBtn:SetPoint("LEFT", totalBox, "RIGHT", 5, 0)
 
-local tabDungeonsBtn = CreateFlatButton(radarFrame, 110, 24, "", false)
-tabDungeonsBtn:SetPoint("LEFT", tabQuestsBtn, "RIGHT", 5, 0)
+local tabWorldBossBtn = CreateFlatButton(radarFrame, 104, 24, "", false)
+tabWorldBossBtn:SetPoint("LEFT", tabZoneBtn, "RIGHT", 5, 0)
 
-local tabZoneBtn = CreateFlatButton(radarFrame, 126, 24, "", false)
-tabZoneBtn:SetPoint("LEFT", tabDungeonsBtn, "RIGHT", 5, 0)
+local tabDungeonsBtn = CreateFlatButton(radarFrame, 102, 24, "", false)
+tabDungeonsBtn:SetPoint("LEFT", tabWorldBossBtn, "RIGHT", 5, 0)
 
-local tabAllBtn = CreateFlatButton(radarFrame, 132, 24, "", false)
-tabAllBtn:SetPoint("LEFT", tabZoneBtn, "RIGHT", 5, 0)
+local tabQuestsBtn = CreateFlatButton(radarFrame, 130, 24, "", false)
+tabQuestsBtn:SetPoint("LEFT", tabDungeonsBtn, "RIGHT", 5, 0)
 
-local btnPinZone = CreateFlatButton(radarFrame, 104, 24, "", false)
-btnPinZone:SetPoint("LEFT", tabAllBtn, "RIGHT", 5, 0)
-btnPinZone:SetScript("OnClick", function()
-    local zoneMounts = addon:GetZoneUncollectedMounts()
-    if zoneMounts and zoneMounts[1] then
-        addon:PinAllMountSpawns(zoneMounts[1].mountID, true)
-    end
-end)
+local tabAllBtn = CreateFlatButton(radarFrame, 130, 24, "", false)
+tabAllBtn:SetPoint("LEFT", tabQuestsBtn, "RIGHT", 5, 0)
 
-local btnSettings = CreateFlatButton(radarFrame, 82, 24, "", false)
+local btnSettings = CreateFlatButton(radarFrame, 86, 24, "", false)
 btnSettings:SetPoint("TOPRIGHT", radarFrame, "TOPRIGHT", -12, -36)
 btnSettings:SetScript("OnClick", function()
     if ui.currentTab == "SETTINGS" then
-        ui.currentTab = ui.previousTab or "QUESTS"
+        ui.currentTab = ui.previousTab or "ZONE"
     else
         ui.previousTab = ui.currentTab
         ui.currentTab = "SETTINGS"
     end
     addon:RefreshRadarUI()
 end)
+
+local topTabButtons = { tabZoneBtn, tabWorldBossBtn, tabDungeonsBtn, tabQuestsBtn, tabAllBtn }
+
+-- Динамический расчёт ширины всех кнопок верхней панели для любого языка клиента (без наездов!)
+local function LayoutTopTabBar()
+    local totalTextW = math.ceil(totalFS:GetStringWidth() or 64)
+    local totalBoxW = math.max(84, math.min(126, totalTextW + 18))
+    totalBox:SetWidth(totalBoxW)
+
+    local settingsW = btnSettings:AutoSizeWidth(78, 135, 16)
+    local availForTabs = (radarFrame:GetWidth() or 880) - 24 - totalBoxW - settingsW - (#topTabButtons * 5) - 10
+
+    local rawTabWidths = {}
+    local sumRaw = 0
+    for i, btn in ipairs(topTabButtons) do
+        local w = math.ceil((btn.label and btn.label:GetStringWidth()) or 80) + 18
+        w = math.max(82, w)
+        rawTabWidths[i] = w
+        sumRaw = sumRaw + w
+    end
+
+    local scale = (sumRaw > availForTabs and sumRaw > 0) and (availForTabs / sumRaw) or 1.0
+    for i, btn in ipairs(topTabButtons) do
+        btn:SetWidth(math.max(72, math.floor(rawTabWidths[i] * scale)))
+    end
+end
 
 -- ВСТРОЕННАЯ ПАНЕЛЬ НАСТРОЕК ВНУТРИ ГЛАВНОГО ОКНА /mc (БЕЗ ОТДЕЛЬНОГО ПОПАПА)
 local settingsPanel = CreateFrame("Frame", nil, radarFrame, "BackdropTemplate")
@@ -1545,7 +1073,7 @@ settingsPanel:Hide()
 ui.settingsPanel = settingsPanel
 addon.radarSettingsPanel = settingsPanel
 
--- ЛЕВАЯ КОЛОНКА (Поиск + Список маунтов, как в «Транспорт»)
+-- ЛЕВАЯ КОЛОНКА (Поиск + Кнопка «Отметить всех на карте» в текущей зоне + Список маунтов)
 local leftCol = CreateFrame("Frame", nil, radarFrame, "BackdropTemplate")
 leftCol:SetPoint("TOPLEFT", radarFrame, "TOPLEFT", 12, -66)
 leftCol:SetPoint("BOTTOMLEFT", radarFrame, "BOTTOMLEFT", 12, 12)
@@ -1591,8 +1119,20 @@ end)
 searchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
 
+-- Кнопка «Отметить всех на карте» (расположена в левой колонке под поиском на вкладке «В текущей зоне», не открывает карту!)
+local btnPinZone = CreateFlatButton(leftCol, 298, 22, "", true)
+btnPinZone:SetPoint("TOPLEFT", searchBoxFrame, "BOTTOMLEFT", 0, -4)
+btnPinZone:SetPoint("TOPRIGHT", searchBoxFrame, "BOTTOMRIGHT", 0, -4)
+btnPinZone:SetScript("OnClick", function()
+    local zoneMounts = addon:GetZoneUncollectedMounts()
+    if zoneMounts and zoneMounts[1] then
+        local targetID = ui.selectedMountID or zoneMounts[1].mountID
+        addon:PinAllMountSpawns(targetID, false)
+    end
+end)
+
 local listScroll = CreateFrame("ScrollFrame", "MountCollectorListScroll", leftCol, "UIPanelScrollFrameTemplate")
-listScroll:SetPoint("TOPLEFT", leftCol, "TOPLEFT", 6, -36)
+listScroll:SetPoint("TOPLEFT", leftCol, "TOPLEFT", 6, -62)
 listScroll:SetPoint("BOTTOMRIGHT", leftCol, "BOTTOMRIGHT", -26, 6)
 
 local listContent = CreateFrame("Frame", nil, listScroll)
@@ -1600,7 +1140,7 @@ listContent:SetSize(276, 1)
 listScroll:SetScrollChild(listContent)
 
 -- ПРАВАЯ КОЛОНКА (Досье выбранного маунта + Чек-лист шагов + Кнопки навигации)
-local rightInspector = CreateMountInspectorWidget(radarFrame, "MountCollectorStepScroll", 464, false)
+local rightInspector = CreateMountInspectorWidget(radarFrame, "MountCollectorStepScroll", 504, false)
 rightInspector:SetPoint("TOPLEFT", leftCol, "TOPRIGHT", 8, 0)
 rightInspector:SetPoint("BOTTOMRIGHT", radarFrame, "BOTTOMRIGHT", -12, 12)
 ui.rightInspector = rightInspector
@@ -1680,12 +1220,15 @@ function addon:InspectMountInCollector(mountID)
     if not mountID then return end
     ui.selectedMountID = mountID
     ui.pinnedInspectMountID = mountID
+    local dStatus = self:GetDungeonMountStatus(mountID)
     if self:GetMountQuestChainStatus(mountID) then
         ui.currentTab = "QUESTS"
-    elseif self:GetDungeonMountStatus(mountID) then
+    elseif dStatus and dStatus.sourceKind == "WORLD_BOSS" then
+        ui.currentTab = "WORLDBOSS"
+    elseif dStatus then
         ui.currentTab = "DUNGEONS"
     elseif ui.currentTab == "SETTINGS" then
-        ui.currentTab = "ALL"
+        ui.currentTab = "ZONE"
     end
     radarFrame:Show()
     self:RefreshRadarUI()
@@ -1703,9 +1246,10 @@ end
 
 function addon:RefreshRadarUI()
     radarTitle:SetText(L.RADAR_WINDOW_TITLE)
-    tabQuestsBtn:SetText(L.TAB_QUEST_CHAINS)
-    tabDungeonsBtn:SetText(L.TAB_DUNGEON_LOOT)
     tabZoneBtn:SetText(L.TAB_CURRENT_ZONE)
+    tabWorldBossBtn:SetText(L.TAB_WORLD_BOSSES or "Ворлдбоссы")
+    tabDungeonsBtn:SetText(L.TAB_DUNGEON_LOOT)
+    tabQuestsBtn:SetText(L.TAB_QUEST_CHAINS)
     tabAllBtn:SetText(L.TAB_ALL_ATTEMPTS)
     btnPinZone:SetText(L.BTN_PIN_ALL_ZONE)
     btnSettings:SetText(L.BTN_SETTINGS)
@@ -1713,27 +1257,37 @@ function addon:RefreshRadarUI()
 
     if ui.journalDockToggleBtn then
         ui.journalDockToggleBtn:SetText(L.DOCK_TOGGLE_BTN)
+        if ui.journalDockToggleBtn.AutoSizeWidth then
+            ui.journalDockToggleBtn:AutoSizeWidth(135, 220, 18)
+        end
     end
     if ui.journalDockTitle then
         ui.journalDockTitle:SetText(L.DOCK_WINDOW_TITLE)
     end
 
-    tabQuestsBtn:SetActiveTab(ui.currentTab == "QUESTS")
-    tabDungeonsBtn:SetActiveTab(ui.currentTab == "DUNGEONS")
     tabZoneBtn:SetActiveTab(ui.currentTab == "ZONE")
+    tabWorldBossBtn:SetActiveTab(ui.currentTab == "WORLDBOSS")
+    tabDungeonsBtn:SetActiveTab(ui.currentTab == "DUNGEONS")
+    tabQuestsBtn:SetActiveTab(ui.currentTab == "QUESTS")
     tabAllBtn:SetActiveTab(ui.currentTab == "ALL")
     btnSettings:SetActiveTab(ui.currentTab == "SETTINGS")
 
     if ui.currentTab == "ZONE" then
         btnPinZone:Show()
+        listScroll:SetPoint("TOPLEFT", leftCol, "TOPLEFT", 6, -62)
     else
         btnPinZone:Hide()
+        listScroll:SetPoint("TOPLEFT", leftCol, "TOPLEFT", 6, -36)
     end
 
-    if not radarFrame:IsShown() then return end
+    if not radarFrame:IsShown() then
+        LayoutTopTabBar()
+        return
+    end
 
     if ui.currentTab == "SETTINGS" then
         totalFS:SetText(string.format(L.TOTAL_LABEL, ui.lastListCount or #(self.MountQuestsDB or {})))
+        LayoutTopTabBar()
         leftCol:Hide()
         rightInspector:Hide()
         settingsPanel:Show()
@@ -1752,6 +1306,12 @@ function addon:RefreshRadarUI()
     end
 
     local listEntries = {}
+    local currentPlayerMapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    local currentParentMapID = nil
+    if currentPlayerMapID and C_Map and C_Map.GetMapInfo then
+        local mInfo = C_Map.GetMapInfo(currentPlayerMapID)
+        currentParentMapID = mInfo and mInfo.parentMapID or nil
+    end
 
     if ui.currentTab == "QUESTS" then
         local _, playerClass = UnitClass("player")
@@ -1802,39 +1362,51 @@ function addon:RefreshRadarUI()
             end
             return (a.dbOrder or 0) < (b.dbOrder or 0)
         end)
-    elseif ui.currentTab == "DUNGEONS" then
+    elseif ui.currentTab == "WORLDBOSS" or ui.currentTab == "DUNGEONS" then
+        local wantWorldBoss = (ui.currentTab == "WORLDBOSS")
         if type(self.MountDungeonsDB) == "table" then
             for dbIdx, dEntry in ipairs(self.MountDungeonsDB) do
-                local mID = dEntry.resolvedMountID or (dEntry.spellID and self.MountBySpell[dEntry.spellID]) or dEntry.mountID
-                local st = mID and self:GetDungeonMountStatus(mID)
-                if st and (not st.isCollected or ui.pinnedInspectMountID == mID) then
-                    local sTxt = ui.searchText or ""
-                    local matchSearch = (sTxt == "")
-                        or string.find(string.lower(st.name or ""), sTxt, 1, true)
-                        or string.find(string.lower(st.instanceTitle or ""), sTxt, 1, true)
-                        or string.find(string.lower(st.bossTitle or ""), sTxt, 1, true)
-                        or (st.eventTitle and string.find(string.lower(st.eventTitle), sTxt, 1, true))
-                    if matchSearch then
-                        local attempts = self:GetMountAttempts(mID)
-                        local subLine
-                        if st.isCollected then
-                            subLine = string.format("%s |cff888888• %s|r", L.TAG_COLLECTED, st.eventTitle or st.instanceTitle)
-                        elseif st.eventTitle then
-                            local altsPart = (st.totalEligible > 0) and string.format(L.ROW_ALTS_READY_FMT, st.readyCount, st.totalEligible) or ""
-                            subLine = string.format(L.ROW_REQUIRES_EVENT_FMT, st.eventTitle) .. string.format(" |cff888888• 1/%d|r", st.chance) .. altsPart
-                        else
-                            local altsPart = (st.totalEligible > 0) and string.format(L.ROW_ALTS_READY_FMT, st.readyCount, st.totalEligible) or ""
-                            subLine = string.format(L.ROW_ATTEMPTS_FMT, attempts or 0) .. string.format(" |cff888888• 1/%d • %s|r", st.chance, st.instanceTitle) .. altsPart
+                local includeEntry = wantWorldBoss and (dEntry.sourceKind == "WORLD_BOSS" or dEntry.isWorldBoss == true) or (not wantWorldBoss and dEntry.sourceKind ~= "WORLD_BOSS")
+                if includeEntry then
+                    local mID = dEntry.resolvedMountID or (dEntry.spellID and self.MountBySpell[dEntry.spellID]) or dEntry.mountID
+                    local st = mID and self:GetDungeonMountStatus(mID)
+                    if st and (not st.isCollected or ui.pinnedInspectMountID == mID) then
+                        local sTxt = ui.searchText or ""
+                        local matchSearch = (sTxt == "")
+                            or string.find(string.lower(st.name or ""), sTxt, 1, true)
+                            or string.find(string.lower(st.instanceTitle or ""), sTxt, 1, true)
+                            or string.find(string.lower(st.bossTitle or ""), sTxt, 1, true)
+                            or string.find(string.lower(st.zoneTitle or ""), sTxt, 1, true)
+                            or (st.eventTitle and string.find(string.lower(st.eventTitle), sTxt, 1, true))
+                        if matchSearch then
+                            local attempts = self:GetMountAttempts(mID)
+                            local isInCurrentZone = (st.mapID and (st.mapID == currentPlayerMapID or st.mapID == currentParentMapID)) and true or false
+                            local zoneBadge = (wantWorldBoss and isInCurrentZone) and ("|cff00ccff[" .. L.TAB_CURRENT_ZONE .. "]|r ") or ""
+                            local subLine
+                            if st.isCollected then
+                                subLine = zoneBadge .. string.format("%s |cff888888• %s|r", L.TAG_COLLECTED, st.eventTitle or st.instanceTitle)
+                            elseif st.eventTitle then
+                                local altsPart = (st.totalEligible > 0) and string.format(L.ROW_ALTS_READY_FMT, st.readyCount, st.totalEligible) or ""
+                                subLine = zoneBadge .. string.format(L.ROW_REQUIRES_EVENT_FMT, st.eventTitle) .. string.format(" |cff888888• 1/%d|r", st.chance) .. altsPart
+                            elseif wantWorldBoss then
+                                local altsPart = (st.totalEligible > 0) and string.format(L.ROW_ALTS_READY_FMT, st.readyCount, st.totalEligible) or ""
+                                subLine = zoneBadge .. string.format(L.ROW_ATTEMPTS_FMT, attempts or 0) .. string.format(" |cff888888• 1/%d • %s|r", st.chance, st.bossTitle or st.zoneTitle) .. altsPart
+                            else
+                                local altsPart = (st.totalEligible > 0) and string.format(L.ROW_ALTS_READY_FMT, st.readyCount, st.totalEligible) or ""
+                                subLine = string.format(L.ROW_ATTEMPTS_FMT, attempts or 0) .. string.format(" |cff888888• 1/%d • %s|r", st.chance, st.instanceTitle) .. altsPart
+                            end
+                            table.insert(listEntries, {
+                                mountID = st.mountID,
+                                name = st.name,
+                                icon = st.icon,
+                                attempts = attempts,
+                                isCollected = st.isCollected,
+                                isInCurrentZone = isInCurrentZone,
+                                isLockedOnCurrentChar = st.isLockedOnCurrentChar and true or false,
+                                dbOrder = dbIdx,
+                                subLine = subLine,
+                            })
                         end
-                        table.insert(listEntries, {
-                            mountID = st.mountID,
-                            name = st.name,
-                            icon = st.icon,
-                            attempts = attempts,
-                            isCollected = st.isCollected,
-                            dbOrder = dbIdx,
-                            subLine = subLine,
-                        })
                     end
                 end
             end
@@ -1844,6 +1416,12 @@ function addon:RefreshRadarUI()
             if a.isCollected ~= b.isCollected then
                 return not a.isCollected
             end
+            if a.isInCurrentZone ~= b.isInCurrentZone then
+                return a.isInCurrentZone
+            end
+            if a.isLockedOnCurrentChar ~= b.isLockedOnCurrentChar then
+                return not a.isLockedOnCurrentChar
+            end
             return (a.dbOrder or 0) < (b.dbOrder or 0)
         end)
     elseif ui.currentTab == "ZONE" then
@@ -1852,7 +1430,11 @@ function addon:RefreshRadarUI()
             if ui.searchText == "" or string.find(string.lower(m.name), ui.searchText, 1, true) then
                 local chPart = (m.chance and m.chance > 0) and string.format(" • 1/%d", m.chance) or ""
                 local lockPart = ""
-                if m.locked then
+                if m.isWorldBoss then
+                    local wbTag = " |cff00ccff[" .. (L.TAB_WORLD_BOSSES or "WB") .. "]|r"
+                    local altsPart = (m.totalEligible and m.totalEligible > 0) and string.format(L.ROW_ALTS_READY_FMT, m.readyCount or 0, m.totalEligible) or ""
+                    lockPart = wbTag .. (m.locked and L.TAG_LOCKED_SHORT or altsPart)
+                elseif m.locked then
                     lockPart = L.TAG_LOCKED_SHORT
                 elseif m.totalLockoutCount and m.totalLockoutCount > 1 then
                     lockPart = string.format(L.ROW_RARES_LOCKOUT_FMT, m.lockedCount or 0, m.totalLockoutCount)
@@ -1918,6 +1500,7 @@ function addon:RefreshRadarUI()
 
     ui.lastListCount = #listEntries
     totalFS:SetText(string.format(L.TOTAL_LABEL, #listEntries))
+    LayoutTopTabBar()
 
     for idx, entry in ipairs(listEntries) do
         local row = GetOrCreateMountListRow(idx)
@@ -1942,7 +1525,7 @@ function addon:RefreshRadarUI()
     end
 
     listContent:SetHeight(math.max(1, #listEntries * 49))
-    PopulateMountInspectorPanel(rightInspector, ui.selectedMountID, ui.stepRowPool, 464)
+    PopulateMountInspectorPanel(rightInspector, ui.selectedMountID, ui.stepRowPool, 504)
 end
 
 function addon:ToggleRadarWindow()
@@ -1950,7 +1533,7 @@ function addon:ToggleRadarWindow()
         radarFrame:Hide()
     else
         if ui.currentTab == "SETTINGS" then
-            ui.currentTab = ui.previousTab or "QUESTS"
+            ui.currentTab = ui.previousTab or "ZONE"
         end
         radarFrame:Show()
         self:RefreshRadarUI()
@@ -1970,8 +1553,13 @@ function addon:ToggleConfigFrame()
     end
 end
 
-tabQuestsBtn:SetScript("OnClick", function()
-    ui.currentTab = "QUESTS"
+tabZoneBtn:SetScript("OnClick", function()
+    ui.currentTab = "ZONE"
+    addon:RefreshRadarUI()
+end)
+
+tabWorldBossBtn:SetScript("OnClick", function()
+    ui.currentTab = "WORLDBOSS"
     addon:RefreshRadarUI()
 end)
 
@@ -1980,8 +1568,8 @@ tabDungeonsBtn:SetScript("OnClick", function()
     addon:RefreshRadarUI()
 end)
 
-tabZoneBtn:SetScript("OnClick", function()
-    ui.currentTab = "ZONE"
+tabQuestsBtn:SetScript("OnClick", function()
+    ui.currentTab = "QUESTS"
     addon:RefreshRadarUI()
 end)
 
@@ -2059,71 +1647,6 @@ function addon:RefreshMountJournalSideColumn()
     PopulateMountInspectorPanel(ui.dockInspector, mountID, ui.dockStepPool, 336)
 end
 
--- ============================================================================
--- 6. LIBDATABROKER-1.1 + ИКОНКА НА МИНИ-КАРТЕ (LIBDBICON-1.0)
--- ============================================================================
-function addon:UpdateLDBText()
-    if not self.ldbObj then return end
-    local zoneMounts = self:GetZoneUncollectedMounts()
-    if #zoneMounts > 0 then
-        self.ldbObj.text = string.format(L.LDB_TEXT_ZONE, #zoneMounts)
-    else
-        self.ldbObj.text = L.LDB_TEXT_CLEAN
-    end
-end
-
-function addon:InitLDB()
-    if not LDB or self.ldbObj then return end
-
-    self.ldbObj = LDB:NewDataObject("MountCollector", {
-        type = "data source",
-        text = "MountCollector",
-        icon = "Interface\\ICONS\\Ability_Mount_SpectralTiger",
-        OnClick = function(_, button)
-            if button == "RightButton" then
-                if ToggleCollectionsJournal then
-                    ToggleCollectionsJournal(1)
-                end
-            elseif button == "MiddleButton" then
-                if addon.ToggleConfigFrame then
-                    addon:ToggleConfigFrame()
-                end
-            else
-                addon:ToggleRadarWindow()
-            end
-        end,
-        OnTooltipShow = function(tooltip)
-            if not tooltip then return end
-            tooltip:AddLine(L.LDB_TT_TITLE)
-            tooltip:AddLine(L.LDB_TT_HINT)
-            tooltip:AddLine(" ")
-
-            local zoneMounts, mapID = addon:GetZoneUncollectedMounts()
-            local mapName = (mapID and C_Map.GetMapInfo and C_Map.GetMapInfo(mapID)) and C_Map.GetMapInfo(mapID).name or GetRealZoneText() or "Zone"
-            tooltip:AddLine(string.format(L.LDB_TT_ZONE_HEADER, mapName))
-
-            if #zoneMounts == 0 then
-                tooltip:AddLine(L.LDB_TT_ZONE_EMPTY)
-            else
-                for i = 1, math.min(12, #zoneMounts) do
-                    local m = zoneMounts[i]
-                    local pctText = addon:FormatRarityTier(m.globalRarity)
-                    local lockStr = m.locked and L.TAG_LOCKED_SHORT or ""
-                    local iconTag = m.icon and string.format("|T%s:14:14:0:0|t ", m.icon) or ""
-                    local chancePart = (m.chance and m.chance > 0) and string.format("1/%d | ", m.chance) or ""
-                    tooltip:AddDoubleLine(
-                        string.format("  %s|cffa335ee%s|r%s", iconTag, m.name, lockStr),
-                        string.format(L.LDB_TT_ROW_RIGHT, m.attempts or 0, chancePart, pctText)
-                    )
-                end
-            end
-        end,
-    })
-
-    if LDBIcon and self.db and self.db.minimap then
-        LDBIcon:Register("MountCollector", self.ldbObj, self.db.minimap)
-    end
-end
 
 SLASH_MOUNTCOLLECTOR1 = "/mc"
 SLASH_MOUNTCOLLECTOR2 = "/mountcollector"
@@ -2132,6 +1655,10 @@ SlashCmdList["MOUNTCOLLECTOR"] = function(msg)
     if cmd == "config" or cmd == "settings" or cmd == "opt" or cmd == "options" then
         if addon.ToggleConfigFrame then
             addon:ToggleConfigFrame()
+        end
+    elseif cmd == "check" or cmd == "validate" then
+        if addon.ValidateModuleIntegrity then
+            addon:ValidateModuleIntegrity(false)
         end
     elseif string.find(cmd, "^debug") or string.find(cmd, "^dbg") then
         local argID = tonumber(string.match(cmd, "(%d+)"))
