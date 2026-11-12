@@ -454,7 +454,7 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         if panel.scrollFrame then
             panel.scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 38)
         end
-    elseif dStatus and dStatus.sourceKind ~= "WORLD_BOSS" then
+    elseif dStatus and dStatus.sourceKind ~= "WORLD_BOSS" and not (dStatus.entry and dStatus.entry.isWorldBoss) then
         -- Для боссов подземелий и рейдов скрываем «Отметить все спавны» и растягиваем «Отметить вход в данж» на всю ширину
         if panel.btnNavNow then
             panel.btnNavNow:SetWidth(fullW)
