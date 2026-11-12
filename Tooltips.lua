@@ -29,10 +29,10 @@ function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText, is
     lastTooltipMountID = mountID
     lastTooltipTime = now
 
-    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
     if not name then return end
 
-    local _, description, sourceText = C_MountJournal.GetMountInfoExtraByID(mountID)
+    local _, description, sourceText = self:GetMountInfoExtraByID(mountID)
 
     if includeSourceText then
         if isCollected then
@@ -106,7 +106,7 @@ function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText, is
     -- 3. Координаты спавна рарника/босса (если известны)
     local bestCoord = self:GetBestMountCoords(mountID)
     if bestCoord and bestCoord.x and bestCoord.x > 0 and bestCoord.y and bestCoord.y > 0 then
-        local mapName = (bestCoord.m and C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(bestCoord.m)) and C_Map.GetMapInfo(bestCoord.m).name or ""
+        local mapName = (bestCoord.m and self:GetMapName(bestCoord.m)) or ""
         local zoneStr = (mapName ~= "") and (mapName .. " ") or ""
         tooltip:AddDoubleLine(
             L.TT_SPAWN_COORDS,
@@ -144,6 +144,9 @@ function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText, is
             for charKey, count in pairs(byChar) do
                 if count and count > 0 then
                     local shortName = strsplit(" ", charKey)
+                    if self.LocalizeCharName and shortName then
+                        shortName = self:LocalizeCharName(shortName)
+                    end
                     table.insert(charParts, string.format("%s: |cffffffff%d|r", shortName or charKey, count))
                 end
             end
@@ -265,7 +268,7 @@ if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and
                 )
             end
             for _, mountID in ipairs(mounts) do
-                local name, _, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+                local name, _, icon, _, _, _, _, _, _, _, isCollected = addon:GetMountInfoByID(mountID)
                 if name then
                     local attempts, _, dropInfo = addon:GetMountAttempts(mountID)
                     local globalPct = addon:GetGlobalRarity(mountID)
@@ -302,7 +305,7 @@ local function SetupMountRowButtonHook(button)
         end
         if not mountID then return end
 
-        local name, spellID, icon = C_MountJournal.GetMountInfoByID(mountID)
+        local name, spellID, icon = addon:GetMountInfoByID(mountID)
         if not name then return end
 
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")

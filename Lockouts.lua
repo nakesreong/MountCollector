@@ -19,6 +19,14 @@ local IsValidNpcName = addon.IsValidNpcName
 -- Получить локализованное название квеста по его questID (из клиента или QuestNameDB)
 function addon:GetQuestTitleByID(questID)
     if not questID or questID <= 0 then return nil end
+    local locCode = self:GetActiveLocaleCode()
+    if self.QuestNameDB and self.QuestNameDB[questID] then
+        if locCode == "enUS" and self.QuestNameDB[questID].en and self.QuestNameDB[questID].en ~= "" then
+            return self.QuestNameDB[questID].en
+        elseif locCode == "ruRU" and self.QuestNameDB[questID].ru and self.QuestNameDB[questID].ru ~= "" then
+            return self.QuestNameDB[questID].ru
+        end
+    end
     if C_QuestLog and C_QuestLog.GetTitleForQuestID then
         local ok, title = pcall(C_QuestLog.GetTitleForQuestID, questID)
         if ok and SafeNotSecret(title) and type(title) == "string" and title ~= "" then
@@ -32,7 +40,7 @@ function addon:GetQuestTitleByID(questID)
         end
     end
     if self.QuestNameDB and self.QuestNameDB[questID] then
-        local isRU = (self:GetActiveLocaleCode() == "ruRU")
+        local isRU = (locCode == "ruRU")
         return (isRU and self.QuestNameDB[questID].ru) or self.QuestNameDB[questID].en
     end
     return nil
@@ -58,7 +66,9 @@ end
 -- Получить количество предмета в сумках/банке или статус игрушки
 function addon:GetRequirementItemCount(itemID)
     if not itemID or itemID <= 0 then return 0, nil end
-    local itemName = (C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID)) or ("Item #" .. tostring(itemID))
+    local itemName = (self.GetItemDisplayName and self:GetItemDisplayName(itemID))
+        or (C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID))
+        or ("Item #" .. tostring(itemID))
     if PlayerHasToy and PlayerHasToy(itemID) then
         return 1, itemName
     end
@@ -80,7 +90,7 @@ function addon:GetMountQuestChainStatus(mountID)
     if not chain or type(chain.steps) ~= "table" then return nil end
 
     local isRU = (self:GetActiveLocaleCode() == "ruRU")
-    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
     local totalSteps = #chain.steps
     local stepStates = {}
 
@@ -88,7 +98,7 @@ function addon:GetMountQuestChainStatus(mountID)
     local altStep = isAltTint and ((chain.altMountSteps and chain.altMountSteps[mountID]) or chain.altVendorStep) or nil
     local baseChainDone = false
     if isAltTint and altStep then
-        local _, _, _, _, _, _, _, _, _, _, primaryCol = C_MountJournal.GetMountInfoByID(chain.mountID)
+        local _, _, _, _, _, _, _, _, _, _, primaryCol = self:GetMountInfoByID(chain.mountID)
         if primaryCol then
             baseChainDone = true
         else
@@ -358,7 +368,7 @@ function addon:GetMountSpecialConditions(mountID)
         if self.RareScannerNpcToMounts then
             for nid, rsData in pairs(self.RareScannerNpcToMounts) do
                 if rsData and type(rsData.quests) == "table" then
-                    local nName = (self.KnownNpcNames and self.KnownNpcNames[nid]) or rsData.name
+                    local nName = self:GetNpcDisplayName(nid, rsData.name)
                     if nName and nName ~= "" then
                         for _, rq in ipairs(rsData.quests) do
                             questToNpcName[rq] = nName
@@ -409,7 +419,7 @@ function addon:BuildMountDebugReport(mountID)
     local factionToken, factionLoc = UnitFactionGroup("player")
     local level = UnitLevel("player") or 0
     local pMapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
-    local pMapName = (pMapID and C_Map.GetMapInfo and C_Map.GetMapInfo(pMapID)) and C_Map.GetMapInfo(pMapID).name or GetRealZoneText() or "?"
+    local pMapName = (pMapID and self:GetMapName(pMapID)) or GetRealZoneText() or "?"
     local px, py = 0, 0
     if pMapID and C_Map.GetPlayerMapPosition then
         local okPos, pos = pcall(C_Map.GetPlayerMapPosition, pMapID, "player")
@@ -421,7 +431,7 @@ function addon:BuildMountDebugReport(mountID)
         end
     end
 
-    add("=== MountCollector Lua Quest & Source Debugger (v1.4.0) ===")
+    add("=== MountCollector Lua Quest & Source Debugger (v1.7.0) ===")
     add(string.format("Character: %s | Class: %s (%s) | Level: %d | Faction: %s", charKey, tostring(classLoc), tostring(classToken), level, tostring(factionLoc or factionToken)))
     add(string.format("Player Map: %s (mapID = %s) [%.1f, %.1f]", tostring(pMapName), tostring(pMapID), px, py))
     add("------------------------------------------------------------")
@@ -431,8 +441,8 @@ function addon:BuildMountDebugReport(mountID)
         return table.concat(out, "\n")
     end
 
-    local name, spellID, icon, isActive, isUsable, sourceType, isFavorite, isFactionSpecific, faction, shouldHideOnChar, isCollected = C_MountJournal.GetMountInfoByID(mountID)
-    local _, description, sourceText = C_MountJournal.GetMountInfoExtraByID(mountID)
+    local name, spellID, icon, isActive, isUsable, sourceType, isFavorite, isFactionSpecific, faction, shouldHideOnChar, isCollected = self:GetMountInfoByID(mountID)
+    local _, description, sourceText = self:GetMountInfoExtraByID(mountID)
     add(string.format("Mount: %s (mountID = %d | spellID = %s | isCollected = %s | sourceType = %s)", tostring(name), mountID, tostring(spellID), tostring(isCollected), tostring(sourceType)))
 
     local qStatus = self:GetMountQuestChainStatus(mountID)
@@ -492,13 +502,14 @@ function addon:BuildMountDebugReport(mountID)
         if type(dropInfo.coords) == "table" and #dropInfo.coords > 0 then
             add(string.format("Spawn Coordinates (%d points):", #dropInfo.coords))
             for i, c in ipairs(dropInfo.coords) do
-                local mName = (c.m and C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(c.m)) and C_Map.GetMapInfo(c.m).name or ("Map " .. tostring(c.m))
+                local mName = (c.m and self:GetMapName(c.m)) or ("Map " .. tostring(c.m))
                 local npcLock, qid = false, nil
                 if c.npcID then
                     npcLock, qid = self:IsNpcLockedToday(c.npcID)
                 end
                 local lockTag = c.npcID and (npcLock and string.format(" [KILLED TODAY q#%s]", tostring(qid or "?")) or string.format(" [AVAILABLE q#%s]", tostring(qid or "?"))) or ""
-                add(string.format("  %d. %s (mapID=%s) [%.1f, %.1f] — %s (npcID=%s)%s", i, mName, tostring(c.m), c.x or 0, c.y or 0, tostring(c.n or ""), tostring(c.npcID or "?"), lockTag))
+                local dispNpc = self:GetNpcDisplayName(c.npcID, c.n) or ""
+                add(string.format("  %d. %s (mapID=%s) [%.1f, %.1f] — %s (npcID=%s)%s", i, mName, tostring(c.m), c.x or 0, c.y or 0, tostring(dispNpc), tostring(c.npcID or "?"), lockTag))
             end
         end
     end
@@ -725,7 +736,7 @@ function addon:SetManualMountAttempts(mountID, count, resetToAuto)
         self.db.attempts[mountID] = record
     end
 
-    local name = C_MountJournal.GetMountInfoByID(mountID) or ("Mount #" .. tostring(mountID))
+    local name = self:GetMountInfoByID(mountID) or ("Mount #" .. tostring(mountID))
     print(string.format(L.CHAT_ATTEMPTS_SET, name, record.total or 0))
 
     if self.UpdateLDBText then
@@ -811,7 +822,7 @@ end
 
 function addon:RecordAttempt(mountID, sourceName)
     if not mountID or not self.db then return end
-    local name, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+    local name, _, _, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
     if isCollected then return end
 
     local now = GetTime()
@@ -1009,7 +1020,7 @@ function addon:GetZoneUncollectedMounts(targetMapID)
         for _, mountID in ipairs(list) do
             if not seen[mountID] then
                 seen[mountID] = true
-                local name, spellID, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+                local name, spellID, icon, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
                 if name and not isCollected then
                     local attempts, _, info = self:GetMountAttempts(mountID)
                     local globalRarity = self:GetGlobalRarity(mountID)
@@ -1020,6 +1031,7 @@ function addon:GetZoneUncollectedMounts(targetMapID)
                     if isWorldBoss and dStatus then
                         locked = dStatus.isLockedOnCurrentChar
                     end
+                    local bestNpcName = bestCoord and self:GetNpcDisplayName(bestCoord.npcID, (bestCoord.n and bestCoord.n ~= "" and bestCoord.n) or nil) or nil
                     table.insert(results, {
                         mountID = mountID,
                         name = name,
@@ -1027,7 +1039,7 @@ function addon:GetZoneUncollectedMounts(targetMapID)
                         icon = icon,
                         attempts = attempts,
                         chance = (dStatus and dStatus.chance) or (info and info.chance) or nil,
-                        boss = (dStatus and dStatus.bossTitle) or (bestCoord and bestCoord.n ~= "" and bestCoord.n) or (info and info.boss) or nil,
+                        boss = (dStatus and dStatus.bossTitle) or bestNpcName or (info and info.boss) or nil,
                         method = isWorldBoss and "WORLD_BOSS" or (info and info.method or "NPC"),
                         isWorldBoss = isWorldBoss,
                         readyCount = dStatus and dStatus.readyCount or nil,
@@ -1164,6 +1176,9 @@ end
 
 local function FormatClassColoredChar(name, classFile, level)
     local shortName = tostring(name or "Character"):gsub("%s*%-.+$", "")
+    if addon.LocalizeCharName then
+        shortName = addon:LocalizeCharName(shortName)
+    end
     local colorPrefix = "|cffffffff"
     if classFile and _G.RAID_CLASS_COLORS and _G.RAID_CLASS_COLORS[classFile] and _G.RAID_CLASS_COLORS[classFile].colorStr then
         colorPrefix = "|" .. _G.RAID_CLASS_COLORS[classFile].colorStr
@@ -1215,7 +1230,7 @@ function addon:GetDungeonMountStatus(mountID)
     self:ScanCurrentCharacterLockouts()
 
     local isRU = (self:GetActiveLocaleCode() == "ruRU")
-    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
     local now = time()
     local minLevel = dEntry.minLevel or 10
     local chance = dEntry.chance or 100

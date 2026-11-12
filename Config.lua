@@ -251,6 +251,9 @@ elseif InterfaceOptions_AddCategory then
 end
 
 function addon:RefreshAllLocalizedUI()
+    if self.BuildMountIndex then
+        self:BuildMountIndex()
+    end
     if blizzControls then
         blizzControls:Refresh()
     end

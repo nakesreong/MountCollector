@@ -43,13 +43,13 @@ local function GetOrCreateMapPin(parent, index)
     pin:SetScript("OnEnter", function(self)
         if not self.mountID then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        local mName, _, mIcon = C_MountJournal.GetMountInfoByID(self.mountID)
+        local mName, _, mIcon = addon:GetMountInfoByID(self.mountID)
         local iconTag = mIcon and string.format("|T%s:18:18:0:0|t ", mIcon) or ""
         local displayMounts = iconTag .. (mName or "Mount")
         if self.mountIDs and #self.mountIDs > 1 then
             local parts = {}
             for _, mID in ipairs(self.mountIDs) do
-                local n, _, ic = C_MountJournal.GetMountInfoByID(mID)
+                local n, _, ic = addon:GetMountInfoByID(mID)
                 if n then
                     local it = ic and string.format("|T%s:16:16:0:0|t ", ic) or ""
                     table.insert(parts, it .. n)
@@ -84,7 +84,7 @@ local function GetOrCreateMapPin(parent, index)
             if self.mountIDs and #self.mountIDs > 1 then
                 local names = {}
                 for _, mID in ipairs(self.mountIDs) do
-                    local mName, _, _, _, _, _, _, _, _, _, mCol = C_MountJournal.GetMountInfoByID(mID)
+                    local mName, _, _, _, _, _, _, _, _, _, mCol = addon:GetMountInfoByID(mID)
                     if mName and not mCol then
                         table.insert(names, mName)
                     end
@@ -125,7 +125,7 @@ function addon:RefreshWorldMapPins()
     local pinIdx = 0
     local pinByCoordKey = {}
     for _, mountID in ipairs(list) do
-        local name, _, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+        local name, _, icon, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
         local isHighlighted = (self.highlightedMapMountID and self.highlightedMapMountID == mountID)
         if name and (not isCollected or isHighlighted) then
             local info = self.DropInfoByMount[mountID]
@@ -164,8 +164,7 @@ function addon:RefreshWorldMapPins()
                             pin.mapID = mapID
                             pin.coordX = c.x
                             pin.coordY = c.y
-                            local knownNpcName = (c.npcID and self.KnownNpcNames and self.KnownNpcNames[c.npcID]) or nil
-                            pin.npcName = knownNpcName or ((c.n and c.n ~= "") and c.n) or info.boss or name
+                            pin.npcName = self:GetNpcDisplayName(c.npcID, ((c.n and c.n ~= "") and c.n) or info.boss or name)
                             pin.icon:SetTexture(icon or "Interface\\ICONS\\Ability_Mount_SpectralTiger")
 
                             local tourStepNum = nil
