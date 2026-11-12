@@ -3,13 +3,17 @@ _G.MountCollector = addon
 
 -- ============================================================================
 -- MountCollector — Core.lua
--- Ядро аддона:
---   1. Индексация маунтов, боссов, рарников, предметов и квестовых цепочек
---      (MountDropsDB + RareScanner + Rarity + MountQuestsDB + MountsRarity-2.0)
---   2. Оценка глобальной рарности (Data for Azeroth) и серверной популяции
---   3. Учёт попыток (траев) по аккаунту и персонажам + расчёт вероятности
---   4. Трекинг прогресса многошаговых квестовых цепочек и авто-навигация TomTom
---   5. Защита от WoW 12.1.5 (Midnight) Secret Aura / Secret Value Taint
+-- Ядро аддона (подготовлено к модульному разделению в v1.7+):
+--   [Module A: Index & Rarity] Индексация маунтов, боссов, рарников, предметов
+--      и квестовых цепочек (MountDropsDB + RareScanner + Rarity + MountQuestsDB + MountsRarity-2.0),
+--      оценка глобальной рарности (Data for Azeroth) и серверной популяции.
+--   [Module B: Navigation & Spawn Tour] Трекинг прогресса многошаговых квестовых цепочек,
+--      3D-навигация Blizzard UserWaypoint/SuperTrack + TomTom, авто-облёт спавнов с выходом по действию игрока.
+--   [Module C: Attempts & Lockouts] Учёт попыток (траев) по аккаунту и персонажам,
+--      суточные/недельные КД рарников, данжей, рейдов и мировых боссов.
+--   [Module D: Open-World Rare Radar] Детектор живых рарников и ворлдбоссов в открытом мире
+--      (с жесткой блокировкой спама внутри подземелий и рейдов!).
+--   [Module E: Midnight 12.x Guard] Защита от Secret Aura / Secret Value Taint и диагностика.
 -- ============================================================================
 
 local L = addon.L
@@ -152,6 +156,8 @@ function addon:InitDB()
         showServerRarity = true,
         showAttempts = true,
         alertRares = true,
+        showAlertBanner = true,
+        autoTargetOnApproach = true,
         alertSound = true,
         autoWaypoint = true,
         showWorldMapPins = true,
@@ -486,7 +492,7 @@ function addon:BuildMountIndex()
                 if dEntry.itemID and dEntry.itemID > 0 and not self.MountByItem[dEntry.itemID] then
                     self.MountByItem[dEntry.itemID] = mID
                 end
-                if dEntry.npcID and dEntry.npcID > 0 then
+                if dEntry.npcID and dEntry.npcID > 0 and dEntry.sourceKind == "WORLD_BOSS" then
                     info.npcs[dEntry.npcID] = true
                     self.MountsByNpc[dEntry.npcID] = self.MountsByNpc[dEntry.npcID] or {}
                     AddUniqueToList(self.MountsByNpc[dEntry.npcID], mID)
@@ -495,6 +501,11 @@ function addon:BuildMountIndex()
                     end
                     if dEntry.bossEN and IsValidNpcName(dEntry.bossEN) then
                         self.NpcByRareName[string.lower(dEntry.bossEN)] = dEntry.npcID
+                    end
+                end
+                if dEntry.sourceKind == "WORLD_BOSS" and type(dEntry.questIDs) == "table" then
+                    for _, qid in ipairs(dEntry.questIDs) do
+                        AddUniqueToList(info.quests, qid)
                     end
                 end
                 if dEntry.mapID and dEntry.x and dEntry.y then
@@ -2126,12 +2137,38 @@ function addon:CheckRecentlyKilledRares()
     end
 end
 
+-- Проверить, находится ли игрок внутри инстанса (подземелье, рейд, сценарий, БГ, арена).
+-- Всплывающий радар-алерт должен срабатывать ТОЛЬКО в открытом мире на рарниках и мировых боссах,
+-- никогда не спамя на боссах внутри подземелий и рейдов!
+function addon:IsPlayerInInstancedContent()
+    if not IsInInstance then return false end
+    local ok, inInstance, instanceType = pcall(IsInInstance)
+    if not ok then return false end
+    if inInstance and instanceType and instanceType ~= "none" then
+        return true
+    end
+    return false
+end
+
+-- Проверить, относится ли маунт к открытому миру (рарник или ворлдбосс), а не к инстансовому данжу/рейду
+function addon:IsOpenWorldRareOrWorldBossMount(mountID)
+    if not mountID then return false end
+    local dEntry = self.MountDungeonsByMountID and self.MountDungeonsByMountID[mountID]
+    if dEntry and dEntry.sourceKind ~= "WORLD_BOSS" then
+        return false
+    end
+    return true
+end
+
 function addon:CheckUnitForMountDrop(unit, isRetry)
     if not unit or not SafeNotSecret(unit) or not UnitExists(unit) then return end
     if UnitIsPlayer(unit) then
         self:ScanUnitMount(unit)
         return
     end
+
+    -- Никогда не спамим радар-баннерами внутри данжей, рейдов, сценариев и PvP-инстансов!
+    if self:IsPlayerInInstancedContent() then return end
 
     local guid = UnitGUID(unit)
     local npcID = self:GetNPCIDFromGUID(guid)
@@ -2183,15 +2220,18 @@ function addon:CheckUnitForMountDrop(unit, isRetry)
     end
 
     for _, mountID in ipairs(mounts) do
-        local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
-        if not isCollected then
-            self:TriggerRareMountAlert(mountID, npcID, npcName, false, npcMapID, npcX, npcY)
-            break
+        if self:IsOpenWorldRareOrWorldBossMount(mountID) and not self:IsMountRareLockedToday(mountID) then
+            local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+            if not isCollected then
+                self:TriggerRareMountAlert(mountID, npcID, npcName, false, npcMapID, npcX, npcY)
+                break
+            end
         end
     end
 end
 
 function addon:CheckVignetteForMountDrop(vignetteGUID, isRetry)
+    if self:IsPlayerInInstancedContent() then return end
     if not vignetteGUID or not SafeNotSecret(vignetteGUID) then return end
     if not C_VignetteInfo or not C_VignetteInfo.GetVignetteInfo then return end
     local vInfo = C_VignetteInfo.GetVignetteInfo(vignetteGUID)
@@ -2267,16 +2307,19 @@ function addon:CheckVignetteForMountDrop(vignetteGUID, isRetry)
     end
 
     for _, mountID in ipairs(mounts) do
-        local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
-        if not isCollected then
-            self:TriggerRareMountAlert(mountID, npcID, vName, false, mapID, liveX, liveY)
-            break
+        if self:IsOpenWorldRareOrWorldBossMount(mountID) and not self:IsMountRareLockedToday(mountID) then
+            local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+            if not isCollected then
+                self:TriggerRareMountAlert(mountID, npcID, vName, false, mapID, liveX, liveY)
+                break
+            end
         end
     end
 end
 
 -- Просканировать все активные виньетки миникарты/карты (радиус 250-400+ ярдов, как в RareScanner)
 function addon:ScanAllActiveVignettes()
+    if self:IsPlayerInInstancedContent() then return end
     if not C_VignetteInfo or not C_VignetteInfo.GetVignettes then return end
     local ok, vignettes = pcall(C_VignetteInfo.GetVignettes)
     if not ok or type(vignettes) ~= "table" then return end
@@ -2287,6 +2330,7 @@ end
 
 -- Дальнобойный детект рарников по крику / эмоции / фразе в чат на всю локацию
 function addon:CheckMonsterChatForMountDrop(senderName)
+    if self:IsPlayerInInstancedContent() then return end
     if not IsValidNpcName(senderName) or not self.NpcByRareName then return end
     local npcID = self.NpcByRareName[string.lower(senderName)]
     if not npcID then return end
@@ -2299,11 +2343,13 @@ function addon:CheckMonsterChatForMountDrop(senderName)
 
     local mapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
     for _, mountID in ipairs(mounts) do
-        local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
-        if not isCollected then
-            local c = self:GetBestMountCoords(mountID, mapID)
-            self:TriggerRareMountAlert(mountID, npcID, senderName, false, c and c.m or mapID, c and c.x, c and c.y)
-            break
+        if self:IsOpenWorldRareOrWorldBossMount(mountID) and not self:IsMountRareLockedToday(mountID) then
+            local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+            if not isCollected then
+                local c = self:GetBestMountCoords(mountID, mapID)
+                self:TriggerRareMountAlert(mountID, npcID, senderName, false, c and c.m or mapID, c and c.x, c and c.y)
+                break
+            end
         end
     end
 end
@@ -2327,15 +2373,23 @@ function addon:GetZoneUncollectedMounts(targetMapID)
                     local globalRarity = self:GetGlobalRarity(mountID)
                     local bestCoord = self:GetBestMountCoords(mountID, mid)
                     local locked, lockedCount, totalLockoutCount = self:IsMountRareLockedToday(mountID)
+                    local dStatus = self:GetDungeonMountStatus(mountID)
+                    local isWorldBoss = (dStatus and dStatus.sourceKind == "WORLD_BOSS") or false
+                    if isWorldBoss and dStatus then
+                        locked = dStatus.isLockedOnCurrentChar
+                    end
                     table.insert(results, {
                         mountID = mountID,
                         name = name,
                         spellID = spellID,
                         icon = icon,
                         attempts = attempts,
-                        chance = info and info.chance or nil,
-                        boss = (bestCoord and bestCoord.n ~= "" and bestCoord.n) or (info and info.boss) or nil,
-                        method = info and info.method or "NPC",
+                        chance = (dStatus and dStatus.chance) or (info and info.chance) or nil,
+                        boss = (dStatus and dStatus.bossTitle) or (bestCoord and bestCoord.n ~= "" and bestCoord.n) or (info and info.boss) or nil,
+                        method = isWorldBoss and "WORLD_BOSS" or (info and info.method or "NPC"),
+                        isWorldBoss = isWorldBoss,
+                        readyCount = dStatus and dStatus.readyCount or nil,
+                        totalEligible = dStatus and dStatus.totalEligible or nil,
                         globalRarity = globalRarity,
                         locked = locked,
                         lockedCount = lockedCount or 0,
@@ -2650,6 +2704,7 @@ eventFrame:RegisterEvent("QUEST_TURNED_IN")
 eventFrame:RegisterEvent("QUEST_ACCEPTED")
 eventFrame:RegisterEvent("ENCOUNTER_END")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 local function CheckActiveQuestChainProgress()
@@ -2766,6 +2821,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if addon.RefreshRadarUI then
             addon:RefreshRadarUI()
         end
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        if addon.ClearAutoTargetOverrideBinding then
+            addon:ClearAutoTargetOverrideBinding()
+        end
     elseif event == "PLAYER_REGEN_ENABLED" then
         if addon.FlushPendingAlertTarget then
             addon:FlushPendingAlertTarget()
@@ -2774,6 +2833,13 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             addon:CheckRecentlyKilledRares()
         end)
     elseif event == "PLAYER_TARGET_CHANGED" then
+        if addon.ClearAutoTargetOverrideBinding and UnitExists("target") then
+            local tGuid = UnitGUID("target")
+            local tNpcID = addon:GetNPCIDFromGUID(tGuid)
+            if tNpcID and addon.MountsByNpc and addon.MountsByNpc[tNpcID] then
+                addon:ClearAutoTargetOverrideBinding()
+            end
+        end
         addon:CheckUnitForMountDrop("target")
     elseif event == "UPDATE_MOUSEOVER_UNIT" then
         addon:CheckUnitForMountDrop("mouseover")
