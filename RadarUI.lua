@@ -476,13 +476,50 @@ closeAlertBtn:SetFrameLevel(alertFrame:GetFrameLevel() + 6)
 closeAlertBtn:SetScript("OnClick", function() alertFrame:Hide() end)
 
 -- Защищённая кнопка SecureActionButtonTemplate поверх баннера для взятия рарника в цель (/targetexact) по клику ЛКМ!
-local secureTargetBtn = CreateFrame("Button", "MountCollectorAlertSecureBtn", alertFrame, "SecureActionButtonTemplate")
-secureTargetBtn:SetAllPoints(alertFrame)
+-- ВАЖНО: крепим к UIParent (не к alertFrame!), чтобы сам alertFrame никогда не становился защищённым и спокойно скрывался в бою!
+local secureTargetBtn = CreateFrame("Button", "MountCollectorAlertSecureBtn", UIParent, "SecureActionButtonTemplate")
+secureTargetBtn:SetSize(440, 82)
+secureTargetBtn:SetPoint("TOP", UIParent, "TOP", 0, -130)
+secureTargetBtn:SetFrameStrata("HIGH")
 secureTargetBtn:SetFrameLevel(alertFrame:GetFrameLevel() + 2)
 secureTargetBtn:RegisterForClicks("AnyUp", "AnyDown")
 secureTargetBtn:RegisterForDrag("LeftButton")
-secureTargetBtn:SetScript("OnDragStart", function() alertFrame:StartMoving() end)
-secureTargetBtn:SetScript("OnDragStop", function() alertFrame:StopMovingOrSizing() end)
+secureTargetBtn:Hide()
+
+local function SyncSecureAlertOverlay()
+    if InCombatLockdown and InCombatLockdown() then
+        addon.pendingAlertOverlaySync = true
+        return
+    end
+    addon.pendingAlertOverlaySync = false
+    if not alertFrame:IsShown() then
+        secureTargetBtn:Hide()
+        return
+    end
+    local w, h = alertFrame:GetSize()
+    secureTargetBtn:SetSize(math.max(200, (w or 440) - 28), h or 82)
+    secureTargetBtn:ClearAllPoints()
+    local cx, cy = alertFrame:GetCenter()
+    local ux, uy = UIParent:GetCenter()
+    if cx and cy and ux and uy then
+        secureTargetBtn:SetPoint("CENTER", UIParent, "CENTER", cx - ux - 14, cy - uy)
+    else
+        secureTargetBtn:SetPoint("TOP", UIParent, "TOP", -14, -130)
+    end
+    secureTargetBtn:Show()
+end
+
+secureTargetBtn:SetScript("OnDragStart", function()
+    alertFrame:StartMoving()
+end)
+secureTargetBtn:SetScript("OnDragStop", function()
+    alertFrame:StopMovingOrSizing()
+    SyncSecureAlertOverlay()
+end)
+alertFrame:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+    SyncSecureAlertOverlay()
+end)
 
 secureTargetBtn:SetScript("OnEnter", function()
     alertFrame:SetBackdropBorderColor(0.0, 0.95, 1.0, 1.0)
@@ -498,6 +535,7 @@ function addon:UpdateAlertSecureTarget(npcName)
     end
     if InCombatLockdown and InCombatLockdown() then
         self.pendingAlertTargetName = cleanName
+        self.pendingAlertOverlaySync = true
         return
     end
     self.pendingAlertTargetName = nil
@@ -509,11 +547,16 @@ function addon:UpdateAlertSecureTarget(npcName)
     end
     secureTargetBtn:SetAttribute("type2", "macro")
     secureTargetBtn:SetAttribute("macrotext2", "")
+    SyncSecureAlertOverlay()
 end
 
 function addon:FlushPendingAlertTarget()
-    if self.pendingAlertTargetName ~= nil and not (InCombatLockdown and InCombatLockdown()) then
+    if InCombatLockdown and InCombatLockdown() then return end
+    if self.pendingAlertTargetName ~= nil then
         self:UpdateAlertSecureTarget(self.pendingAlertTargetName)
+    end
+    if self.pendingAlertOverlaySync then
+        SyncSecureAlertOverlay()
     end
 end
 
@@ -535,7 +578,11 @@ secureTargetBtn:HookScript("PostClick", function(self, button, down)
 end)
 
 alertFrame:SetScript("OnClick", HandleAlertClick)
+alertFrame:SetScript("OnShow", function()
+    SyncSecureAlertOverlay()
+end)
 alertFrame:SetScript("OnHide", function()
+    SyncSecureAlertOverlay()
     if addon.SyncActiveTourAfterKillOrAlert then
         addon:SyncActiveTourAfterKillOrAlert()
     end
@@ -592,8 +639,8 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
     local h3 = alertStats:GetStringHeight() or 16
     local contentH = math.max(74, 10 + h1 + 4 + h2 + 4 + h3 + 12)
     alertFrame:SetHeight(contentH)
-
     alertFrame:Show()
+    SyncSecureAlertOverlay()
     if self.db and self.db.settings.alertSound and PlaySound then
         PlaySound(8959, "Master")
     end
