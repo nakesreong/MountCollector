@@ -735,6 +735,34 @@ function addon:ValidateModuleIntegrity(silentIfOk)
         end
     end
 
+    -- Сверка mountID и spellID в MountDungeonsDB и MountQuestsDB с живой клиентской БД C_MountJournal
+    if C_MountJournal and C_MountJournal.GetMountInfoByID then
+        if type(self.MountDungeonsDB) == "table" then
+            for idx, dEntry in ipairs(self.MountDungeonsDB) do
+                if dEntry.mountID then
+                    local mName, mSpell = C_MountJournal.GetMountInfoByID(dEntry.mountID)
+                    if not mName then
+                        table.insert(warnings, string.format("MountDungeonsDB[%d]: несуществующий mountID=%s (%s)", idx, tostring(dEntry.mountID), tostring(dEntry.bossEN or "?")))
+                    elseif dEntry.spellID and mSpell and mSpell ~= dEntry.spellID then
+                        table.insert(warnings, string.format("MountDungeonsDB[%d] (%s): spellID=%d не совпадает с клиентским spellID=%d", idx, mName, dEntry.spellID, mSpell))
+                    end
+                end
+            end
+        end
+        if type(self.MountQuestsDB) == "table" then
+            for idx, qChain in ipairs(self.MountQuestsDB) do
+                if qChain.mountID then
+                    local mName, mSpell = C_MountJournal.GetMountInfoByID(qChain.mountID)
+                    if not mName then
+                        table.insert(warnings, string.format("MountQuestsDB[%d]: несуществующий mountID=%s", idx, tostring(qChain.mountID)))
+                    elseif qChain.spellID and mSpell and mSpell ~= qChain.spellID then
+                        table.insert(warnings, string.format("MountQuestsDB[%d] (%s): spellID=%d не совпадает с клиентским spellID=%d", idx, mName, qChain.spellID, mSpell))
+                    end
+                end
+            end
+        end
+    end
+
     if #warnings > 0 then
         for _, w in ipairs(warnings) do
             print("|cffff4444[MountCollector WARNING]|r " .. w)

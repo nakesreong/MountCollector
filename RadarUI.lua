@@ -1402,6 +1402,7 @@ function addon:RefreshRadarUI()
                                 attempts = attempts,
                                 isCollected = st.isCollected,
                                 isInCurrentZone = isInCurrentZone,
+                                isLockedOnCurrentChar = st.isLockedOnCurrentChar and true or false,
                                 dbOrder = dbIdx,
                                 subLine = subLine,
                             })
@@ -1417,6 +1418,9 @@ function addon:RefreshRadarUI()
             end
             if a.isInCurrentZone ~= b.isInCurrentZone then
                 return a.isInCurrentZone
+            end
+            if a.isLockedOnCurrentChar ~= b.isLockedOnCurrentChar then
+                return not a.isLockedOnCurrentChar
             end
             return (a.dbOrder or 0) < (b.dbOrder or 0)
         end)

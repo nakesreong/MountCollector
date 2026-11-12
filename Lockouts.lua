@@ -1239,6 +1239,32 @@ function addon:GetDungeonMountStatus(mountID)
     local zoneTitle = (isRU and dEntry.zoneRU) or dEntry.zoneEN or dEntry.zoneRU or instanceTitle
     local howToGet = (isRU and dEntry.howToGetRU) or dEntry.howToGetEN or dEntry.howToGetRU or ""
 
+    if dEntry.spellID == 448941 then
+        local srvTime = (GetServerTime and GetServerTime()) or time()
+        local cycleOffset = (srvTime - 3600) % 10800
+        local timerLine
+        if cycleOffset < 1800 then
+            local remMin = math.max(1, math.ceil((1800 - cycleOffset) / 60))
+            timerLine = isRU
+                and string.format("\n|cff33ff88★ ТЁМНАЯ ФАЗА БЕЛЕДАРА АКТИВНА СЕЙЧАС! (осталось ~%d мин.)|r", remMin)
+                or string.format("\n|cff33ff88★ BELEDAR VOID PHASE IS ACTIVE RIGHT NOW! (~%d min remaining)|r", remMin)
+        else
+            local waitSec = 10800 - cycleOffset
+            local wHours = math.floor(waitSec / 3600)
+            local wMins = math.ceil((waitSec % 3600) / 60)
+            if wHours > 0 then
+                timerLine = isRU
+                    and string.format("\n|cff00ccff⏱ До следующей Тёмной фазы Беледара (спавна босса): %d ч. %d мин.|r", wHours, wMins)
+                    or string.format("\n|cff00ccff⏱ Next Beledar Void Shift (boss spawn) in: %dh %dm|r", wHours, wMins)
+            else
+                timerLine = isRU
+                    and string.format("\n|cffffd100⏱ До следующей Тёмной фазы Беледара (спавна босса): %d мин.!|r", wMins)
+                    or string.format("\n|cffffd100⏱ Next Beledar Void Shift (boss spawn) in: %d min!|r", wMins)
+            end
+        end
+        howToGet = howToGet .. timerLine
+    end
+
     local currentCharKey = self:GetCharKey()
     local eligibleChars = {}
     local underleveledChars = {}

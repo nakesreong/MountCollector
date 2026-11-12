@@ -22,6 +22,7 @@ addon.MountDungeonsDB = {
     -- 1. ПРАЗДНИЧНЫЕ И МИРОВЫЕ СОБЫТИЯ (HOLIDAY & WORLD EVENTS)
     -- ========================================================================
     {
+        mountID = 219,
         spellID = 48025,
         itemID = 37012,
         sourceKind = "EVENT",
@@ -45,6 +46,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Queue for 'The Headless Horseman' via the Dungeon Finder (I) during Hallow's End. Drops from the daily Loot-Filled Pumpkin (1 attempt per day per character, lvl 10+). Your first kill of the day on the account and activating the Wicker Man curses inside the instance increase the drop chance!",
     },
     {
+        mountID = 2623,
         spellID = 1245198,
         itemID = 247721,
         sourceKind = "EVENT",
@@ -68,6 +70,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "New Hallow's End mount! Drops from the daily Loot-Filled Pumpkin rewarded for defeating The Headless Horseman via the Dungeon Finder (I) during Hallow's End.",
     },
     {
+        mountID = 352,
         spellID = 71342,
         itemID = 50250,
         sourceKind = "EVENT",
@@ -91,6 +94,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Queue for 'The Crown Chemical Co.' via Dungeon Finder (I) during Love is in the Air (February). Drops from the daily Heart-Shaped Box (lvl 10+). The first box opened each day on your account has a significantly boosted drop rate (~1%).",
     },
     {
+        mountID = 2328,
         spellID = 472479,
         itemID = 232926,
         sourceKind = "EVENT",
@@ -114,6 +118,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from the daily Heart-Shaped Box rewarded for defeating Apothecary Hummel via Dungeon Finder (I) during Love is in the Air.",
     },
     {
+        mountID = 2492,
         spellID = 1218013,
         itemID = 235658,
         sourceKind = "EVENT",
@@ -137,6 +142,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from the daily Heart-Shaped Box during Love is in the Air.",
     },
     {
+        mountID = 226,
         spellID = 49379,
         itemID = 37828,
         sourceKind = "EVENT",
@@ -160,6 +166,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Queue for 'Coren Direbrew' via Dungeon Finder (I) during Brewfest (September–October). Drops from the daily Barrel-Shaped Treasure Chest (1 attempt per day per character, lvl 10+).",
     },
     {
+        mountID = 202,
         spellID = 43900,
         itemID = 33977,
         sourceKind = "EVENT",
@@ -183,6 +190,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Queue for 'Coren Direbrew' via Dungeon Finder (I) during Brewfest. Drops from the daily Barrel-Shaped Treasure Chest alongside the Great Brewfest Kodo.",
     },
     {
+        mountID = 2640,
         spellID = 1247662,
         itemID = 248761,
         sourceKind = "EVENT",
@@ -206,6 +214,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "New Brewfest mount! Drops from the daily Barrel-Shaped Treasure Chest rewarded for defeating Coren Direbrew via Dungeon Finder (I) during Brewfest.",
     },
     {
+        mountID = 781,
         spellID = 201098,
         itemID = 133543,
         sourceKind = "EVENT",
@@ -229,6 +238,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Requires an active Timewalking week. Can drop as personal loot from ANY boss inside any Timewalking dungeon or raid with NO daily/weekly lockout — farmable non-stop all week!",
     },
     {
+        mountID = 2023,
         spellID = 432455,
         itemID = 212599,
         npcID = 216836,
@@ -254,6 +264,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "During Noblegarden, bring a Golden Egg to the nest to summon Daetan Swiftplume and turn in his daily quest for the Loot-Filled Basket (1 attempt per day per character).",
     },
     {
+        mountID = 769,
         spellID = 191314,
         itemID = 128671,
         sourceKind = "EVENT",
@@ -277,8 +288,9 @@ addon.MountDungeonsDB = {
         howToGetEN = "During Feast of Winter Veil (December), complete the 4 daily quests in Frostfire Ridge (Level 3 Garrison) and exchange Merry Supplies for a Savage Gift once per day per character.",
     },
     {
-        spellID = 386452,
-        itemID = 198654,
+        mountID = 293,
+        spellID = 62048,
+        itemID = 186469,
         npcID = 167749,
         sourceKind = "EVENT",
         isWorldBoss = true,
@@ -298,14 +310,41 @@ addon.MountDungeonsDB = {
         zoneRU = "Танарис (вход в Пещеры Времени)",
         zoneEN = "Tanaris (Caverns of Time Entrance)",
         mapID = 71, x = 63.2, y = 50.2,
-        howToGetRU = "Во время празднования Годовщины WoW (ноябрь–январь) убейте мирового босса Судьболома прямо перед входом в Пещеры Времени в Танарисе [63.2, 50.2] (1 раз в день на персонажа 30+ ур.).",
-        howToGetEN = "During WoW's Anniversary event, defeat the Doomwalker world boss outside the Caverns of Time in Tanaris [63.2, 50.2] (daily lockout per character lvl 30+).",
+        howToGetRU = "Погибельный ястреб иллидари! Во время празднования Годовщины WoW убейте мирового босса Судьболома прямо перед входом в Пещеры Времени в Танарисе [63.2, 50.2] (1 раз в день на персонажа 30+ ур., также продаётся у Историка Ма'ди за Искажённые временем знаки).",
+        howToGetEN = "Illidari Doomhawk! During WoW's Anniversary event, defeat the Doomwalker world boss outside the Caverns of Time in Tanaris [63.2, 50.2] (daily lockout per character lvl 30+, or purchase from Historian Ma'di).",
+    },
+    {
+        mountID = 1798,
+        spellID = 420097,
+        itemID = 208572,
+        npcID = 167749,
+        sourceKind = "EVENT",
+        isWorldBoss = true,
+        eventRU = "Годовщина World of Warcraft",
+        eventEN = "WoW's Anniversary",
+        lfgDungeonID = nil,
+        questIDs = { 72025, 60214 },
+        lockoutType = "DAILY",
+        minLevel = 30,
+        chance = 10,
+        instanceRU = "Танарис (Мировой босс события у Пещер Времени)",
+        instanceEN = "Tanaris (Anniversary World Boss at Caverns of Time)",
+        bossRU = "Судьболом (Doomwalker)",
+        bossEN = "Doomwalker",
+        difficultyRU = "Мировой босс события (Суточное КД)",
+        difficultyEN = "Holiday World Boss (Daily Lockout)",
+        zoneRU = "Танарис (вход в Пещеры Времени)",
+        zoneEN = "Tanaris (Caverns of Time Entrance)",
+        mapID = 71, x = 63.2, y = 50.2,
+        howToGetRU = "Лазурный стужекрыл (Azure Worldchiller)! Падает с праздничного мирового босса Судьболома у входа в Пещеры Времени в Танарисе [63.2, 50.2] во время Годовщины WoW (суточное КД на персонажа 30+ ур.).",
+        howToGetEN = "Azure Worldchiller! Drops from the Doomwalker world boss outside the Caverns of Time in Tanaris [63.2, 50.2] during WoW's Anniversary event (daily lockout per character lvl 30+).",
     },
 
     -- ========================================================================
     -- 1B. МИРОВЫЕ БОССЫ В ОТКРЫТОМ МИРЕ (OPEN-WORLD BOSSES — ЕЖЕНЕДЕЛЬНОЕ КД АЛЬТОВ)
     -- ========================================================================
     {
+        mountID = 473,
         spellID = 127158,
         itemID = 87771,
         npcID = 60491,
@@ -328,6 +367,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "World Boss Sha of Anger respawns every 15 minutes at a fixed spot in Kun-Lai Summit [53.7, 64.7] (with a 5-second damage shield on spawn). Drop rate was buffed to ~1/100 (1%) in patch 10.0.2! Farm once per week on every alt lvl 35+ (bonus roll supported via Elder Charm of Good Fortune).",
     },
     {
+        mountID = 515,
         spellID = 130965,
         itemID = 89783,
         npcID = 62346,
@@ -350,6 +390,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "World Boss Galleon respawns every 15 minutes in the eastern Valley of the Four Winds [71.6, 64.4]. Drop rate buffed to ~1/100 (1%)! Farm once per week per alt lvl 35+ (bonus roll via Elder Charm of Good Fortune).",
     },
     {
+        mountID = 542,
         spellID = 139442,
         itemID = 95057,
         npcID = 69099,
@@ -372,6 +413,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "World Boss Nalak patrols right outside the Throne of Thunder entrance on the Isle of Thunder [60.5, 37.3] (~15 min respawn). Drop rate ~1/100 (1%)! Combine with your weekly Horridon & Ji-Kun runs on alts lvl 35+ (bonus roll via Mogu Rune of Fate).",
     },
     {
+        mountID = 533,
         spellID = 138423,
         itemID = 94228,
         npcID = 69161,
@@ -394,6 +436,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "World Boss Oondasta respawns every 15 minutes in the center of the Isle of Giants [50.6, 54.4] north of Kun-Lai Summit. Drop rate buffed to ~1/100 (1%)! Farm once per week per alt lvl 35+ (bonus roll via Mogu Rune of Fate).",
     },
     {
+        mountID = 634,
         spellID = 171828,
         itemID = 116771,
         npcID = 83746,
@@ -416,6 +459,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "World Boss Rukhmar spawns every 15 minutes below Skyreach in Spires of Arak [35.0, 38.6]. Drop rate buffed to ~1/100 (1%)! Pushes directly into your bags on kill (bonus roll seals do NOT award this mount). Farm once per week per alt lvl 40+.",
     },
     {
+        mountID = 1250,
         spellID = 298367,
         itemID = 174842,
         npcID = 138794,
@@ -438,8 +482,9 @@ addon.MountDungeonsDB = {
         howToGetEN = "Mollie the Alpaca! Drops from the rotational BfA World Boss Dunegorger Kraulok in central Vol'dun [44.6, 56.2] during weeks when his World Quest is active (once every 6 weeks). Run all alts lvl 50+ when he is up!",
     },
     {
+        mountID = 2192,
         spellID = 448941,
-        itemID = 223318,
+        itemID = 223315,
         npcID = 207802,
         sourceKind = "WORLD_BOSS",
         isWorldBoss = true,
@@ -464,6 +509,7 @@ addon.MountDungeonsDB = {
     -- 2. ПОДЗЕМЕЛЬЯ И РЕЙДЫ: CLASSIC, TBC & WRATH OF THE LICH KING
     -- ========================================================================
     {
+        mountID = 69,
         spellID = 17481,
         itemID = 13335,
         sourceKind = "DUNGEON",
@@ -484,6 +530,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Enter Stratholme via the East/Service Gate, clear the 3 ziggurats, and defeat Lord Aurius Rivendare. Normal dungeon — reset instances and farm up to 10 times per hour!",
     },
     {
+        mountID = 168,
         spellID = 36702,
         itemID = 30480,
         sourceKind = "RAID",
@@ -504,6 +551,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Fastest raid mount run in the game: enter TBC Karazhan, turn left into the stables, and defeat Attumen the Huntsman (takes 30 seconds per character per week).",
     },
     {
+        mountID = 185,
         spellID = 41252,
         itemID = 32768,
         sourceKind = "DUNGEON",
@@ -524,6 +572,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Set Dungeon Difficulty to Heroic and enter Sethekk Halls (east wing of Auchindoun). A Druid is no longer required — Anzu is always present. Resets daily!",
     },
     {
+        mountID = 213,
         spellID = 46628,
         itemID = 35513,
         sourceKind = "DUNGEON",
@@ -544,6 +593,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Set Dungeon Difficulty to Heroic and defeat Kael'thas Sunstrider at the end of Magisters' Terrace on the Isle of Quel'Danas. High drop chance (~4%), daily lockout!",
     },
     {
+        mountID = 183,
         spellID = 40192,
         itemID = 32458,
         sourceKind = "RAID",
@@ -564,6 +614,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Fly to the central ship of Tempest Keep in Netherstorm and defeat Kael'thas Sunstrider (you can run straight to his room without killing the first 3 bosses!). Weekly lockout.",
     },
     {
+        mountID = 264,
         spellID = 59996,
         itemID = 44151,
         sourceKind = "DUNGEON",
@@ -584,6 +635,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Set Dungeon Difficulty to Heroic, harpoon Skadi's proto-drake using 3 harpoons in the gauntlet, and defeat Skadi the Ruthless. Daily lockout!",
     },
     {
+        mountID = 246,
         spellID = 59567,
         itemID = 43952,
         sourceKind = "RAID",
@@ -604,6 +656,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Top portal of the Nexus in Coldarra (Borean Tundra). Alexstrasza's Gift after defeating Malygos can drop BOTH the Azure Drake and the Blue Drake!",
     },
     {
+        mountID = 247,
         spellID = 59568,
         itemID = 43953,
         sourceKind = "RAID",
@@ -624,6 +677,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from Alexstrasza's Gift after defeating Malygos in The Eye of Eternity (alongside the Azure Drake). Weekly lockout.",
     },
     {
+        mountID = 349,
         spellID = 69395,
         itemID = 49636,
         sourceKind = "RAID",
@@ -644,6 +698,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Single-boss raid in Dustwallow Marsh. Defeat Onyxia on 10 or 25-player difficulty (shared weekly lockout).",
     },
     {
+        mountID = 304,
         spellID = 63796,
         itemID = 45693,
         sourceKind = "RAID",
@@ -664,6 +719,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "IMPORTANT: After defeating Freya, Thorim, Hodir, and Mimiron, DO NOT speak to them to ask for their assistance! Mimiron's Head ONLY drops when defeating Yogg-Saron with 0 Keepers assisting!",
     },
     {
+        mountID = 363,
         spellID = 72286,
         itemID = 50818,
         sourceKind = "RAID",
@@ -688,6 +744,7 @@ addon.MountDungeonsDB = {
     -- 3. ПОДЗЕМЕЛЬЯ И РЕЙДЫ: CATACLYSM & MISTS OF PANDARIA
     -- ========================================================================
     {
+        mountID = 395,
         spellID = 88742,
         itemID = 63040,
         sourceKind = "DUNGEON",
@@ -708,6 +765,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Set Dungeon Difficulty to Normal, defeat the 2nd boss Altairus, jump off the platform edge to teleport back to the entrance, exit, and Reset All Instances (up to 10 runs/hr)!",
     },
     {
+        mountID = 397,
         spellID = 88746,
         itemID = 63043,
         sourceKind = "DUNGEON",
@@ -728,6 +786,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Set Dungeon Difficulty to Normal, defeat the 2nd boss Slabhide, take the teleporter behind him back to the entrance, and Reset All Instances (up to 10 runs/hr)!",
     },
     {
+        mountID = 411,
         spellID = 96499,
         itemID = 68824,
         sourceKind = "DUNGEON",
@@ -748,6 +807,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "In Heroic Zul'Gurub you can farm two mount bosses in one quick daily run: High Priestess Kilnara (Swift Zulian Panther) and Bloodlord Mandokir (Armored Razzashi Raptor). Daily lockout!",
     },
     {
+        mountID = 410,
         spellID = 96491,
         itemID = 68823,
         sourceKind = "DUNGEON",
@@ -768,6 +828,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Second mount-dropping boss in Heroic Zul'Gurub (southeast arena). Resets daily!",
     },
     {
+        mountID = 396,
         spellID = 88744,
         itemID = 63041,
         sourceKind = "RAID",
@@ -788,6 +849,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Very fast 2-boss raid in the sky above Uldum: defeat the Conclave of Wind and Al'Akir. Weekly lockout.",
     },
     {
+        mountID = 415,
         spellID = 97493,
         itemID = 69224,
         sourceKind = "RAID",
@@ -808,6 +870,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Firelands can be cleared on Normal AND Heroic for mounts! Defeat both Alysrazor (Flametalon of Alysrazor) and Ragnaros (Pureblood Fire Hawk) in each run.",
     },
     {
+        mountID = 425,
         spellID = 101542,
         itemID = 71665,
         sourceKind = "RAID",
@@ -828,6 +891,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from Alysrazor in the northeast area of Firelands (~2% drop rate).",
     },
     {
+        mountID = 445,
         spellID = 110039,
         itemID = 78919,
         sourceKind = "RAID",
@@ -848,6 +912,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Dragon Soul (Caverns of Time) drops THREE mounts: Experiment 12-B (from Ultraxion), Blazing Drake (Madness of Deathwing Normal/Heroic), and Life-Binder's Handmaiden (Madness of Deathwing Heroic).",
     },
     {
+        mountID = 442,
         spellID = 107842,
         itemID = 77067,
         sourceKind = "RAID",
@@ -868,6 +933,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from the Elementium Fragment after defeating Madness of Deathwing (required for the 'Awake the Drakes' meta-achievement rewarding the Emerald Drake!).",
     },
     {
+        mountID = 444,
         spellID = 107845,
         itemID = 77069,
         sourceKind = "RAID",
@@ -888,6 +954,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from the Elementium Fragment after defeating Madness of Deathwing on HEROIC difficulty only (rolls alongside the Blazing Drake!).",
     },
     {
+        mountID = 478,
         spellID = 127170,
         itemID = 87777,
         sourceKind = "RAID",
@@ -908,6 +975,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Defeat the 5th boss Elegon inside Mogu'shan Vaults in Kun-Lai Summit. Weekly lockout.",
     },
     {
+        mountID = 531,
         spellID = 136471,
         itemID = 93666,
         sourceKind = "RAID",
@@ -928,6 +996,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Throne of Thunder drops two mounts in one run: Spawn of Horridon (2nd boss Horridon) and Clutch of Ji-Kun (6th boss Ji-Kun).",
     },
     {
+        mountID = 543,
         spellID = 139448,
         itemID = 95059,
         sourceKind = "RAID",
@@ -948,6 +1017,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from the 6th boss Ji-Kun in Throne of Thunder (Isle of Thunder). Weekly lockout.",
     },
     {
+        mountID = 559,
         spellID = 148417,
         itemID = 104253,
         sourceKind = "RAID",
@@ -972,6 +1042,7 @@ addon.MountDungeonsDB = {
     -- 4. ПОДЗЕМЕЛЬЯ И РЕЙДЫ: WARLORDS OF DRAENOR & LEGION
     -- ========================================================================
     {
+        mountID = 613,
         spellID = 171621,
         itemID = 116660,
         sourceKind = "RAID",
@@ -992,6 +1063,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Defeat Blackhand on Mythic difficulty in Blackrock Foundry (Gorgrond). Weekly lockout.",
     },
     {
+        mountID = 751,
         spellID = 182912,
         itemID = 123890,
         sourceKind = "RAID",
@@ -1012,6 +1084,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Defeat Archimonde on Mythic difficulty in Hellfire Citadel (supports the upper spire portal skip straight to Mannoroth & Archimonde!).",
     },
     {
+        mountID = 875,
         spellID = 229499,
         itemID = 142236,
         sourceKind = "DUNGEON",
@@ -1032,6 +1105,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Enter Return to Karazhan via the upper side bridge door on the tower (set Dungeon Difficulty to Mythic), clear the Opera event, and head down to the stables to defeat Attumen the Huntsman.",
     },
     {
+        mountID = 883,
         spellID = 231428,
         itemID = 142552,
         sourceKind = "DUNGEON",
@@ -1052,6 +1126,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Click the 5 Soul Fragments within the timer after entering Mythic Return to Karazhan (Opera -> Maiden -> Moroes -> Spider Room -> Curator), speak with Medivh on the terrace, and defeat Nightbane (20% solo drop chance!).",
     },
     {
+        mountID = 791,
         spellID = 213134,
         itemID = 137574,
         sourceKind = "RAID",
@@ -1072,6 +1147,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Gul'dan in The Nighthold drops TWO mounts: Living Infernal Core (Green — drops on Normal, Heroic, AND Mythic!) and Fiendish Hellfire Core (Red — Mythic only!).",
     },
     {
+        mountID = 633,
         spellID = 171827,
         itemID = 137575,
         sourceKind = "RAID",
@@ -1092,6 +1168,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Red Infernal! Drops from Mythic Gul'dan in The Nighthold (rolls alongside the green Living Infernal Core at the same time!).",
     },
     {
+        mountID = 899,
         spellID = 232519,
         itemID = 143643,
         sourceKind = "RAID",
@@ -1112,6 +1189,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from Mistress Sassz'ine in Tomb of Sargeras on ANY difficulty (including LFR via Archmage Timear in Legion Dalaran!).",
     },
     {
+        mountID = 971,
         spellID = 253088,
         itemID = 152816,
         sourceKind = "RAID",
@@ -1132,6 +1210,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from the 2nd boss of Antorus (Felhounds of Sargeras) on ANY difficulty, including LFR! Very quick farm.",
     },
     {
+        mountID = 954,
         spellID = 243651,
         itemID = 152789,
         sourceKind = "RAID",
@@ -1156,6 +1235,7 @@ addon.MountDungeonsDB = {
     -- 5. ПОДЗЕМЕЛЬЯ И РЕЙДЫ: BATTLE FOR AZEROTH & SHADOWLANDS
     -- ========================================================================
     {
+        mountID = 1053,
         spellID = 273541,
         itemID = 160829,
         sourceKind = "DUNGEON",
@@ -1176,6 +1256,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Set Dungeon Difficulty to Mythic and defeat the Unbound Abomination at the end of The Underrot in Nazmir. Weekly lockout.",
     },
     {
+        mountID = 995,
         spellID = 254813,
         itemID = 159842,
         sourceKind = "DUNGEON",
@@ -1196,6 +1277,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "In Mythic Freehold, you can run straight across the bridge to the final boss Harlan Sweete, skipping the first 3 bosses (takes 2 minutes)!",
     },
     {
+        mountID = 1040,
         spellID = 266058,
         itemID = 159921,
         sourceKind = "DUNGEON",
@@ -1216,6 +1298,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Defeat King Dazar at the end of Mythic Kings' Rest in Zuldazar. Weekly lockout.",
     },
     {
+        mountID = 1252,
         spellID = 299158,
         itemID = 168826,
         sourceKind = "DUNGEON",
@@ -1236,6 +1319,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from the 4th boss (HK-8 Aerial Oppression Unit in the Junkyard) inside Mythic Operation: Mechagon.",
     },
     {
+        mountID = 1217,
         spellID = 289083,
         itemID = 166518,
         sourceKind = "RAID",
@@ -1256,6 +1340,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from High Tinker Mekkatorque on Normal/Heroic/Mythic, OR from Lady Jaina Proudmoore in LFR Wing 3 (fastest solo queue!).",
     },
     {
+        mountID = 1219,
         spellID = 289555,
         itemID = 166705,
         sourceKind = "RAID",
@@ -1276,6 +1361,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from Lady Jaina Proudmoore on Mythic difficulty in Battle of Dazar'alor (an NPC inside the entrance lets you skip straight to Jaina!).",
     },
     {
+        mountID = 1293,
         spellID = 308814,
         itemID = 174872,
         sourceKind = "RAID",
@@ -1296,6 +1382,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "IMPORTANT: Your character MUST equip the legendary cloak 'Ashjra'kamas, Shroud of Resolve' for Carapace of N'Zoth and N'Zoth the Corruptor (otherwise you get instantly mind-controlled and reset the boss!). Requires lvl 60+.",
     },
     {
+        mountID = 1406,
         spellID = 336036,
         itemID = 181819,
         sourceKind = "DUNGEON",
@@ -1316,6 +1403,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Defeat Nalthor the Rimebinder at the end of Mythic The Necrotic Wake in Bastion. Weekly lockout.",
     },
     {
+        mountID = 1481,
         spellID = 353263,
         itemID = 186638,
         sourceKind = "DUNGEON",
@@ -1336,6 +1424,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Broker hover-disc! Drops from So'leah at the end of Tazavesh: So'leah's Gambit.",
     },
     {
+        mountID = 1500,
         spellID = 354351,
         itemID = 186656,
         sourceKind = "RAID",
@@ -1356,6 +1445,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from the 3rd boss 'The Nine' in Sanctum of Domination on ANY difficulty (including LFR Wing 1 via Ta'elfar in Oribos!).",
     },
     {
+        mountID = 1471,
         spellID = 351195,
         itemID = 186642,
         sourceKind = "RAID",
@@ -1376,6 +1466,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Sylvanas's dark dragonhawk! Drops from Sylvanas Windrunner on Mythic difficulty in Sanctum of Domination.",
     },
     {
+        mountID = 1587,
         spellID = 368158,
         itemID = 190768,
         sourceKind = "RAID",
@@ -1400,6 +1491,7 @@ addon.MountDungeonsDB = {
     -- 6. ПОДЗЕМЕЛЬЯ И РЕЙДЫ: DRAGONFLIGHT, THE WAR WITHIN & MIDNIGHT
     -- ========================================================================
     {
+        mountID = 1818,
         spellID = 424484,
         itemID = 210061,
         sourceKind = "RAID",
@@ -1420,6 +1512,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from Fyrakk the Blazing on Mythic difficulty in Amirdrassil, the Dream's Hope.",
     },
     {
+        mountID = 2159,
         spellID = 448188,
         itemID = 223269,
         sourceKind = "DUNGEON",
@@ -1440,6 +1533,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops as the quest starter 'Malfunctioning Mechsuit' from the final boss of Mythic The Stonevault in The Ringing Deeps.",
     },
     {
+        mountID = 2204,
         spellID = 449264,
         itemID = 225548,
         sourceKind = "DUNGEON",
@@ -1460,6 +1554,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from the final boss 'The Darkness' in Mythic Darkflame Cleft (The Ringing Deeps).",
     },
     {
+        mountID = 2219,
         spellID = 451486,
         itemID = 224147,
         sourceKind = "RAID",
@@ -1480,6 +1575,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from Queen Ansurek in Nerub-ar Palace on ANY difficulty (LFR, Normal, Heroic, and Mythic).",
     },
     {
+        mountID = 2223,
         spellID = 451491,
         itemID = 224151,
         sourceKind = "RAID",
@@ -1500,6 +1596,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Mythic mount from Queen Ansurek in Nerub-ar Palace (also rolls for the Sureki Skyrazor at the same time!).",
     },
     {
+        mountID = 2507,
         spellID = 1221155,
         itemID = 236960,
         sourceKind = "RAID",
@@ -1520,6 +1617,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from Chrome King Gallywix in Liberation of Undermine on any difficulty.",
     },
     {
+        mountID = 2487,
         spellID = 1217760,
         itemID = 235626,
         sourceKind = "RAID",
@@ -1540,6 +1638,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Gallywix's golden mech! Drops on Mythic difficulty in Liberation of Undermine.",
     },
     {
+        mountID = 2569,
         spellID = 1234573,
         itemID = 243061,
         sourceKind = "RAID",
@@ -1560,6 +1659,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Drops from Dimensius the All-Devouring on Mythic difficulty in Manaforge Omega.",
     },
     {
+        mountID = 286,
         spellID = 61465,
         itemID = 43959,
         sourceKind = "RAID",
@@ -1580,6 +1680,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "3-seater Grand Black War Mammoth (Alliance)! Can drop from ANY of the 4 bosses inside Vault of Archavon (Archavon, Emalon, Koralon, Toravon — 4 chances per lockout!) on 10 or 25-player difficulty in Wintergrasp [50.0, 11.6].",
     },
     {
+        mountID = 287,
         spellID = 61467,
         itemID = 44083,
         sourceKind = "RAID",
@@ -1600,6 +1701,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "3-seater Grand Black War Mammoth (Horde)! Can drop from ANY of the 4 bosses inside Vault of Archavon (Archavon, Emalon, Koralon, Toravon — 4 chances per lockout!) on 10 or 25-player difficulty in Wintergrasp [50.0, 11.6].",
     },
     {
+        mountID = 2607,
         spellID = 1242904,
         itemID = 246590,
         sourceKind = "RAID",
@@ -1620,6 +1722,7 @@ addon.MountDungeonsDB = {
         howToGetEN = "Void Phoenix 'Ashes of Belo'ren'! Drops from L'ura in Midnight.",
     },
     {
+        mountID = 2842,
         spellID = 1268949,
         itemID = 263222,
         sourceKind = "DUNGEON",
