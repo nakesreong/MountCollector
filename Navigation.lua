@@ -15,6 +15,7 @@ local _, addon = ...
 
 local L = addon.L
 local SafeNotSecret = addon.SafeNotSecret
+local IsValidNpcName = addon.IsValidNpcName
 
 function addon:GetMountWowheadURL(mountID, questID)
     local locCode = self:GetActiveLocaleCode()

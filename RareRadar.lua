@@ -14,7 +14,9 @@ local _, addon = ...
 
 local L = addon.L
 local SafeNotSecret = addon.SafeNotSecret
+local IsValidNpcName = addon.IsValidNpcName
 local ApplyFlatBackdrop = addon.ApplyFlatBackdrop
+local CreateFlatButton = addon.CreateFlatButton
 
 -- Всплывающий радар-алерт должен срабатывать ТОЛЬКО в открытом мире на рарниках и мировых боссах,
 -- никогда не спамя на боссах внутри подземелий и рейдов!
