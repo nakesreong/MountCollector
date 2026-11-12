@@ -31,6 +31,10 @@ MountDropsDB.lua
 MountQuestsDB.lua
 MountDungeonsDB.lua
 Core.lua
+Navigation.lua
+Lockouts.lua
+RareRadar.lua
+MapPins.lua
 Tooltips.lua
 RadarUI.lua
 Config.lua
