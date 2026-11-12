@@ -1181,7 +1181,7 @@ local function FormatClassColoredChar(name, classFile, level)
     end
     local colorPrefix = "|cffffffff"
     if classFile and _G.RAID_CLASS_COLORS and _G.RAID_CLASS_COLORS[classFile] and _G.RAID_CLASS_COLORS[classFile].colorStr then
-        colorPrefix = "|" .. _G.RAID_CLASS_COLORS[classFile].colorStr
+        colorPrefix = "|c" .. _G.RAID_CLASS_COLORS[classFile].colorStr
     end
     if level and level > 0 then
         return string.format("%s%s|r |cffaaaaaa(%d)|r", colorPrefix, shortName, level)
