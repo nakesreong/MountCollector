@@ -2072,13 +2072,50 @@ function addon:UpdateLDBText()
     end
 end
 
+function addon:EnsureRoundMinimapButton()
+    if not LDBIcon then
+        LDBIcon = LibStub and LibStub("LibDBIcon-1.0", true)
+    end
+    if not LDBIcon then return end
+    local btn = LDBIcon:GetMinimapButton("MountCollector")
+    if not btn then return end
+
+    -- Делаем иконку подковы идеально круглой внутри золотого кольца миникарты (Circular MaskTexture)
+    if btn.icon and btn.CreateMaskTexture and not btn.mcRoundMask then
+        local mask = btn:CreateMaskTexture()
+        mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        mask:SetAllPoints(btn.icon)
+        btn.icon:AddMaskTexture(mask)
+        btn.mcRoundMask = mask
+    end
+    if btn.icon and not btn._MSQ_CFG then
+        btn.icon:SetSize(20, 20)
+        btn.icon:ClearAllPoints()
+        btn.icon:SetPoint("CENTER", btn, "CENTER", 0, 0)
+    end
+
+    -- Если кнопка висит прямо на миникарте (не спрятана внутрь выдвижной панели вроде HidingBar),
+    -- отключаем принудительное скрытие по курсору от BasicMinimap, чтобы круглая подкова всегда была видна!
+    if self.db and self.db.minimap and not self.db.minimap.hide then
+        if btn:GetParent() == _G.Minimap then
+            LDBIcon:ShowOnEnter("MountCollector", false)
+            btn:SetAlpha(1)
+            btn:Show()
+        end
+    end
+end
+
 function addon:InitLDB()
     if not LDB or self.ldbObj then return end
 
+    local horseshoeIcon = (C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(168412))
+        or "Interface\\ICONS\\inv_blacksmith_leystonehoofplates_orange"
+
     self.ldbObj = LDB:NewDataObject("MountCollector", {
-        type = "data source",
+        type = "launcher",
+        label = "MountCollector",
         text = "MountCollector",
-        icon = "Interface\\ICONS\\Ability_Mount_SpectralTiger",
+        icon = horseshoeIcon,
         OnClick = function(_, button)
             if button == "RightButton" then
                 if ToggleCollectionsJournal then
@@ -2122,6 +2159,7 @@ function addon:InitLDB()
 
     if LDBIcon and self.db and self.db.minimap then
         LDBIcon:Register("MountCollector", self.ldbObj, self.db.minimap)
+        self:EnsureRoundMinimapButton()
     end
 end
 

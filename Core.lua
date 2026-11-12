@@ -110,7 +110,13 @@ function addon:InitDB()
     db.chars = db.chars or {}
     db.realmCensus = db.realmCensus or {}
     db.knownNpcNames = db.knownNpcNames or {}
-    db.minimap = db.minimap or { hide = false }
+    db.minimap = db.minimap or { hide = false, minimapPos = 195, showInCompartment = true }
+    if db.minimap.minimapPos == nil then
+        db.minimap.minimapPos = 195
+    end
+    if db.minimap.showInCompartment == nil then
+        db.minimap.showInCompartment = true
+    end
     db.settings = db.settings or {}
 
     for k, v in pairs(db.knownNpcNames) do
@@ -2729,6 +2735,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             end
             if addon.UpdateLDBText then
                 addon:UpdateLDBText()
+            end
+            if addon.EnsureRoundMinimapButton then
+                addon:EnsureRoundMinimapButton()
             end
             if addon.RefreshRadarUI then
                 addon:RefreshRadarUI()

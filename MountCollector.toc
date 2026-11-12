@@ -15,7 +15,7 @@
 ## Version: 1.6.1
 ## SavedVariables: MountCollectorDB
 ## OptionalDeps: MountsRarity, Rarity, RareScanner, TomTom, ElvUI
-## IconTexture: Interface\ICONS\Ability_Mount_SpectralTiger
+## IconTexture: Interface\ICONS\inv_blacksmith_leystonehoofplates_orange
 ## X-Curse-Project-ID: 1760103
 
 # Proven Embedded Libraries (LibStub, LDB, LibDBIcon, MountsRarity-2.0)
