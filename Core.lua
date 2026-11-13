@@ -206,14 +206,164 @@ function addon:FormatRarityTier(rarityPct)
     end
 end
 
+local RuRealmToEnglish = {
+    ["Пиратская Бухта"] = "Booty Bay",
+    ["Свежеватель Душ"] = "Soulflayer",
+    ["Ревущий фьорд"] = "Howling Fjord",
+    ["Гордунни"] = "Gordunni",
+    ["Дракономор"] = "Fordragon",
+    ["Ясеневый лес"] = "Ashenvale",
+    ["Страж Смерти"] = "Deathguard",
+    ["Черный Шрам"] = "Blackscar",
+    ["Борейская тундра"] = "Borean Tundra",
+    ["Вечная Песня"] = "Eversong",
+    ["Галакронд"] = "Galakrond",
+    ["Голдринн"] = "Goldrinn",
+    ["Ткач Смерти"] = "Deathweaver",
+    ["Король-лич"] = "Lich King",
+    ["Подземье"] = "Deepholm",
+    ["Разувий"] = "Razuvious",
+    ["Седогрив"] = "Greymane",
+    ["Термоштепсель"] = "Thermaplugg",
+    ["Гром"] = "Grom",
+    ["Азурегос"] = "Azuregos",
+}
+
+local CyrillicToLatin = {
+    ["А"]="A", ["Б"]="B", ["В"]="V", ["Г"]="G", ["Д"]="D", ["Е"]="E", ["Ё"]="Yo", ["Ж"]="Zh",
+    ["З"]="Z", ["И"]="I", ["Й"]="Y", ["К"]="K", ["Л"]="L", ["М"]="M", ["Н"]="N", ["О"]="O",
+    ["П"]="P", ["Р"]="R", ["С"]="S", ["Т"]="T", ["У"]="U", ["Ф"]="F", ["Х"]="Kh", ["Ц"]="Ts",
+    ["Ч"]="Ch", ["Ш"]="Sh", ["Щ"]="Shch", ["Ъ"]="", ["Ы"]="Y", ["Ь"]="", ["Э"]="E", ["Ю"]="Yu", ["Я"]="Ya",
+    ["а"]="a", ["б"]="b", ["в"]="v", ["г"]="g", ["д"]="d", ["е"]="e", ["ё"]="yo", ["ж"]="zh",
+    ["з"]="z", ["и"]="i", ["й"]="y", ["к"]="k", ["л"]="l", ["м"]="m", ["н"]="n", ["о"]="o",
+    ["п"]="p", ["р"]="r", ["с"]="s", ["т"]="t", ["у"]="u", ["ф"]="f", ["х"]="kh", ["ц"]="ts",
+    ["ч"]="ch", ["ш"]="sh", ["щ"]="shch", ["ъ"]="", ["ы"]="y", ["ь"]="", ["э"]="e", ["ю"]="yu", ["я"]="ya",
+}
+
+local KnownCharNameOverrides = {
+    ["Ньярлатхотеп"] = "Nyarlathotep",
+    ["Ньарлатхотеп"] = "Nyarlathotep",
+    ["Гитпулл"] = "Gitpull",
+    ["Морвара"] = "Morvara",
+    ["Моржовый"] = "Morzhovy",
+}
+
+local EnglishItemNames = {
+    [140495] = "Torn Invitation",
+    [174858] = "Gersahl Greens",
+    [174927] = "Zan-Tien Lasso",
+    [180445] = "Wildseed Cradle",
+    [180753] = "Twinklestar's Gardening Toolkit",
+    [182651] = "Unusually Large Mushroom",
+    [186599] = "Darkmaul Mushroom",
+    [186603] = "Tasty Mawshroom",
+    [187923] = "Aurelid Lure",
+    [200879] = "Tattered Seeker's Notes",
+    [201420] = "Highland Mustang",
+    [201883] = "Ohn'ir Windsage's Totem",
+    [202042] = "Aquatic Shades",
+    [202096] = "Empty Fish Barrel",
+    [224024] = "Crackling Shard",
+    [224025] = "Storm Vessel",
+    [225557] = "Vial of Tainteditha",
+}
+
+function addon:GetItemDisplayName(itemID)
+    if not itemID or itemID <= 0 then return nil end
+    if self:GetActiveLocaleCode() == "enUS" and EnglishItemNames[itemID] then
+        return EnglishItemNames[itemID]
+    end
+    return (C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID))
+        or EnglishItemNames[itemID]
+        or ("Item #" .. tostring(itemID))
+end
+
+function addon:LocalizeRealmName(realm)
+    if not realm or type(realm) ~= "string" then return "Realm" end
+    if self:GetActiveLocaleCode() == "enUS" then
+        return RuRealmToEnglish[realm] or self:LocalizeCharName(realm)
+    end
+    return realm
+end
+
+function addon:LocalizeCharName(name)
+    if not name or type(name) ~= "string" then return "" end
+    if self:GetActiveLocaleCode() ~= "enUS" then
+        return name
+    end
+    if KnownCharNameOverrides[name] then
+        return KnownCharNameOverrides[name]
+    end
+    local out = name
+    for cyr, lat in pairs(CyrillicToLatin) do
+        out = string.gsub(out, cyr, lat)
+    end
+    return out
+end
+
+function addon:GetMountInfoByID(mountID)
+    if not mountID or not C_MountJournal or not C_MountJournal.GetMountInfoByID then return nil end
+    local name, spellID, icon, isActive, isUsable, sourceType, isFavorite, isFactionSpecific, faction, shouldHideOnChar, isCollected, mID, isSteadyFlight = C_MountJournal.GetMountInfoByID(mountID)
+    local en = self.EnglishMountDB and self.EnglishMountDB[mountID]
+    if en then
+        if (not spellID or not SafeNotSecret(spellID) or spellID == 0) and en.sp then
+            spellID = en.sp
+        end
+        if name and self:GetActiveLocaleCode() == "enUS" and en.n then
+            name = en.n
+        end
+    end
+    return name, spellID, icon, isActive, isUsable, sourceType, isFavorite, isFactionSpecific, faction, shouldHideOnChar, isCollected, mID, isSteadyFlight
+end
+
+function addon:GetMountInfoExtraByID(mountID)
+    if not mountID or not C_MountJournal or not C_MountJournal.GetMountInfoExtraByID then return nil end
+    local creatureDisplayInfoID, description, sourceText, isSelfMount, mountTypeID, uiModelSceneID, animID, spellVisualKitID, disablePlayerMountPreview = C_MountJournal.GetMountInfoExtraByID(mountID)
+    if self:GetActiveLocaleCode() == "enUS" and self.EnglishMountDB and self.EnglishMountDB[mountID] then
+        local en = self.EnglishMountDB[mountID]
+        if en.d and en.d ~= "" then description = en.d end
+        if en.s and en.s ~= "" then sourceText = en.s end
+    end
+    return creatureDisplayInfoID, description, sourceText, isSelfMount, mountTypeID, uiModelSceneID, animID, spellVisualKitID, disablePlayerMountPreview
+end
+
+function addon:GetMapName(mapID)
+    if not mapID then return "" end
+    if self:GetActiveLocaleCode() == "enUS" and self.EnglishMapNames and self.EnglishMapNames[mapID] then
+        return self.EnglishMapNames[mapID]
+    end
+    if C_Map and C_Map.GetMapInfo then
+        local info = C_Map.GetMapInfo(mapID)
+        if info and info.name then
+            return info.name
+        end
+    end
+    return "Map #" .. tostring(mapID)
+end
+
+function addon:GetNpcDisplayName(npcID, fallbackName)
+    local isEN = (self:GetActiveLocaleCode() == "enUS")
+    local rsName = (npcID and self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID] and self.RareScannerNpcToMounts[npcID].name) or nil
+    local knName = (npcID and self.KnownNpcNames and self.KnownNpcNames[npcID]) or nil
+    if isEN then
+        if rsName and rsName ~= "" then return rsName end
+        if fallbackName and fallbackName ~= "" then return fallbackName end
+        return knName
+    else
+        if knName and knName ~= "" then return knName end
+        if fallbackName and fallbackName ~= "" then return fallbackName end
+        return rsName
+    end
+end
+
 function addon:GetServerRarityInfo(mountID)
-    local realm = GetRealmName() or "Realm"
-    local realmPop = self.RealmPopulations[realm] or self.DefaultRealmPopulation
+    local rawRealm = GetRealmName() or "Realm"
+    local realmPop = self.RealmPopulations[rawRealm] or self.DefaultRealmPopulation
     local globalPct = self:GetGlobalRarity(mountID)
 
     local seenCount = 0
-    if self.db and self.db.realmCensus and self.db.realmCensus[realm] and self.db.realmCensus[realm][mountID] then
-        seenCount = self.db.realmCensus[realm][mountID].count or 0
+    if self.db and self.db.realmCensus and self.db.realmCensus[rawRealm] and self.db.realmCensus[rawRealm][mountID] then
+        seenCount = self.db.realmCensus[rawRealm][mountID].count or 0
     end
 
     local estOwners = nil
@@ -221,7 +371,8 @@ function addon:GetServerRarityInfo(mountID)
         estOwners = math.max(seenCount, math.floor((globalPct / 100.0) * realmPop + 0.5))
     end
 
-    return realm, realmPop, estOwners, seenCount, globalPct
+    local displayRealm = self:LocalizeRealmName(rawRealm)
+    return displayRealm, realmPop, estOwners, seenCount, globalPct
 end
 
 local function AddUniqueToList(list, val)
@@ -250,8 +401,8 @@ function addon:BuildMountIndex()
     if not mountIDs then return end
 
     for _, mountID in ipairs(mountIDs) do
-        local name, spellID = C_MountJournal.GetMountInfoByID(mountID)
-        if spellID and SafeNotSecret(spellID) then
+        local name, spellID = self:GetMountInfoByID(mountID)
+        if spellID and SafeNotSecret(spellID) and spellID > 0 then
             self.MountBySpell[spellID] = mountID
 
             local dropData = self.MountDropsBySpell and self.MountDropsBySpell[spellID]
@@ -317,7 +468,7 @@ function addon:BuildMountIndex()
     if self.RareScannerNpcToMounts then
         for npcID, rsData in pairs(self.RareScannerNpcToMounts) do
             for _, mountID in ipairs(rsData.mounts or {}) do
-                local name, spellID = C_MountJournal.GetMountInfoByID(mountID)
+                local name, spellID = self:GetMountInfoByID(mountID)
                 if name then
                     local info = self.DropInfoByMount[mountID]
                     if not info then
@@ -378,7 +529,7 @@ function addon:BuildMountIndex()
                 if mountID then
                     local info = self.DropInfoByMount[mountID]
                     if not info then
-                        local name = C_MountJournal.GetMountInfoByID(mountID)
+                        local name = self:GetMountInfoByID(mountID)
                         info = {
                             mountID = mountID,
                             name = name,
@@ -461,7 +612,7 @@ function addon:BuildMountIndex()
 
                 local info = self.DropInfoByMount[mID]
                 if not info then
-                    local name, spellID = C_MountJournal.GetMountInfoByID(mID)
+                    local name, spellID = self:GetMountInfoByID(mID)
                     info = {
                         mountID = mID,
                         name = name,
@@ -740,10 +891,10 @@ function addon:ValidateModuleIntegrity(silentIfOk)
         if type(self.MountDungeonsDB) == "table" then
             for idx, dEntry in ipairs(self.MountDungeonsDB) do
                 if dEntry.mountID then
-                    local mName, mSpell = C_MountJournal.GetMountInfoByID(dEntry.mountID)
+                    local mName, mSpell = self:GetMountInfoByID(dEntry.mountID)
                     if not mName then
                         table.insert(warnings, string.format("MountDungeonsDB[%d]: несуществующий mountID=%s (%s)", idx, tostring(dEntry.mountID), tostring(dEntry.bossEN or "?")))
-                    elseif dEntry.spellID and mSpell and mSpell ~= dEntry.spellID then
+                    elseif dEntry.spellID and mSpell and SafeNotSecret(mSpell) and mSpell > 0 and mSpell ~= dEntry.spellID then
                         table.insert(warnings, string.format("MountDungeonsDB[%d] (%s): spellID=%d не совпадает с клиентским spellID=%d", idx, mName, dEntry.spellID, mSpell))
                     end
                 end
@@ -752,10 +903,10 @@ function addon:ValidateModuleIntegrity(silentIfOk)
         if type(self.MountQuestsDB) == "table" then
             for idx, qChain in ipairs(self.MountQuestsDB) do
                 if qChain.mountID then
-                    local mName, mSpell = C_MountJournal.GetMountInfoByID(qChain.mountID)
+                    local mName, mSpell = self:GetMountInfoByID(qChain.mountID)
                     if not mName then
                         table.insert(warnings, string.format("MountQuestsDB[%d]: несуществующий mountID=%s", idx, tostring(qChain.mountID)))
-                    elseif qChain.spellID and mSpell and mSpell ~= qChain.spellID then
+                    elseif qChain.spellID and mSpell and SafeNotSecret(mSpell) and mSpell > 0 and mSpell ~= qChain.spellID then
                         table.insert(warnings, string.format("MountQuestsDB[%d] (%s): spellID=%d не совпадает с клиентским spellID=%d", idx, mName, qChain.spellID, mSpell))
                     end
                 end
@@ -767,7 +918,7 @@ function addon:ValidateModuleIntegrity(silentIfOk)
         for _, w in ipairs(warnings) do
             print("|cffff4444[MountCollector WARNING]|r " .. w)
         end
-        if geterrorhandler then
+        if not silentIfOk and geterrorhandler then
             geterrorhandler()("MountCollector Module Integrity Warning: " .. table.concat(warnings, "; "))
         end
         return false, warnings
@@ -876,7 +1027,6 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         addon:SnapshotPreLockedRares()
         addon:ScanAllActiveVignettes()
-            if addon.ValidateModuleIntegrity then addon:ValidateModuleIntegrity(true) end
         if addon.UpdateLDBText then
             addon:UpdateLDBText()
         end

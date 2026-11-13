@@ -32,7 +32,7 @@ function addon:GetMountWowheadURL(mountID, questID)
     if info and info.itemID and info.itemID > 0 then
         return domain .. "item=" .. tostring(info.itemID)
     end
-    local _, spellID = C_MountJournal.GetMountInfoByID(mountID)
+    local _, spellID = self:GetMountInfoByID(mountID)
     if spellID and spellID > 0 then
         return domain .. "spell=" .. tostring(spellID)
     end
@@ -127,7 +127,7 @@ end
 
 -- Поставить метку на карте и 3D-стрелку (Blizzard UserWaypoint + SuperTrack + TomTom)
 function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLabel, silent, customMountNames)
-    local name = customMountNames or (C_MountJournal and C_MountJournal.GetMountInfoByID(mountID)) or "Mount"
+    local name = customMountNames or self:GetMountInfoByID(mountID) or "Mount"
     local info = self.DropInfoByMount[mountID]
     local mapID = preferredMapID or (C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player"))
     local x, y = liveX, liveY
@@ -143,9 +143,9 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
         end
     end
     if not validCustomLabel and c then
-        local knownName = c.npcID and self.KnownNpcNames and self.KnownNpcNames[c.npcID]
-        if IsValidNpcName(knownName) then
-            npcLabel = knownName
+        local dispNpc = self:GetNpcDisplayName(c.npcID, c.n)
+        if IsValidNpcName(dispNpc) then
+            npcLabel = dispNpc
         elseif c.n and c.n ~= "" then
             npcLabel = c.n
         end
@@ -235,7 +235,8 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
             local x10000 = math.max(0, math.min(10000, math.floor(wpNormX * 10000 + 0.5)))
             local y10000 = math.max(0, math.min(10000, math.floor(wpNormY * 10000 + 0.5)))
             local pinLink = string.format("|cffffff00|Hworldmap:%d:%d:%d|h[|A:Waypoint-MapPin-ChatIcon:13:13:0:0|a %s (%.1f, %.1f)]|h|r", wpMapID, x10000, y10000, npcLabel, dispX, dispY)
-            print(string.format("|cff00ccff[MountCollector]|r 3D-метка: %s -> |cffa335ee[%s]|r", pinLink, name))
+            local pinPrefix = (self:GetActiveLocaleCode() == "ruRU") and "3D-метка:" or "3D Pin:"
+            print(string.format("|cff00ccff[MountCollector]|r %s %s -> |cffa335ee[%s]|r", pinPrefix, pinLink, name))
         end
     end
     return true
@@ -254,7 +255,7 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
     end
 
     local info = self.DropInfoByMount and self.DropInfoByMount[mountID]
-    local name = C_MountJournal and C_MountJournal.GetMountInfoByID(mountID) or "Mount"
+    local name = self:GetMountInfoByID(mountID) or "Mount"
     local coords = {}
     local seen = {}
 
@@ -378,13 +379,13 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
             stepSetAt = GetTime(),
         }
         self:StartSpawnTourTicker()
-        local knownName = primaryCoord.npcID and self.KnownNpcNames and self.KnownNpcNames[primaryCoord.npcID]
-        local pLabel = (IsValidNpcName(knownName) and knownName) or ((primaryCoord.n and primaryCoord.n ~= "") and primaryCoord.n) or (info and info.boss) or name
+        local dispNpc = self:GetNpcDisplayName(primaryCoord.npcID, primaryCoord.n)
+        local pLabel = (IsValidNpcName(dispNpc) and dispNpc) or ((primaryCoord.n and primaryCoord.n ~= "") and primaryCoord.n) or (info and info.boss) or name
         self:SetMountWaypoint(mountID, primaryCoord.m, primaryCoord.x, primaryCoord.y, string.format("[1/%d] %s", #routeCoords, pLabel), true)
         print(string.format(L.CHAT_TOUR_STARTED, name, #routeCoords, pLabel, primaryCoord.x, primaryCoord.y))
     else
         self.activeSpawnTour = nil
-        self:SetMountWaypoint(mountID, primaryCoord.m, primaryCoord.x, primaryCoord.y, primaryCoord.n or (info and info.boss), false)
+        self:SetMountWaypoint(mountID, primaryCoord.m, primaryCoord.x, primaryCoord.y, self:GetNpcDisplayName(primaryCoord.npcID, primaryCoord.n) or (info and info.boss), false)
     end
 
     if openWorldMap and primaryCoord.m and OpenWorldMap then
@@ -534,8 +535,8 @@ function addon:AdvanceSpawnTourStep(fromAutoProximity)
     if tour.index <= tour.total then
         local nextPt = tour.points[tour.index]
         tour.stepSetAt = GetTime()
-        local knownName = nextPt.npcID and self.KnownNpcNames and self.KnownNpcNames[nextPt.npcID]
-        local nLabel = (IsValidNpcName(knownName) and knownName) or ((nextPt.n and nextPt.n ~= "") and nextPt.n) or tour.name
+        local dispNpc = self:GetNpcDisplayName(nextPt.npcID, nextPt.n)
+        local nLabel = (IsValidNpcName(dispNpc) and dispNpc) or ((nextPt.n and nextPt.n ~= "") and nextPt.n) or tour.name
         self:SetMountWaypoint(tour.mountID, nextPt.m, nextPt.x, nextPt.y, string.format("[%d/%d] %s", tour.index, tour.total, nLabel), true)
         print(string.format(L.CHAT_TOUR_NEXT, tour.index, tour.total, nLabel, nextPt.x, nextPt.y))
         if self.RefreshWorldMapPins then
@@ -557,8 +558,8 @@ function addon:AdvanceSpawnTourStep(fromAutoProximity)
             tour.total = #remaining
             tour.stepSetAt = GetTime()
             local firstPt = remaining[1]
-            local knownName = firstPt.npcID and self.KnownNpcNames and self.KnownNpcNames[firstPt.npcID]
-            local nLabel = (IsValidNpcName(knownName) and knownName) or ((firstPt.n and firstPt.n ~= "") and firstPt.n) or tour.name
+            local dispNpc = self:GetNpcDisplayName(firstPt.npcID, firstPt.n)
+            local nLabel = (IsValidNpcName(dispNpc) and dispNpc) or ((firstPt.n and firstPt.n ~= "") and firstPt.n) or tour.name
             self:SetMountWaypoint(tour.mountID, firstPt.m, firstPt.x, firstPt.y, string.format("[1/%d] %s", tour.total, nLabel), true)
             print(string.format(L.CHAT_TOUR_NEXT, 1, tour.total, nLabel, firstPt.x, firstPt.y))
             if self.RefreshWorldMapPins then
@@ -590,8 +591,8 @@ function addon:SyncActiveTourAfterKillOrAlert()
     if curPt and curPt.npcID and self:IsNpcLockedToday(curPt.npcID) then
         self:AdvanceSpawnTourStep(true)
     elseif curPt and not (_G.MountCollectorAlertFrame and _G.MountCollectorAlertFrame:IsShown()) then
-        local knownName = curPt.npcID and self.KnownNpcNames and self.KnownNpcNames[curPt.npcID]
-        local nLabel = (IsValidNpcName(knownName) and knownName) or ((curPt.n and curPt.n ~= "") and curPt.n) or tour.name
+        local dispNpc = self:GetNpcDisplayName(curPt.npcID, curPt.n)
+        local nLabel = (IsValidNpcName(dispNpc) and dispNpc) or ((curPt.n and curPt.n ~= "") and curPt.n) or tour.name
         self:SetMountWaypoint(tour.mountID, curPt.m, curPt.x, curPt.y, string.format("[%d/%d] %s", tour.index, tour.total, nLabel), true)
         if self.RefreshWorldMapPins then
             self:RefreshWorldMapPins()

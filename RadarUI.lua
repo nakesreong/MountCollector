@@ -273,7 +273,7 @@ function addon:ShowSetAttemptsPopup(mountID)
 
     local f = ui.setAttemptsFrame
     f.currentMountID = targetMountID
-    local name, _, icon = C_MountJournal.GetMountInfoByID(targetMountID)
+    local name, _, icon = addon:GetMountInfoByID(targetMountID)
     local curAttempts = self:GetMountAttempts(targetMountID)
     local iconTag = icon and string.format("|T%s:20:20:0:0|t ", icon) or ""
 
@@ -415,10 +415,10 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         return
     end
 
-    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = addon:GetMountInfoByID(mountID)
     if not name then return end
 
-    local _, description, sourceText = C_MountJournal.GetMountInfoExtraByID(mountID)
+    local _, description, sourceText = addon:GetMountInfoExtraByID(mountID)
     local realm, _, estOwners, seenCount, globalPct = addon:GetServerRarityInfo(mountID)
     local pctText, tierText = addon:FormatRarityTier(globalPct)
     local attempts, byChar, dropInfo = addon:GetMountAttempts(mountID)
@@ -519,11 +519,11 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         local chStr = string.format(L.MD_CHANCE_PART, dStatus.chance)
         table.insert(metaLines, string.format(L.META_DROP_ATTEMPTS, attempts, chStr))
     else
-        local bestCoordName = bestCoord and ((bestCoord.npcID and addon.KnownNpcNames and addon.KnownNpcNames[bestCoord.npcID]) or (bestCoord.n and bestCoord.n ~= "" and bestCoord.n)) or nil
+        local bestCoordName = bestCoord and addon:GetNpcDisplayName(bestCoord.npcID, (bestCoord.n and bestCoord.n ~= "" and bestCoord.n) or nil) or nil
         local bossStr = bestCoordName or (dropInfo and dropInfo.boss) or "—"
         local zoneStr = "—"
-        if bestCoord and bestCoord.m and C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(bestCoord.m) then
-            zoneStr = string.format("%s [%.1f, %.1f]", C_Map.GetMapInfo(bestCoord.m).name or "", bestCoord.x or 0, bestCoord.y or 0)
+        if bestCoord and bestCoord.m then
+            zoneStr = string.format("%s [%.1f, %.1f]", addon:GetMapName(bestCoord.m) or "", bestCoord.x or 0, bestCoord.y or 0)
         end
         table.insert(metaLines, string.format(L.META_DROP_SOURCE_ZONE, bossStr, zoneStr))
         if attempts > 0 or (dropInfo and dropInfo.chance) then
@@ -685,11 +685,11 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         local badge1 = isCollected and L.QUEST_STEP_DONE or (lockedToday and L.TAG_LOCKED_TODAY or L.QUEST_STEP_ACTIVE)
         local coordText = ""
         if bestCoord and bestCoord.x and bestCoord.y then
-            local zName = (bestCoord.m and C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(bestCoord.m)) and C_Map.GetMapInfo(bestCoord.m).name or ""
+            local zName = (bestCoord.m and addon:GetMapName(bestCoord.m)) or ""
             coordText = string.format("|cff00ccff%s [%.1f, %.1f]|r", zName, bestCoord.x, bestCoord.y)
         end
         local cleanSource = (sourceText and sourceText ~= "") and sourceText:gsub("|n", "\n") or (description or "")
-        local bestTargetName = bestCoord and ((bestCoord.npcID and addon.KnownNpcNames and addon.KnownNpcNames[bestCoord.npcID]) or (bestCoord.n and bestCoord.n ~= "" and bestCoord.n)) or nil
+        local bestTargetName = bestCoord and addon:GetNpcDisplayName(bestCoord.npcID, (bestCoord.n and bestCoord.n ~= "" and bestCoord.n) or nil) or nil
         local card1Boss = bestTargetName or (dropInfo and dropInfo.boss)
         table.insert(stepsToRender, {
             mountID = mountID,
@@ -753,9 +753,8 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
 
             for spIdx, c in ipairs(availSpawns) do
                 if spIdx <= 30 then
-                    local zName = (C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(c.m)) and C_Map.GetMapInfo(c.m).name or ("Map #" .. tostring(c.m))
-                    local knownNpc = (c.npcID and addon.KnownNpcNames and addon.KnownNpcNames[c.npcID]) or nil
-                    local targetNpc = knownNpc or ((c.n and c.n ~= "") and c.n) or (dropInfo.boss or name)
+                    local zName = (c.m and addon:GetMapName(c.m)) or ("Map #" .. tostring(c.m))
+                    local targetNpc = addon:GetNpcDisplayName(c.npcID, ((c.n and c.n ~= "") and c.n) or (dropInfo.boss or name))
                     table.insert(stepsToRender, {
                         mountID = mountID,
                         stepIndex = nil,
@@ -931,7 +930,7 @@ local function CreateMountInspectorWidget(parent, scrollName, cardWidth, isDocke
     btnWowhead:SetScript("OnClick", function()
         local mID = isDockedInJournal and (MountJournal and MountJournal.selectedMountID) or ui.selectedMountID
         if mID then
-            local name = C_MountJournal.GetMountInfoByID(mID)
+            local name = addon:GetMountInfoByID(mID)
             local url = addon:GetMountWowheadURL(mID)
             addon:ShowCopyLinkPopup(url, name)
         end
@@ -1181,7 +1180,7 @@ local function GetOrCreateMountListRow(index)
         self:SetBackdropBorderColor(1.0, 0.82, 0.0, 1.0)
         if self.mountID then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            local name, _, icon = C_MountJournal.GetMountInfoByID(self.mountID)
+            local name, _, icon = addon:GetMountInfoByID(self.mountID)
             local iconTag = icon and string.format("|T%s:18:18:0:0|t ", icon) or ""
             GameTooltip:SetText(iconTag .. (name or "Mount"), 1, 1, 1)
             addon:AppendMountCollectorLines(GameTooltip, self.mountID, true, false)
@@ -1450,7 +1449,7 @@ function addon:RefreshRadarUI()
         end
     else
         for mountID, info in pairs(self.DropInfoByMount) do
-            local name, _, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+            local name, _, icon, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
             if name and not isCollected then
                 local attempts = self:GetMountAttempts(mountID)
                 if attempts > 0 and (ui.searchText == "" or string.find(string.lower(name), ui.searchText, 1, true)) then
@@ -1479,7 +1478,7 @@ function addon:RefreshRadarUI()
         end
     end
     if not foundSelected and ui.selectedMountID and ui.selectedMountID == ui.pinnedInspectMountID then
-        local pName, _, pIcon, _, _, _, _, _, _, _, pCollected = C_MountJournal.GetMountInfoByID(ui.selectedMountID)
+        local pName, _, pIcon, _, _, _, _, _, _, _, pCollected = self:GetMountInfoByID(ui.selectedMountID)
         if pName then
             local pAttempts, _, pDrop = self:GetMountAttempts(ui.selectedMountID)
             local chPart = (pDrop and pDrop.chance and pDrop.chance > 0) and string.format(" • 1/%d", pDrop.chance) or ""

@@ -1,10 +1,10 @@
 # MountCollector — Rare Radar, World Boss & Dungeon Lockouts, Quest Chain Navigator & Rarity Census
 
-**Version:** 1.7.0  
+**Version:** 1.7.1  
 **Authors:** Gemini (Tiger) & Anya (5cr3am1ng5oul)  
 **Compatibility:** World of Warcraft: Retail / Midnight (`12.1.7`, `12.1.5`) & The War Within (`11.2.7`)  
 **Source Repository:** [https://github.com/nakesreong/MountCollector](https://github.com/nakesreong/MountCollector)  
-**License:** CC BY-SA 4.0 International / MIT
+**License:** Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)
 
 ***
 

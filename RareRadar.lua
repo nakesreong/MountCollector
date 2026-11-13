@@ -454,7 +454,7 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
     end
     self.RecentAlertLock[key] = now
 
-    local name, _, icon, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+    local name, _, icon, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
     if not name or (isCollected and not forceShow) then return end
 
     -- Если с этого NPC падает сразу несколько несобранных маунтов, объединяем их названия в один алерт и одну метку
@@ -462,7 +462,7 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
     if not forceShow and npcID and self.MountsByNpc and self.MountsByNpc[npcID] and #self.MountsByNpc[npcID] > 1 then
         local namesList = {}
         for _, mID in ipairs(self.MountsByNpc[npcID]) do
-            local mName, _, _, _, _, _, _, _, _, _, mCol = C_MountJournal.GetMountInfoByID(mID)
+            local mName, _, _, _, _, _, _, _, _, _, mCol = self:GetMountInfoByID(mID)
             if mName and not mCol then
                 table.insert(namesList, mName)
             end
@@ -477,17 +477,20 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
     local pctText = self:FormatRarityTier(globalPct)
     local chanceStr = (dropInfo and dropInfo.chance) and string.format("1/%d | ", dropInfo.chance) or ""
 
+    local displayNpcName = (npcID and npcID ~= 99999 and self:GetNpcDisplayName(npcID, npcName)) or npcName or "Rare NPC"
+
     alertFrame.currentMountID = mountID
     alertFrame.alertNpcID = npcID
     alertFrame.alertMapID = mapID
     alertFrame.alertX = liveX
     alertFrame.alertY = liveY
-    alertFrame.alertNpcName = npcName
+    alertFrame.alertNpcName = displayNpcName
 
-    self:UpdateAlertSecureTarget(npcName)
+    local clientTargetName = (npcID and self.KnownNpcNames and self.KnownNpcNames[npcID]) or npcName
+    self:UpdateAlertSecureTarget(clientTargetName)
 
     alertIcon:SetTexture(icon or "Interface\\ICONS\\Ability_Mount_SpectralTiger")
-    alertHeader:SetText(string.format(L.ALERT_HEADER_NEARBY, npcName or "Rare NPC"))
+    alertHeader:SetText(string.format(L.ALERT_HEADER_NEARBY, displayNpcName))
     alertMountName:SetText(string.format(L.ALERT_NOT_COLLECTED, displayMountNames))
     alertStats:SetText(string.format(L.ALERT_STATS_LINE, attempts, chanceStr, pctText))
 
