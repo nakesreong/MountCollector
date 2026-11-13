@@ -62,8 +62,13 @@ local function GetOrCreateMapPin(parent, index)
         local npcLine = self.npcName and ("|cffffd100" .. self.npcName .. "|r — ") or ""
         GameTooltip:SetText(npcLine .. displayMounts, 1, 1, 1)
         if self.npcID then
-            local npcLocked = addon:IsNpcLockedToday(self.npcID)
-            GameTooltip:AddDoubleLine(L.TT_STATUS_TODAY, npcLocked and L.TT_NPC_STATUS_LOCKED or L.TT_NPC_STATUS_AVAIL)
+            local timerText = addon.GetRareRespawnTimerText and addon:GetRareRespawnTimerText(self.npcID) or nil
+            if timerText then
+                GameTooltip:AddDoubleLine(L.TT_STATUS_TODAY, timerText)
+            else
+                local npcLocked = addon:IsNpcLockedToday(self.npcID)
+                GameTooltip:AddDoubleLine(L.TT_STATUS_TODAY, npcLocked and L.TT_NPC_STATUS_LOCKED or L.TT_NPC_STATUS_AVAIL)
+            end
         end
         addon:AppendMountCollectorLines(GameTooltip, self.mountID, true, false)
         GameTooltip:AddLine(" ")
@@ -132,7 +137,8 @@ function addon:RefreshWorldMapPins()
             local locked = self:IsMountRareLockedToday(mountID)
             if info and info.coords then
                 for _, c in ipairs(info.coords) do
-                    local pinLocked = (c.npcID and self:IsNpcLockedToday(c.npcID)) or locked
+                    local coordVisited = self.IsSpawnCoordRecentlyVisited and self:IsSpawnCoordRecentlyVisited(mapID, c.x, c.y)
+                    local pinLocked = (c.npcID and self:IsNpcLockedToday(c.npcID)) or locked or coordVisited
                     if not pinLocked and c.m == mapID and c.x and c.x > 0 and c.y and c.y > 0 then
                         local coordKey = string.format("%d:%.1f:%.1f", mapID, c.x, c.y)
                         local existingPin = pinByCoordKey[coordKey]
@@ -171,7 +177,7 @@ function addon:RefreshWorldMapPins()
                             local isCurrentTourStep = false
                             if self.activeSpawnTour and self.activeSpawnTour.mountID == mountID and self.activeSpawnTour.points then
                                 for tIdx, tPt in ipairs(self.activeSpawnTour.points) do
-                                    if tPt.m == mapID and math.abs((tPt.x or 0) - c.x) < 0.15 and math.abs((tPt.y or 0) - c.y) < 0.15 then
+                                    if not tPt.visited and tPt.m == mapID and math.abs((tPt.x or 0) - c.x) < 0.15 and math.abs((tPt.y or 0) - c.y) < 0.15 then
                                         tourStepNum = tIdx
                                         isCurrentTourStep = (tIdx == self.activeSpawnTour.index)
                                         break

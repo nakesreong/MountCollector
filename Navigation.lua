@@ -752,6 +752,31 @@ function addon:CheckPortalRouteProgress()
     end
 end
 
+function addon:GetSpawnCoordKey(mapID, x, y)
+    if not mapID or not x or not y then return nil end
+    local dx = (x <= 1) and (x * 100.0) or x
+    local dy = (y <= 1) and (y * 100.0) or y
+    return string.format("%d:%.1f:%.1f", mapID, dx, dy)
+end
+
+function addon:MarkSpawnCoordVisited(mapID, x, y)
+    local key = self:GetSpawnCoordKey(mapID, x, y)
+    if not key then return end
+    self.VisitedSpawnCoordsAt = self.VisitedSpawnCoordsAt or {}
+    self.VisitedSpawnCoordsAt[key] = GetTime()
+end
+
+function addon:IsSpawnCoordRecentlyVisited(mapID, x, y)
+    if not self.VisitedSpawnCoordsAt then return false end
+    local key = self:GetSpawnCoordKey(mapID, x, y)
+    if not key then return false end
+    local t = self.VisitedSpawnCoordsAt[key]
+    if t and (GetTime() - t) < 600 then
+        return true
+    end
+    return false
+end
+
 -- Очистить все активные метки аддона (Blizzard UserWaypoint, TomTom, межконтинентальный маршрут и подсветку на карте)
 function addon:ClearAddonWaypoints()
     local lastWP = self.lastAddonWaypoint
@@ -846,6 +871,10 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
     local normY = (y > 1) and (y / 100.0) or y
     local dispX = normX * 100.0
     local dispY = normY * 100.0
+    if not silent and self.VisitedSpawnCoordsAt then
+        local vKey = self:GetSpawnCoordKey(mapID, dispX, dispY)
+        if vKey then self.VisitedSpawnCoordsAt[vKey] = nil end
+    end
 
     -- Проверяем, нужен ли многошаговый маршрут через порталы на другой континент
     local targetZoneName = self:GetMapName(mapID)
@@ -891,6 +920,8 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
             self.lastAddonWaypoint = {
                 mapID = wpMapID,
                 rawMapID = mapID,
+                rawX = dispX,
+                rawY = dispY,
                 x = wpNormX,
                 y = wpNormY,
                 setAt = GetTime(),
@@ -938,6 +969,7 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
             print(string.format("|cff00ccff[MountCollector]|r %s %s -> |cffa335ee[%s]|r", pinPrefix, pinLink, name))
         end
     end
+    self:StartSpawnTourTicker()
     return true
 end
 
@@ -988,10 +1020,25 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
     self.multiTomTomByNpc = {}
 
     local playerMapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    if self.VisitedSpawnCoordsAt then
+        for _, c in ipairs(coords) do
+            local vKey = self:GetSpawnCoordKey(c.m, c.x, c.y)
+            if vKey then
+                self.VisitedSpawnCoordsAt[vKey] = nil
+            end
+        end
+    end
     local availCoords = {}
     for _, c in ipairs(coords) do
         if not (c.npcID and self:IsNpcLockedToday(c.npcID)) then
-            table.insert(availCoords, c)
+            table.insert(availCoords, {
+                m = c.m,
+                x = c.x,
+                y = c.y,
+                n = c.n,
+                npcID = c.npcID,
+                visited = false,
+            })
         end
     end
 
@@ -1061,6 +1108,7 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
                     world = true,
                 })
                 if uid then
+                    c.tomtomUid = uid
                     table.insert(self.multiTomTomUids, uid)
                     if c.npcID then
                         self.multiTomTomByNpc[c.npcID] = self.multiTomTomByNpc[c.npcID] or {}
@@ -1102,7 +1150,7 @@ end
 
 -- Проверить, не переключился ли игрок вручную на свою метку на карте или на отслеживание квеста
 function addon:CheckAndCancelTourIfUserOverrode()
-    if not self.activeSpawnTour and not self.activePortalRoute then return true end
+    if not self.activeSpawnTour and not self.activePortalRoute and not self.lastAddonWaypoint then return true end
     local lastWP = self.lastAddonWaypoint
     if not lastWP or (GetTime() - (lastWP.setAt or 0)) <= 1.5 then
         return false
@@ -1112,6 +1160,7 @@ function addon:CheckAndCancelTourIfUserOverrode()
     if C_Map and C_Map.HasUserWaypoint and not C_Map.HasUserWaypoint() then
         self.activeSpawnTour = nil
         self.activePortalRoute = nil
+        self.lastAddonWaypoint = nil
         if self.RefreshWorldMapPins then self:RefreshWorldMapPins() end
         return true
     end
@@ -1133,6 +1182,7 @@ function addon:CheckAndCancelTourIfUserOverrode()
         -- Не трогаем новую пользовательскую метку, просто тихо выходим из режима облёта рарников!
         self.activeSpawnTour = nil
         self.activePortalRoute = nil
+        self.lastAddonWaypoint = nil
         if self.RefreshWorldMapPins then self:RefreshWorldMapPins() end
         return true
     end
@@ -1142,6 +1192,7 @@ function addon:CheckAndCancelTourIfUserOverrode()
     if stAPI and stAPI.IsSuperTrackingUserWaypoint and not stAPI.IsSuperTrackingUserWaypoint() then
         self.activeSpawnTour = nil
         self.activePortalRoute = nil
+        self.lastAddonWaypoint = nil
         if isStillAddonPin and C_Map and C_Map.ClearUserWaypoint then
             pcall(C_Map.ClearUserWaypoint)
         end
@@ -1152,10 +1203,10 @@ function addon:CheckAndCancelTourIfUserOverrode()
     return false
 end
 
--- Авто-переключение 3D-ромбика Blizzard по мере облёта точек спавна и переходов по порталам (без TomTom)
+-- Авто-переключение / авто-снятие 3D-ромбика Blizzard и меток на карте при подлёте (касании точки) и переходах по порталам
 function addon:StartSpawnTourTicker()
     if self.spawnTourTicker then return end
-    self.spawnTourTicker = C_Timer.NewTicker(0.75, function()
+    self.spawnTourTicker = C_Timer.NewTicker(0.5, function()
         if self.activePortalRoute then
             self:CheckPortalRouteProgress()
         end
@@ -1169,25 +1220,115 @@ function addon:StartSpawnTourTicker()
         if self.activePortalRoute and self.activePortalRoute.steps and self.activePortalRoute.currentStep < #self.activePortalRoute.steps then
             return
         end
+
+        local alertActive = _G.MountCollectorAlertFrame and _G.MountCollectorAlertFrame:IsShown()
         local tour = self.activeSpawnTour
+
+        -- А. Одиночная метка (без многоточечного тура): автоматически исчезает, как только игрок влетает в точку / касается её!
         if not tour or not tour.points or tour.index > tour.total then
-            if not self.activePortalRoute and self.spawnTourTicker then
-                self.spawnTourTicker:Cancel()
-                self.spawnTourTicker = nil
+            local lastWP = self.lastAddonWaypoint
+            if not lastWP then
+                if not self.activePortalRoute and self.spawnTourTicker then
+                    self.spawnTourTicker:Cancel()
+                    self.spawnTourTicker = nil
+                end
+                return
+            end
+            if alertActive then
+                return
+            end
+            local now = GetTime()
+            if (now - (lastWP.setAt or 0)) <= 1.2 then
+                return
+            end
+            local touchedSingle = false
+            if lastWP.npcID and self:IsNpcLockedToday(lastWP.npcID) then
+                touchedSingle = true
+            end
+            if not touchedSingle and _G.C_Navigation and _G.C_Navigation.GetDistance then
+                local okDist, navDist = pcall(_G.C_Navigation.GetDistance)
+                if okDist and SafeNotSecret(navDist) and type(navDist) == "number" and navDist > 0 and navDist <= 48 then
+                    touchedSingle = true
+                end
+            end
+            if not touchedSingle and C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
+                local pMap = C_Map.GetBestMapForUnit("player")
+                local checkMap = lastWP.rawMapID or lastWP.mapID or pMap
+                if checkMap then
+                    local okPos, pos = pcall(C_Map.GetPlayerMapPosition, checkMap, "player")
+                    if okPos and pos and pos.GetXY then
+                        local rx, ry = pos:GetXY()
+                        if SafeNotSecret(rx) and SafeNotSecret(ry) and rx and ry and rx > 0 and ry > 0 then
+                            local targetX = lastWP.rawX or ((lastWP.x or 0) * 100.0)
+                            local targetY = lastWP.rawY or ((lastWP.y or 0) * 100.0)
+                            local dx = (rx * 100.0) - targetX
+                            local dy = (ry * 100.0) - targetY
+                            if (dx * dx + dy * dy) <= 17.64 then -- ~4.2 единицы карты (~42 ярда по земле на любой высоте!)
+                                touchedSingle = true
+                            end
+                        end
+                    end
+                end
+            end
+            if touchedSingle then
+                self:MarkSpawnCoordVisited(
+                    lastWP.rawMapID or lastWP.mapID,
+                    lastWP.rawX or ((lastWP.x or 0) * 100.0),
+                    lastWP.rawY or ((lastWP.y or 0) * 100.0)
+                )
+                self:ClearAddonWaypoints()
+                if self.spawnTourTicker then
+                    self.spawnTourTicker:Cancel()
+                    self.spawnTourTicker = nil
+                end
             end
             return
         end
+
+        -- Б. Многоточечный маршрут (activeSpawnTour):
+        -- Если игрок по пути пролетает сквозь любую другую точку маршрута на текущей карте, сразу отмечаем её проверенной и убираем!
+        if not alertActive and C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
+            local pMap = C_Map.GetBestMapForUnit("player")
+            if pMap then
+                local okPos, pos = pcall(C_Map.GetPlayerMapPosition, pMap, "player")
+                if okPos and pos and pos.GetXY then
+                    local rx, ry = pos:GetXY()
+                    if SafeNotSecret(rx) and SafeNotSecret(ry) and rx and ry and rx > 0 and ry > 0 then
+                        local px100, py100 = rx * 100.0, ry * 100.0
+                        local anySideTouched = false
+                        for idx, candPt in ipairs(tour.points) do
+                            if idx ~= tour.index and not candPt.visited and candPt.m == pMap then
+                                local dx = px100 - (candPt.x or 0)
+                                local dy = py100 - (candPt.y or 0)
+                                if (dx * dx + dy * dy) <= 16.0 then
+                                    candPt.visited = true
+                                    self:MarkSpawnCoordVisited(candPt.m, candPt.x, candPt.y)
+                                    if candPt.tomtomUid and _G.TomTom and _G.TomTom.RemoveWaypoint then
+                                        pcall(_G.TomTom.RemoveWaypoint, _G.TomTom, candPt.tomtomUid)
+                                        candPt.tomtomUid = nil
+                                    end
+                                    anySideTouched = true
+                                end
+                            end
+                        end
+                        if anySideTouched and self.RefreshWorldMapPins then
+                            self:RefreshWorldMapPins()
+                        end
+                    end
+                end
+            end
+        end
+
         local pt = tour.points[tour.index]
         if not pt then return end
 
         local reached = false
-        if pt.npcID and self:IsNpcLockedToday(pt.npcID) then
+        if pt.visited or (pt.npcID and self:IsNpcLockedToday(pt.npcID)) then
             reached = true
         end
 
         -- Если прямо сейчас на экране горит баннер живого рарника (мы с ним дерёмся или летим к нему),
         -- не переключаем маршрут дальше, пока рарник не будет убит или баннер не закроется!
-        local alertActive = _G.MountCollectorAlertFrame and _G.MountCollectorAlertFrame:IsShown()
         if alertActive and not reached then
             return
         end
@@ -1197,7 +1338,7 @@ function addon:StartSpawnTourTicker()
             local okDist, navDist = pcall(_G.C_Navigation.GetDistance)
             if okDist and SafeNotSecret(navDist) and type(navDist) == "number" and navDist > 0 and navDist <= 65 then
                 local now = GetTime()
-                if not tour.stepSetAt or (now - tour.stepSetAt) > 1.2 then
+                if not tour.stepSetAt or (now - tour.stepSetAt) > 1.0 then
                     reached = true
                 end
             end
@@ -1216,7 +1357,7 @@ function addon:StartSpawnTourTicker()
                         local dy = (ry * 100.0) - pt.y
                         if (dx * dx + dy * dy) <= 20.25 then -- ~4.5 единицы карты (~48 ярдов по земле на любой высоте!)
                             local now = GetTime()
-                            if not tour.stepSetAt or (now - tour.stepSetAt) > 1.2 then
+                            if not tour.stepSetAt or (now - tour.stepSetAt) > 1.0 then
                                 reached = true
                             end
                         end
@@ -1226,6 +1367,12 @@ function addon:StartSpawnTourTicker()
         end
 
         if reached then
+            pt.visited = true
+            self:MarkSpawnCoordVisited(pt.m, pt.x, pt.y)
+            if pt.tomtomUid and _G.TomTom and _G.TomTom.RemoveWaypoint then
+                pcall(_G.TomTom.RemoveWaypoint, _G.TomTom, pt.tomtomUid)
+                pt.tomtomUid = nil
+            end
             self:AdvanceSpawnTourStep(true)
         end
     end)
@@ -1234,10 +1381,25 @@ end
 function addon:AdvanceSpawnTourStep(fromAutoProximity)
     local tour = self.activeSpawnTour
     if not tour or not tour.points then return false end
+    local curPt = tour.points[tour.index]
+    if curPt then
+        curPt.visited = true
+        self:MarkSpawnCoordVisited(curPt.m, curPt.x, curPt.y)
+        if curPt.tomtomUid and _G.TomTom and _G.TomTom.RemoveWaypoint then
+            pcall(_G.TomTom.RemoveWaypoint, _G.TomTom, curPt.tomtomUid)
+            curPt.tomtomUid = nil
+        end
+    end
+
     tour.index = (tour.index or 1) + 1
     while tour.index <= tour.total do
         local nextCand = tour.points[tour.index]
-        if nextCand and nextCand.npcID and self:IsNpcLockedToday(nextCand.npcID) then
+        if nextCand and (nextCand.visited or (nextCand.npcID and self:IsNpcLockedToday(nextCand.npcID)) or self:IsSpawnCoordRecentlyVisited(nextCand.m, nextCand.x, nextCand.y)) then
+            if nextCand.tomtomUid and _G.TomTom and _G.TomTom.RemoveWaypoint then
+                pcall(_G.TomTom.RemoveWaypoint, _G.TomTom, nextCand.tomtomUid)
+                nextCand.tomtomUid = nil
+            end
+            nextCand.visited = true
             tour.index = tour.index + 1
         else
             break
@@ -1255,29 +1417,6 @@ function addon:AdvanceSpawnTourStep(fromAutoProximity)
         end
         return true
     else
-        -- Проверяем, остались ли ещё НЕ убитые нами сегодня рарники (которых в первом круге убили другие игроки):
-        -- если остались и их больше 1 (или мы убили хотя бы часть тура), автоматически начинаем новый круг только по живым!
-        local remaining = {}
-        for _, c in ipairs(tour.points) do
-            if c.npcID and not self:IsNpcLockedToday(c.npcID) then
-                table.insert(remaining, c)
-            end
-        end
-        if #remaining > 1 or (#remaining == 1 and tour.total > 1) then
-            tour.points = remaining
-            tour.index = 1
-            tour.total = #remaining
-            tour.stepSetAt = GetTime()
-            local firstPt = remaining[1]
-            local dispNpc = self:GetNpcDisplayName(firstPt.npcID, firstPt.n)
-            local nLabel = (IsValidNpcName(dispNpc) and dispNpc) or ((firstPt.n and firstPt.n ~= "") and firstPt.n) or tour.name
-            self:SetMountWaypoint(tour.mountID, firstPt.m, firstPt.x, firstPt.y, string.format("[1/%d] %s", tour.total, nLabel), true, nil, firstPt.npcID)
-            print(string.format(L.CHAT_TOUR_NEXT, 1, tour.total, nLabel, firstPt.x, firstPt.y))
-            if self.RefreshWorldMapPins then
-                self:RefreshWorldMapPins()
-            end
-            return true
-        end
         print(string.format(L.CHAT_TOUR_FINISHED, tour.name, tour.total))
         self.activeSpawnTour = nil
         self:ClearAddonWaypoints()

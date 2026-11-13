@@ -114,6 +114,7 @@ function addon:InitDB()
     db.chars = db.chars or {}
     db.realmCensus = db.realmCensus or {}
     db.knownNpcNames = db.knownNpcNames or {}
+    db.lastRareKills = db.lastRareKills or {}
     db.minimap = db.minimap or { hide = false, minimapPos = 195, showInCompartment = true }
     if db.minimap.minimapPos == nil then
         db.minimap.minimapPos = 195
@@ -1208,8 +1209,12 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                                         end
                                     end
                                     if rs or lockQid then
-                                        addon.KilledRareNpcIDsToday = addon.KilledRareNpcIDsToday or {}
-                                        addon.KilledRareNpcIDsToday[npcID] = now
+                                        if addon.RecordRareKillTimestamp then
+                                            addon:RecordRareKillTimestamp(npcID)
+                                        else
+                                            addon.KilledRareNpcIDsToday = addon.KilledRareNpcIDsToday or {}
+                                            addon.KilledRareNpcIDsToday[npcID] = now
+                                        end
                                     end
                                     if addon.RefreshWorldMapPins then
                                         addon:RefreshWorldMapPins()
@@ -1239,8 +1244,12 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                             if rq == questID then
                                 matchedNpcID = nid
                                 matchedNpcName = (addon.KnownNpcNames and addon.KnownNpcNames[nid]) or rsData.name
-                                addon.KilledRareNpcIDsToday = addon.KilledRareNpcIDsToday or {}
-                                addon.KilledRareNpcIDsToday[nid] = GetTime()
+                                if addon.RecordRareKillTimestamp then
+                                    addon:RecordRareKillTimestamp(nid)
+                                else
+                                    addon.KilledRareNpcIDsToday = addon.KilledRareNpcIDsToday or {}
+                                    addon.KilledRareNpcIDsToday[nid] = GetTime()
+                                end
                                 break
                             end
                         end

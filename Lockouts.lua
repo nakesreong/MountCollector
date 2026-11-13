@@ -991,6 +991,99 @@ function addon:RecordAttempt(mountID, sourceName, allowRapidMultiKill)
     end
 end
 
+-- Интервалы респавна для рарников без суточного КД (можно фармить повторно после респавна)
+local RareRespawnWindowByNpc = {
+    [32491]  = { ru = "2–8 ч.",      en = "2–8 hrs",    maxAge = 28800, noDailyLock = true }, -- Затерянный во времени протодракон
+    [50005]  = { ru = "4–8 ч.",      en = "4–8 hrs",    maxAge = 28800, noDailyLock = true }, -- Посейдус
+    [50062]  = { ru = "2–8 ч.",      en = "2–8 hrs",    maxAge = 28800, noDailyLock = true }, -- Эонакс
+    [50883]  = { ru = "2–8 ч.",      en = "2–8 hrs",    maxAge = 28800, noDailyLock = true }, -- Бегун
+    [50981]  = { ru = "2–8 ч.",      en = "2–8 hrs",    maxAge = 28800, noDailyLock = true }, -- Лук'хок
+    [50985]  = { ru = "48–96 ч.",    en = "48–96 hrs",  maxAge = 86400, noDailyLock = true }, -- Кулак
+    [50990]  = { ru = "2–8 ч.",      en = "2–8 hrs",    maxAge = 28800, noDailyLock = true }, -- Накк Громовержец
+    [50992]  = { ru = "2–8 ч.",      en = "2–8 hrs",    maxAge = 28800, noDailyLock = true }, -- Горок
+    [51015]  = { ru = "2–8 ч.",      en = "2–8 hrs",    maxAge = 28800, noDailyLock = true }, -- Шкурохлест
+    [69768]  = { ru = "30–60 мин.",  en = "30–60 min",  maxAge = 5400,  noDailyLock = true }, -- Зандаларский военный разведчик
+    [69769]  = { ru = "30–60 мин.",  en = "30–60 min",  maxAge = 5400,  noDailyLock = true }, -- Зандаларский завоеватель
+    [69841]  = { ru = "30–60 мин.",  en = "30–60 min",  maxAge = 5400,  noDailyLock = true }, -- Зандаларский завоеватель
+    [69842]  = { ru = "30–60 мин.",  en = "30–60 min",  maxAge = 5400,  noDailyLock = true }, -- Зандаларский завоеватель
+    [73167]  = { ru = "30–60 мин.",  en = "30–60 min",  maxAge = 5400,  noDailyLock = true }, -- Хуолон
+    [81001]  = { ru = "15–30 мин.",  en = "15–30 min",  maxAge = 3600,  noDailyLock = true }, -- Нок-Карош
+    [163042] = { ru = "1–2 ч.",      en = "1–2 hrs",    maxAge = 7200,  noDailyLock = true }, -- Слоновый облачный змей
+    [195353] = { ru = "60–120 мин.", en = "60–120 min", maxAge = 7200,  noDailyLock = true }, -- Ветрогрыз (Breezebiter)
+}
+
+function addon:RecordRareKillTimestamp(npcID)
+    if not npcID then return end
+    self.KilledRareNpcIDsToday = self.KilledRareNpcIDsToday or {}
+    self.KilledRareNpcIDsToday[npcID] = GetTime()
+    if self.db then
+        self.db.lastRareKills = self.db.lastRareKills or {}
+        self.db.lastRareKills[npcID] = time()
+    end
+end
+
+-- Получить текстовый обратный отсчёт для рарников без суточного КД: «Убит X мин. назад (респавн ~30–60 мин.)»
+function addon:GetRareRespawnTimerText(npcID)
+    if not npcID then return nil end
+    local rs = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
+    local primaryQid = (rs and type(rs.quests) == "table" and rs.quests[1]) or nil
+    local cfg = RareRespawnWindowByNpc[npcID]
+    -- Если у рарника есть суточный квест КД и он не входит в список многоразовых рарников — у него суточный лок, а не 30–60 мин таймер
+    if primaryQid and not (cfg and cfg.noDailyLock) then
+        return nil
+    end
+
+    local killedEpoch = self.db and self.db.lastRareKills and self.db.lastRareKills[npcID]
+    local elapsed = nil
+    if type(killedEpoch) == "number" and killedEpoch > 0 then
+        elapsed = time() - killedEpoch
+    elseif self.KilledRareNpcIDsToday and type(self.KilledRareNpcIDsToday[npcID]) == "number" then
+        elapsed = GetTime() - self.KilledRareNpcIDsToday[npcID]
+    end
+    if not elapsed or elapsed < 0 then return nil end
+
+    local maxAge = (cfg and cfg.maxAge) or 5400
+    if elapsed > maxAge then return nil end
+
+    local isRU = (self:GetActiveLocaleCode() == "ruRU")
+    local respWindow = (cfg and (isRU and cfg.ru or cfg.en)) or (isRU and "30–60 мин." or "30–60 min")
+    local minsAgo = math.max(1, math.floor(elapsed / 60 + 0.5))
+
+    if elapsed < 900 then
+        local hideLeft = math.max(1, math.ceil((900 - elapsed) / 60))
+        if isRU then
+            return string.format("|cffffaa00Убит %d мин. назад (респавн ~%s, метка через %d мин.)|r", minsAgo, respWindow, hideLeft), true
+        else
+            return string.format("|cffffaa00Killed %d min ago (respawn ~%s, pin in %d min)|r", minsAgo, respWindow, hideLeft), true
+        end
+    else
+        if isRU then
+            return string.format("|cffffd100Убит %d мин. назад (респавн ~%s)|r", minsAgo, respWindow), false
+        else
+            return string.format("|cffffd100Killed %d min ago (respawn ~%s)|r", minsAgo, respWindow), false
+        end
+    end
+end
+
+function addon:GetMountRespawnTimerText(mountID)
+    local info = mountID and self.DropInfoByMount and self.DropInfoByMount[mountID]
+    if not info or not info.npcs then return nil end
+    local bestText = nil
+    local bestElapsed = math.huge
+    for npcID in pairs(info.npcs) do
+        local txt = self:GetRareRespawnTimerText(npcID)
+        if txt then
+            local killedEpoch = self.db and self.db.lastRareKills and self.db.lastRareKills[npcID]
+            local el = (killedEpoch and (time() - killedEpoch)) or 0
+            if el >= 0 and el < bestElapsed then
+                bestElapsed = el
+                bestText = txt
+            end
+        end
+    end
+    return bestText
+end
+
 -- Проверить, убит ли уже сегодня конкретный рарник (по его индивидуальному скрытому daily questID или сессионному киллу)
 function addon:IsNpcLockedToday(npcID)
     if not npcID then
@@ -1008,11 +1101,23 @@ function addon:IsNpcLockedToday(npcID)
         end
     end
 
+    local isRepeatableTimerRare = (RareRespawnWindowByNpc[npcID] and RareRespawnWindowByNpc[npcID].noDailyLock) or (not primaryQid and npcID < 110000)
+
+    -- Проверяем сохранённый таймер последнего убийства для рарников без суточного КД (скрываем метку на 15 минут = 900 сек)
+    if isRepeatableTimerRare and self.db and self.db.lastRareKills and self.db.lastRareKills[npcID] then
+        local elapsedEpoch = time() - self.db.lastRareKills[npcID]
+        if elapsedEpoch >= 0 and elapsedEpoch < 900 then
+            return true, nil
+        end
+    end
+
     if self.KilledRareNpcIDsToday and self.KilledRareNpcIDsToday[npcID] then
         local killedAt = self.KilledRareNpcIDsToday[npcID]
-        -- Для рарников с суточным КД (или всех рарников актуальных дополнений npcID >= 110000) лок держится всю сессию;
-        -- для старых рарников без суточного квеста (например, Хуолон) скрываем метку на 15 минут после убийства до респавна
-        if primaryQid or npcID >= 110000 or type(killedAt) ~= "number" or (GetTime() - killedAt) < 900 then
+        if isRepeatableTimerRare then
+            if type(killedAt) == "number" and (GetTime() - killedAt) < 900 then
+                return true, nil
+            end
+        elseif primaryQid or npcID >= 110000 or type(killedAt) ~= "number" or (GetTime() - killedAt) < 900 then
             return true, primaryQid
         end
     end
@@ -1169,8 +1274,7 @@ function addon:CheckRecentlyKilledRares()
             local isLocked, lockQid = self:IsNpcLockedToday(npcID)
             if isLocked then
                 self.RecentlySpottedUnlockedRares[npcID] = nil
-                self.KilledRareNpcIDsToday = self.KilledRareNpcIDsToday or {}
-                self.KilledRareNpcIDsToday[npcID] = now
+                self:RecordRareKillTimestamp(npcID)
                 if lockQid then
                     self.CompletedRareQuestsSnapshot = self.CompletedRareQuestsSnapshot or {}
                     self.CompletedRareQuestsSnapshot[lockQid] = true

@@ -92,8 +92,12 @@ function addon:CheckUnitForMountDrop(unit, isRetry)
             local _, lockQid = self:IsNpcLockedToday(npcID)
             local isRareNpc = (self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID] ~= nil) or (lockQid ~= nil)
             if isRareNpc and self.RecentlySpottedUnlockedRares and self.RecentlySpottedUnlockedRares[npcID] then
-                self.KilledRareNpcIDsToday = self.KilledRareNpcIDsToday or {}
-                self.KilledRareNpcIDsToday[npcID] = GetTime()
+                if self.RecordRareKillTimestamp then
+                    self:RecordRareKillTimestamp(npcID)
+                else
+                    self.KilledRareNpcIDsToday = self.KilledRareNpcIDsToday or {}
+                    self.KilledRareNpcIDsToday[npcID] = GetTime()
+                end
             end
             if self.RefreshWorldMapPins then
                 self:RefreshWorldMapPins()

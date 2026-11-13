@@ -159,8 +159,14 @@ function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText, is
         end
 
         if not isCollected then
+            local respawnTimerText = self.GetMountRespawnTimerText and self:GetMountRespawnTimerText(mountID) or nil
             local locked, lockedCount, totalLockoutCount = self:IsMountRareLockedToday(mountID)
-            if locked then
+            if respawnTimerText then
+                tooltip:AddDoubleLine(
+                    L.TT_STATUS_TODAY,
+                    respawnTimerText
+                )
+            elseif locked then
                 tooltip:AddDoubleLine(
                     L.TT_STATUS_TODAY,
                     L.TT_LOCKED_TODAY
