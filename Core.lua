@@ -249,6 +249,11 @@ local KnownCharNameOverrides = {
 }
 
 local EnglishItemNames = {
+    [39878] = "Mysterious Egg",
+    [39883] = "Cracked Egg",
+    [94288] = "Giant Dinosaur Bone",
+    [94295] = "Primal Egg",
+    [94296] = "Cracked Primal Egg",
     [140495] = "Torn Invitation",
     [174858] = "Gersahl Greens",
     [174927] = "Zan-Tien Lasso",
@@ -268,14 +273,27 @@ local EnglishItemNames = {
     [225557] = "Vial of Tainteditha",
 }
 
+local RussianItemNames = {
+    [39878] = "Таинственное яйцо",
+    [39883] = "Треснувшее яйцо",
+    [94288] = "Исполинская кость динозавра",
+    [94295] = "Древнее яйцо",
+    [94296] = "Треснувшее древнее яйцо",
+}
+
 function addon:GetItemDisplayName(itemID)
     if not itemID or itemID <= 0 then return nil end
     if self:GetActiveLocaleCode() == "enUS" and EnglishItemNames[itemID] then
         return EnglishItemNames[itemID]
     end
-    return (C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID))
-        or EnglishItemNames[itemID]
-        or ("Item #" .. tostring(itemID))
+    local clientName = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID)
+    if clientName and clientName ~= "" then
+        return clientName
+    end
+    if self:GetActiveLocaleCode() == "ruRU" and RussianItemNames[itemID] then
+        return RussianItemNames[itemID]
+    end
+    return EnglishItemNames[itemID] or ("Item #" .. tostring(itemID))
 end
 
 function addon:LocalizeRealmName(realm)
@@ -958,6 +976,9 @@ eventFrame:RegisterEvent("QUEST_TURNED_IN")
 eventFrame:RegisterEvent("QUEST_ACCEPTED")
 eventFrame:RegisterEvent("ENCOUNTER_END")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+eventFrame:RegisterEvent("ZONE_CHANGED")
+eventFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
+eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
@@ -991,6 +1012,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             addon:SnapshotPreLockedRares()
             addon:ScanAllCharacterStatistics()
             addon:ScanCurrentCharacterLockouts()
+            if addon.CheckPortalRouteProgress then
+                addon:CheckPortalRouteProgress()
+            end
             if C_AddOns and C_AddOns.IsAddOnLoaded then
                 if C_AddOns.IsAddOnLoaded("Blizzard_Collections") and addon.HookMountJournal then
                     addon:HookMountJournal()
@@ -1027,10 +1051,21 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         addon:SnapshotPreLockedRares()
         addon:ScanAllActiveVignettes()
+        if addon.CheckPortalRouteProgress then
+            addon:CheckPortalRouteProgress()
+        end
         if addon.UpdateLDBText then
             addon:UpdateLDBText()
         end
         if addon.RefreshRadarUI then
+            addon:RefreshRadarUI()
+        end
+    elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" then
+        if addon.CheckPortalRouteProgress then
+            addon:CheckPortalRouteProgress()
+        end
+    elseif event == "BAG_UPDATE_DELAYED" then
+        if _G.MountCollectorRadarFrame and _G.MountCollectorRadarFrame:IsShown() and addon.RefreshRadarUI then
             addon:RefreshRadarUI()
         end
     elseif event == "PLAYER_REGEN_DISABLED" then
@@ -1075,6 +1110,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "LOOT_READY" then
         if GetNumLootItems and GetLootSourceInfo then
             local seenGuids = {}
+            addon.LootedCorpseGUIDs = addon.LootedCorpseGUIDs or {}
+            local now = GetTime()
             local numItems = GetNumLootItems() or 0
             for slot = 1, numItems do
                 local okSrc, srcInfo = pcall(function() return { GetLootSourceInfo(slot) } end)
@@ -1083,44 +1120,63 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                         local srcGuid = srcInfo[i]
                         if srcGuid and SafeNotSecret(srcGuid) and not seenGuids[srcGuid] then
                             seenGuids[srcGuid] = true
-                            local npcID = addon:GetNPCIDFromGUID(srcGuid)
-                            if npcID and addon.MountsByNpc[npcID] then
-                                local rs = addon.RareScannerNpcToMounts and addon.RareScannerNpcToMounts[npcID]
-                                local srcName = (addon.KnownNpcNames and addon.KnownNpcNames[npcID])
-                                    or (rs and rs.name and rs.name ~= "" and rs.name)
-                                    or ("NPC #" .. tostring(npcID))
-                                local isLocked, lockQid = addon:IsNpcLockedToday(npcID)
-                                local now = GetTime()
-                                local wasSpottedUnlocked = addon.RecentlySpottedUnlockedRares and addon.RecentlySpottedUnlockedRares[npcID] and ((now - addon.RecentlySpottedUnlockedRares[npcID]) < 600)
-                                local wasNotPreCompleted = lockQid and (not addon.CompletedRareQuestsSnapshot or addon.CompletedRareQuestsSnapshot[lockQid] ~= true)
-                                if isLocked and (wasSpottedUnlocked or wasNotPreCompleted) then
-                                    if addon.RecentlySpottedUnlockedRares then
-                                        addon.RecentlySpottedUnlockedRares[npcID] = nil
-                                    end
-                                    if lockQid then
-                                        addon.CompletedRareQuestsSnapshot = addon.CompletedRareQuestsSnapshot or {}
-                                        addon.CompletedRareQuestsSnapshot[lockQid] = true
-                                        addon.JustCompletedLockoutQuestAt = addon.JustCompletedLockoutQuestAt or {}
-                                        addon.JustCompletedLockoutQuestAt[lockQid] = now
-                                    end
-                                end
-                                local justTurnedIn = lockQid and addon.JustCompletedLockoutQuestAt and addon.JustCompletedLockoutQuestAt[lockQid] and ((now - addon.JustCompletedLockoutQuestAt[lockQid]) < 120)
-                                if isLocked and not justTurnedIn then
-                                    addon.SkipLockoutNoticeAt = addon.SkipLockoutNoticeAt or {}
-                                    if not addon.SkipLockoutNoticeAt[npcID] or (now - addon.SkipLockoutNoticeAt[npcID]) > 60 then
-                                        addon.SkipLockoutNoticeAt[npcID] = now
-                                        if addon.db and addon.db.settings and addon.db.settings.announceAttempts then
-                                            print(string.format(L.CHAT_ATTEMPT_SKIPPED_LOCKOUT, srcName))
+                            local alreadyLootedCorpse = addon.LootedCorpseGUIDs[srcGuid] and ((now - addon.LootedCorpseGUIDs[srcGuid]) < 300)
+                            if not alreadyLootedCorpse then
+                                addon.LootedCorpseGUIDs[srcGuid] = now
+                                local npcID = addon:GetNPCIDFromGUID(srcGuid)
+                                if npcID and addon.MountsByNpc[npcID] then
+                                    local rs = addon.RareScannerNpcToMounts and addon.RareScannerNpcToMounts[npcID]
+                                    local srcName = (addon.KnownNpcNames and addon.KnownNpcNames[npcID])
+                                        or (rs and rs.name and rs.name ~= "" and rs.name)
+                                        or ("NPC #" .. tostring(npcID))
+                                    local isLocked, lockQid = addon:IsNpcLockedToday(npcID)
+                                    local wasSpottedUnlocked = addon.RecentlySpottedUnlockedRares and addon.RecentlySpottedUnlockedRares[npcID] and ((now - addon.RecentlySpottedUnlockedRares[npcID]) < 600)
+                                    local wasNotPreCompleted = lockQid and (not addon.CompletedRareQuestsSnapshot or addon.CompletedRareQuestsSnapshot[lockQid] ~= true)
+                                    if isLocked and (wasSpottedUnlocked or wasNotPreCompleted) then
+                                        if addon.RecentlySpottedUnlockedRares then
+                                            addon.RecentlySpottedUnlockedRares[npcID] = nil
+                                        end
+                                        if lockQid then
+                                            addon.CompletedRareQuestsSnapshot = addon.CompletedRareQuestsSnapshot or {}
+                                            addon.CompletedRareQuestsSnapshot[lockQid] = true
+                                            addon.JustCompletedLockoutQuestAt = addon.JustCompletedLockoutQuestAt or {}
+                                            addon.JustCompletedLockoutQuestAt[lockQid] = now
                                         end
                                     end
-                                else
-                                    for _, mountID in ipairs(addon.MountsByNpc[npcID]) do
-                                        addon:RecordAttempt(mountID, srcName)
+                                    local justTurnedIn = lockQid and addon.JustCompletedLockoutQuestAt and addon.JustCompletedLockoutQuestAt[lockQid] and ((now - addon.JustCompletedLockoutQuestAt[lockQid]) < 120)
+                                    if isLocked and not justTurnedIn then
+                                        addon.SkipLockoutNoticeAt = addon.SkipLockoutNoticeAt or {}
+                                        if not addon.SkipLockoutNoticeAt[npcID] or (now - addon.SkipLockoutNoticeAt[npcID]) > 60 then
+                                            addon.SkipLockoutNoticeAt[npcID] = now
+                                            if addon.db and addon.db.settings and addon.db.settings.announceAttempts then
+                                                print(string.format(L.CHAT_ATTEMPT_SKIPPED_LOCKOUT, srcName))
+                                            end
+                                        end
+                                    else
+                                        for _, mountID in ipairs(addon.MountsByNpc[npcID]) do
+                                            local hasEgg, _, _, eggName = addon:HasUniqueIncubationEggOnChar(mountID)
+                                            if hasEgg then
+                                                addon.SkipEggLockoutNoticeAt = addon.SkipEggLockoutNoticeAt or {}
+                                                if not addon.SkipEggLockoutNoticeAt[mountID] or (now - addon.SkipEggLockoutNoticeAt[mountID]) > 90 then
+                                                    addon.SkipEggLockoutNoticeAt[mountID] = now
+                                                    if addon.db and addon.db.settings and addon.db.settings.announceAttempts then
+                                                        local isRU = (addon:GetActiveLocaleCode() == "ruRU")
+                                                        if isRU then
+                                                            print(string.format("|cff00ccff[MountCollector]|r Килл (%s) не засчитан в траи ящеров из яйца: у вас уже есть Уникальное |cffffd100[%s]|r (новое яйцо не упадёт, пока это не вылупится!).", srcName, tostring(eggName)))
+                                                        else
+                                                            print(string.format("|cff00ccff[MountCollector]|r Kill (%s) not counted toward egg mounts: you already hold a Unique |cffffd100[%s]|r (another cannot drop until it hatches!).", srcName, tostring(eggName)))
+                                                        end
+                                                    end
+                                                end
+                                            else
+                                                addon:RecordAttempt(mountID, srcName, not lockQid)
+                                            end
+                                        end
+                                        if addon.RefreshWorldMapPins then
+                                            addon:RefreshWorldMapPins()
+                                        end
+                                        addon:SyncActiveTourAfterKillOrAlert()
                                     end
-                                    if addon.RefreshWorldMapPins then
-                                        addon:RefreshWorldMapPins()
-                                    end
-                                    addon:SyncActiveTourAfterKillOrAlert()
                                 end
                             end
                         end

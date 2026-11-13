@@ -63,8 +63,8 @@ function addon:GetQuestObjectivesText(questID)
     return nil
 end
 
--- Получить количество предмета в сумках/банке или статус игрушки
-function addon:GetRequirementItemCount(itemID)
+-- Получить количество предмета в сумках/банке/банке отряда или статус игрушки
+function addon:GetRequirementItemCount(itemID, charOnly)
     if not itemID or itemID <= 0 then return 0, nil end
     local itemName = (self.GetItemDisplayName and self:GetItemDisplayName(itemID))
         or (C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID))
@@ -74,7 +74,7 @@ function addon:GetRequirementItemCount(itemID)
     end
     local count = 0
     if C_Item and C_Item.GetItemCount then
-        local ok, c = pcall(C_Item.GetItemCount, itemID, true, false, true)
+        local ok, c = pcall(C_Item.GetItemCount, itemID, true, false, not charOnly, not charOnly)
         if ok and type(c) == "number" then
             count = c
         end
@@ -82,6 +82,28 @@ function addon:GetRequirementItemCount(itemID)
         count = GetItemCount(itemID, true) or 0
     end
     return count, itemName
+end
+
+-- Маунты, вылупляющиеся из УНИКАЛЬНЫХ инкубационных яиц (пока одно яйцо зреет 3 дня в сумке/банке персонажа, новое упасть НЕ МОЖЕТ!)
+local UniqueIncubationEggByMount = {
+    [538] = { rawEggID = 94295, crackedEggID = 94296, days = 3 }, -- Красный перворожденный ящер (Red Primal Raptor)
+    [539] = { rawEggID = 94295, crackedEggID = 94296, days = 3 }, -- Черный перворожденный ящер (Black Primal Raptor)
+    [540] = { rawEggID = 94295, crackedEggID = 94296, days = 3 }, -- Зеленый перворожденный ящер (Green Primal Raptor)
+    [265] = { rawEggID = 39878, crackedEggID = 39883, days = 3 }, -- Зеленый протодракон (Green Proto-Drake)
+}
+
+function addon:HasUniqueIncubationEggOnChar(mountID)
+    local cfg = mountID and UniqueIncubationEggByMount[mountID]
+    if not cfg then return false, nil, nil, nil, nil end
+    local crackedCnt, crackedName = self:GetRequirementItemCount(cfg.crackedEggID, true)
+    if crackedCnt and crackedCnt > 0 then
+        return true, "CRACKED", cfg.crackedEggID, crackedName, cfg
+    end
+    local rawCnt, rawName = self:GetRequirementItemCount(cfg.rawEggID, true)
+    if rawCnt and rawCnt > 0 then
+        return true, "INCUBATING", cfg.rawEggID, rawName, cfg
+    end
+    return false, nil, cfg.rawEggID, rawName, cfg
 end
 
 -- Оценка статуса пошаговой квестовой цепочки маунта через Lua API
@@ -327,6 +349,48 @@ function addon:GetMountSpecialConditions(mountID)
     local isRU = (self:GetActiveLocaleCode() == "ruRU")
     local lines = {}
     local lockedToday = self:IsMountRareLockedToday(mountID)
+
+    -- 0. Проверка 3-дневного КД Уникального инкубационного яйца (например, «Древнее яйцо» #94295 на Острове Великанов)
+    local hasEgg, eggState, eggItemID, eggName, eggCfg = self:HasUniqueIncubationEggOnChar(mountID)
+    if eggCfg then
+        if hasEgg and eggState == "INCUBATING" then
+            if isRU then
+                table.insert(lines, string.format(
+                    "|cffff5555Статус КД яйца (Lua): ЗАБЛОКИРОВАНО (%d дн.) — в сумке/банке уже лежит Уникальное «%s» (#%d)!|r\n|cffffaa00Пока это яйцо не вылупится, второе яйцо этому персонажу упасть НЕ МОЖЕТ (счётчик киллов динозавров на паузе).|r",
+                    eggCfg.days or 3, tostring(eggName), eggItemID
+                ))
+            else
+                table.insert(lines, string.format(
+                    "|cffff5555Egg Lockout Status (Lua): LOCKED (%d days) — Unique '%s' (#%d) is already in your bags/bank!|r\n|cffffaa00Another egg CANNOT drop on this character until it hatches (dinosaur kill counter paused).|r",
+                    eggCfg.days or 3, tostring(eggName), eggItemID
+                ))
+            end
+        elseif hasEgg and eggState == "CRACKED" then
+            if isRU then
+                table.insert(lines, string.format(
+                    "|cff00ff96Статус яйца (Lua): «%s» (#%d) СОЗРЕЛО В СУМКЕ! Откройте его прямо сейчас (пока оно в сумке, новое яйцо не упадёт)!|r",
+                    tostring(eggName), eggItemID
+                ))
+            else
+                table.insert(lines, string.format(
+                    "|cff00ff96Egg Status (Lua): '%s' (#%d) has HATCHED in your bags! Open it now (another egg cannot drop while you hold it)!|r",
+                    tostring(eggName), eggItemID
+                ))
+            end
+        else
+            if isRU then
+                table.insert(lines, string.format(
+                    "|cff00ff96Статус яйца (Lua): СВОБОДНО — Уникального «%s» (#%d) в сумке/банке нет, можно выбивать!|r",
+                    tostring(eggName), eggItemID
+                ))
+            else
+                table.insert(lines, string.format(
+                    "|cff00ff96Egg Status (Lua): AVAILABLE — No Unique '%s' (#%d) in bags/bank, ready to farm!|r",
+                    tostring(eggName), eggItemID
+                ))
+            end
+        end
+    end
 
     -- 1. Запись в SpecialMountConditionsDB
     local spec = self.SpecialMountConditionsDB and self.SpecialMountConditionsDB[mountID]
@@ -682,6 +746,18 @@ function addon:ScanAllCharacterStatistics()
                     end
                 end
             end
+        elseif info.method == "COLLECTION" and type(info.sourceItems) == "table" and #info.sourceItems == 1 then
+            -- Для маунтов за сбор валюты/предметов (например, 9 999 Исполинских костей динозавра #94288 для Ящера цвета кости #537)
+            -- синхронизируем счётчик прогресса с реальным количеством собранных предметов в сумках/банке/банке отряда
+            local colCount = self:GetRequirementItemCount(info.sourceItems[1])
+            if colCount > 0 then
+                record = record or { total = 0, byChar = {} }
+                record.byChar = record.byChar or {}
+                record.byChar[charKey] = colCount
+                if not record.manualTotal then
+                    record.total = colCount
+                end
+            end
         elseif info.quests and #info.quests > 0 and C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
             -- Если это рарник(и) с суточными квестами КД, проверяем, сколько из них уже закрыто СЕГОДНЯ на текущем персонаже
             local doneTodayOnChar = 0
@@ -752,6 +828,22 @@ function addon:GetMountAttempts(mountID)
     local info = self.DropInfoByMount[mountID]
     local record = self.db.attempts[mountID]
 
+    if info and info.method == "COLLECTION" and type(info.sourceItems) == "table" and #info.sourceItems == 1 then
+        local colCount = self:GetRequirementItemCount(info.sourceItems[1])
+        local charKey = self:GetCharKey()
+        record = record or { total = 0, byChar = {} }
+        record.byChar = record.byChar or {}
+        if colCount > 0 then
+            record.byChar[charKey] = colCount
+            if not record.manualTotal then
+                record.total = colCount
+            end
+            self.db.attempts[mountID] = record
+        end
+        local finalCol = (record.manualTotal and math.max(record.manualTotal, colCount)) or math.max(colCount, record.total or 0)
+        return finalCol, record.byChar, info
+    end
+
     local mcTotal = 0
     local byCharSum = 0
     if record then
@@ -820,18 +912,33 @@ function addon:GetMountAttempts(mountID)
     return finalAttempts, record and record.byChar or nil, info
 end
 
-function addon:RecordAttempt(mountID, sourceName)
+function addon:RecordAttempt(mountID, sourceName, allowRapidMultiKill)
     if not mountID or not self.db then return end
     local name, _, _, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
     if isCollected then return end
 
-    local now = GetTime()
-    if self.RecentAttemptLock[mountID] and (now - self.RecentAttemptLock[mountID]) < 90 then
+    local info = self.DropInfoByMount[mountID]
+    -- Для маунтов за сбор предметов (например, 9 999 костей динозавра) прогресс равен числу предметов, а не киллов
+    if info and info.method == "COLLECTION" and type(info.sourceItems) == "table" and #info.sourceItems == 1 then
+        self:GetMountAttempts(mountID)
+        if self.UpdateLDBText then self:UpdateLDBText() end
+        if self.RefreshRadarUI then self:RefreshRadarUI() end
         return
+    end
+
+    -- Если у персонажа уже лежит Уникальное инкубационное яйцо (например, «Древнее яйцо» #94295), новое яйцо упасть не может!
+    if self:HasUniqueIncubationEggOnChar(mountID) then
+        return
+    end
+
+    local now = GetTime()
+    if not allowRapidMultiKill then
+        if self.RecentAttemptLock[mountID] and (now - self.RecentAttemptLock[mountID]) < 90 then
+            return
+        end
     end
     self.RecentAttemptLock[mountID] = now
 
-    local info = self.DropInfoByMount[mountID]
     local prevTotal = self:GetMountAttempts(mountID)
     local record = self.db.attempts[mountID] or { total = 0, byChar = {} }
     local charKey = self:GetCharKey()
@@ -859,7 +966,9 @@ function addon:RecordAttempt(mountID, sourceName)
     local luckPct = (1 - math.pow(1 - (1 / chance), record.total)) * 100
 
     local rarityAlreadyAnnounces = (_G.Rarity and rEntry and _G.Rarity.db and _G.Rarity.db.profile and _G.Rarity.db.profile.enableAnnouncements ~= false)
-    if self.db.settings.announceAttempts and not rarityAlreadyAnnounces then
+    self.LastAttemptChatAt = self.LastAttemptChatAt or {}
+    if self.db.settings.announceAttempts and not rarityAlreadyAnnounces and (not self.LastAttemptChatAt[mountID] or (now - self.LastAttemptChatAt[mountID]) > 2.5) then
+        self.LastAttemptChatAt[mountID] = now
         print(string.format(
             L.CHAT_ATTEMPT_RECORDED,
             record.total,
@@ -914,6 +1023,9 @@ end
 
 -- Проверить, закрыты ли на сегодня рарники для маунта (возвращает: allLocked, doneCount, totalCount)
 function addon:IsMountRareLockedToday(mountID)
+    if self:HasUniqueIncubationEggOnChar(mountID) then
+        return true, 1, 1
+    end
     local info = self.DropInfoByMount[mountID]
     if not info or not info.quests or #info.quests == 0 then
         return false, 0, 0

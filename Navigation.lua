@@ -125,7 +125,632 @@ function addon:GetBestMountCoords(mountID, preferredMapID)
     return nil
 end
 
--- Поставить метку на карте и 3D-стрелку (Blizzard UserWaypoint + SuperTrack + TomTom)
+-- ============================================================================
+-- МНОГОШАГОВЫЙ НАВИГАТОР ПО ПОРТАЛАМ И ВЫХОДАМ ИЗ ЗОН (Minimap Arrow + TomTom)
+-- Ведёт стрелочкой на миникарте к выходу из текущей зоны -> через портал в столицу
+-- -> через портал в целевой континент -> к маунту, рарнику или квестовому NPC!
+-- ============================================================================
+addon.activePortalRoute = nil
+addon.portalTomTomUids = {}
+
+local function GetMapAncestry(mapID)
+    local chain = {}
+    local visited = {}
+    local cur = mapID
+    while cur and cur > 0 and not visited[cur] do
+        visited[cur] = true
+        table.insert(chain, cur)
+        local info = C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(cur)
+        cur = info and info.parentMapID or nil
+    end
+    return chain, visited
+end
+
+local function GetMapInstanceID(mapID)
+    if not mapID or not C_Map or not C_Map.GetWorldPosFromMapPos or not _G.CreateVector2D then
+        return nil
+    end
+    local ok, instID = pcall(C_Map.GetWorldPosFromMapPos, mapID, CreateVector2D(0.5, 0.5))
+    if ok and instID then
+        return instID
+    end
+    return nil
+end
+
+local function GetMapMacroRegion(mapID)
+    if not mapID then return "UNKNOWN" end
+    local _, ancestors = GetMapAncestry(mapID)
+
+    -- Изолированные подзоны, требующие отдельного выхода:
+    if mapID == 2413 or mapID == 2576 or ancestors[2413] then return "HARANDAR" end
+    if mapID == 2405 or ancestors[2405] then return "VOIDSTORM" end
+    if mapID == 2200 or ancestors[2200] then return "EMERALD_DREAM" end
+    if mapID == 2133 or ancestors[2133] then return "ZARALEK" end
+
+    -- Midnight (Кель'Талас 2537 / Луносвет 2393, 2605 / Леса Вечной Песни 2395, 2594 / Зул'Аман 2437)
+    if mapID == 2393 or mapID == 2605 or mapID == 2395 or mapID == 2594 or mapID == 2437 or mapID == 2537
+        or ancestors[2393] or ancestors[2395] or ancestors[2437] or ancestors[2537] or ancestors[2424]
+    then
+        return "MIDNIGHT_QUELTHALAS"
+    end
+    -- Каз Алгар (TWW)
+    if mapID == 2339 or ancestors[2274] or ancestors[2248] or ancestors[2214] or ancestors[2215] or ancestors[2255] then
+        return "KHAZ_ALGAR"
+    end
+    -- Драконьи острова (Dragonflight)
+    if mapID == 2112 or ancestors[1978] or ancestors[2022] or ancestors[2023] or ancestors[2024] or ancestors[2025] or ancestors[2151] then
+        return "DRAGON_ISLES"
+    end
+    -- Темные Земли (Shadowlands)
+    if mapID == 1670 or ancestors[1550] or ancestors[1525] or ancestors[1533] or ancestors[1536] or ancestors[1565] or ancestors[1543] or ancestors[1961] or ancestors[1970] then
+        return "SHADOWLANDS"
+    end
+    -- Зандалар и Кул-Тирас (BfA)
+    if mapID == 1165 or ancestors[875] or ancestors[862] or ancestors[863] or ancestors[864] then
+        return "ZANDALAR"
+    end
+    if mapID == 1161 or ancestors[876] or ancestors[895] or ancestors[896] or ancestors[942] then
+        return "KUL_TIRAS"
+    end
+    -- Расколотые острова и Аргус (Legion)
+    if mapID == 627 or ancestors[619] or ancestors[630] or ancestors[641] or ancestors[650] or ancestors[634] or ancestors[680] or ancestors[646] then
+        return "BROKEN_ISLES"
+    end
+    if ancestors[905] or mapID == 830 or mapID == 882 or mapID == 885 then
+        return "ARGUS"
+    end
+    -- Дренор (WoD)
+    if ancestors[572] or mapID == 525 or mapID == 534 or mapID == 535 or mapID == 539 or mapID == 542 or mapID == 543 or mapID == 550 then
+        return "DRAENOR"
+    end
+    -- Пандария (MoP — включая Остров Великанов 507, Остров Грома 504, Вневременный остров 554, Нефритовый лес 371 и др.)
+    if ancestors[424] or mapID == 371 or mapID == 507 or mapID == 504 or mapID == 554 or mapID == 376 or mapID == 379 or mapID == 388 or mapID == 390 or mapID == 418 or mapID == 422 then
+        return "PANDARIA"
+    end
+    -- Запределье (TBC)
+    if ancestors[101] or mapID == 111 then
+        return "OUTLAND"
+    end
+    -- Нордскол (WotLK)
+    if ancestors[113] or mapID == 125 then
+        return "NORTHREND"
+    end
+    -- Калимдор и Восточные королевства
+    if ancestors[12] or mapID == 85 then
+        return "KALIMDOR"
+    end
+    if ancestors[13] or mapID == 84 then
+        return "EASTERN_KINGDOMS"
+    end
+    return "OTHER_" .. tostring(mapID)
+end
+
+local function FindDynamicExitOrPortalOnMap(mapID, preferredKeywords, isRU)
+    if not mapID then return nil end
+    if C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIForMap and C_AreaPoiInfo.GetAreaPOIInfo then
+        local ok, poiIDs = pcall(C_AreaPoiInfo.GetAreaPOIForMap, mapID)
+        if ok and type(poiIDs) == "table" then
+            local bestMatch = nil
+            for _, poiID in ipairs(poiIDs) do
+                local okInfo, info = pcall(C_AreaPoiInfo.GetAreaPOIInfo, mapID, poiID)
+                if okInfo and info and info.position then
+                    local nameLow = string.lower((SafeNotSecret(info.name) and info.name) or "")
+                    local descLow = string.lower((SafeNotSecret(info.description) and info.description) or "")
+                    local atlasLow = string.lower((SafeNotSecret(info.atlasName) and info.atlasName) or "")
+                    local combined = nameLow .. " " .. descLow .. " " .. atlasLow
+                    local x, y = info.position:GetXY()
+                    if x and y and x > 0 and y > 0 then
+                        if preferredKeywords then
+                            for _, kw in ipairs(preferredKeywords) do
+                                if string.find(combined, kw, 1, true) then
+                                    return x * 100, y * 100, (SafeNotSecret(info.name) and info.name) or (isRU and "Портал / Выход" or "Portal / Exit")
+                                end
+                            end
+                        end
+                        if string.find(combined, "portal", 1, true)
+                            or string.find(combined, "портал", 1, true)
+                            or string.find(combined, "teleporter", 1, true)
+                            or string.find(combined, "телепорт", 1, true)
+                            or string.find(combined, "waygate", 1, true)
+                            or string.find(combined, "оргриммар", 1, true)
+                            or string.find(combined, "штормград", 1, true)
+                            or string.find(combined, "луносвет", 1, true)
+                            or string.find(combined, "silvermoon", 1, true)
+                        then
+                            bestMatch = { x = x * 100, y = y * 100, note = (SafeNotSecret(info.name) and info.name) or (isRU and "Портал" or "Portal") }
+                        end
+                    end
+                end
+            end
+            if bestMatch then
+                return bestMatch.x, bestMatch.y, bestMatch.note
+            end
+        end
+    end
+
+    if C_Map and C_Map.GetMapLinksForMap then
+        local ok, links = pcall(C_Map.GetMapLinksForMap, mapID)
+        if ok and type(links) == "table" and #links > 0 then
+            for _, link in ipairs(links) do
+                if link.position then
+                    local x, y = link.position:GetXY()
+                    local linkName = (SafeNotSecret(link.name) and link.name) or (isRU and "Выход из зоны" or "Zone Exit")
+                    if x and y and x > 0 and y > 0 then
+                        return x * 100, y * 100, (isRU and "Выход: " or "Exit: ") .. linkName
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function ResolvePinnableMapCoords(mapID, normX, normY)
+    if not mapID or not C_Map or not C_Map.CanSetUserWaypointOnMap then
+        return mapID, normX, normY
+    end
+    local ok, canSet = pcall(C_Map.CanSetUserWaypointOnMap, mapID)
+    if ok and canSet then
+        return mapID, normX, normY
+    end
+    if not C_Map.GetMapInfo or not C_Map.GetWorldPosFromMapPos or not C_Map.GetMapPosFromWorldPos or not _G.CreateVector2D then
+        return mapID, normX, normY
+    end
+    local curMap = mapID
+    for _ = 1, 5 do
+        local info = C_Map.GetMapInfo(curMap)
+        if not info or not info.parentMapID or info.parentMapID == 0 or info.parentMapID == curMap then break end
+        local parentID = info.parentMapID
+        local okP, canParent = pcall(C_Map.CanSetUserWaypointOnMap, parentID)
+        if okP and canParent then
+            local okW, instID, worldPos = pcall(C_Map.GetWorldPosFromMapPos, mapID, CreateVector2D(normX, normY))
+            if okW and instID and worldPos then
+                local okM, _, parentPos = pcall(C_Map.GetMapPosFromWorldPos, instID, worldPos, parentID)
+                if okM and parentPos then
+                    local px, py = parentPos:GetXY()
+                    if px and py and px > 0 and px < 1 and py > 0 and py < 1 then
+                        return parentID, px, py
+                    end
+                end
+            end
+        end
+        curMap = parentID
+    end
+    return mapID, normX, normY
+end
+
+function addon:BuildMultiHopRoute(targetMapID, targetX, targetY, targetName, targetZone, targetNote)
+    local isRU = (self:GetActiveLocaleCode() == "ruRU")
+    local steps = {}
+    local playerMapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    if not playerMapID or playerMapID == targetMapID then
+        table.insert(steps, {
+            mapID = targetMapID,
+            x = targetX,
+            y = targetY,
+            zone = targetZone,
+            note = targetNote or targetName,
+        })
+        return steps
+    end
+
+    local playerRegion = GetMapMacroRegion(playerMapID)
+    local targetRegion = GetMapMacroRegion(targetMapID)
+    local playerInstID = GetMapInstanceID(playerMapID)
+    local targetInstID = GetMapInstanceID(targetMapID)
+
+    if (playerRegion == targetRegion or (playerInstID and targetInstID and playerInstID == targetInstID and playerRegion == targetRegion))
+        and playerRegion ~= "HARANDAR" and targetRegion ~= "HARANDAR"
+        and playerRegion ~= "VOIDSTORM" and targetRegion ~= "VOIDSTORM"
+        and playerRegion ~= "EMERALD_DREAM" and targetRegion ~= "EMERALD_DREAM"
+    then
+        table.insert(steps, {
+            mapID = targetMapID,
+            x = targetX,
+            y = targetY,
+            zone = targetZone,
+            note = targetNote or targetName,
+        })
+        return steps
+    end
+
+    local isAlliance = (UnitFactionGroup("player") == "Alliance")
+    local capMapID   = isAlliance and 84 or 85
+    local capName    = isRU
+        and (isAlliance and "Зал порталов Штормграда" or "Зал порталов Оргриммара")
+        or (isAlliance and "Stormwind Portal Room" or "Orgrimmar Portal Room")
+    local capX       = isAlliance and 48.7 or 57.3
+    local capY       = isAlliance and 88.1 or 89.7
+    local capRegion  = isAlliance and "EASTERN_KINGDOMS" or "KALIMDOR"
+
+    -- ЭТАП А: ВЫХОД ИЗ ТЕКУЩЕЙ ЗОНЫ / ЭКСПАНШЕНА В ЗАЛ ПОРТАЛОВ СТОЛИЦЫ
+    if playerRegion == "HARANDAR" then
+        table.insert(steps, {
+            mapID = 2413,
+            x = 53.3,
+            y = 55.5,
+            subMapID = 2576,
+            subX = 64.5,
+            subY = 71.4,
+            zone = isRU and "Харандар (Логово)" or "Harandar (The Den)",
+            note = isRU and "Корнистый путь в леса Вечной Песни / Луносвет (Логово, нижний ярус)" or "Rootway to Eversong Woods / Silvermoon (The Den, lower tier)",
+        })
+        if targetRegion ~= "MIDNIGHT_QUELTHALAS" then
+            table.insert(steps, {
+                mapID = 2395,
+                x = isAlliance and 52.6 or 52.5,
+                y = isAlliance and 25.5 or 25.7,
+                subMapID = 2393,
+                subX = isAlliance and 52.6 or 52.2,
+                subY = isAlliance and 64.5 or 65.2,
+                zone = isRU and "Луносвет" or "Silvermoon City",
+                note = isRU
+                    and (isAlliance and "Зал с порталами Луносвета: Портал в Штормград (52.6, 64.5)" or "Зал с порталами Луносвета: Портал в Оргриммар (52.2, 65.2)")
+                    or (isAlliance and "Silvermoon Portal Room: Portal to Stormwind (52.6, 64.5)" or "Silvermoon Portal Room: Portal to Orgrimmar (52.2, 65.2)"),
+            })
+        end
+    elseif playerRegion == "VOIDSTORM" then
+        local dx, dy, dnote = FindDynamicExitOrPortalOnMap(playerMapID, { "луносвет", "silvermoon", "portal", "портал", "выход" }, isRU)
+        table.insert(steps, {
+            mapID = playerMapID,
+            x = dx or 50.0,
+            y = dy or 50.0,
+            zone = isRU and "Буря Бездны" or "Voidstorm",
+            note = dnote or (isRU and "Портал из Бури Бездны в Луносвет" or "Portal from Voidstorm to Silvermoon"),
+        })
+        if targetRegion ~= "MIDNIGHT_QUELTHALAS" then
+            table.insert(steps, {
+                mapID = 2395,
+                x = isAlliance and 52.6 or 52.5,
+                y = isAlliance and 25.5 or 25.7,
+                subMapID = 2393,
+                subX = isAlliance and 52.6 or 52.2,
+                subY = isAlliance and 64.5 or 65.2,
+                zone = isRU and "Луносвет" or "Silvermoon City",
+                note = isRU
+                    and (isAlliance and "Зал с порталами Луносвета: Портал в Штормград (52.6, 64.5)" or "Зал с порталами Луносвета: Портал в Оргриммар (52.2, 65.2)")
+                    or (isAlliance and "Silvermoon Portal Room: Portal to Stormwind (52.6, 64.5)" or "Silvermoon Portal Room: Portal to Orgrimmar (52.2, 65.2)"),
+            })
+        end
+    elseif playerRegion == "MIDNIGHT_QUELTHALAS" then
+        table.insert(steps, {
+            mapID = 2395,
+            x = isAlliance and 52.6 or 52.5,
+            y = isAlliance and 25.5 or 25.7,
+            subMapID = 2393,
+            subX = isAlliance and 52.6 or 52.2,
+            subY = isAlliance and 64.5 or 65.2,
+            zone = isRU and "Луносвет" or "Silvermoon City",
+            note = isRU
+                and (isAlliance and "Зал с порталами Луносвета: Портал в Штормград (52.6, 64.5)" or "Зал с порталами Луносвета: Портал в Оргриммар (52.2, 65.2)")
+                or (isAlliance and "Silvermoon Portal Room: Portal to Stormwind (52.6, 64.5)" or "Silvermoon Portal Room: Portal to Orgrimmar (52.2, 65.2)"),
+        })
+    elseif playerRegion == "KHAZ_ALGAR" then
+        table.insert(steps, {
+            mapID = 2339,
+            x = 41.9,
+            y = 28.3,
+            zone = isRU and "Дорногал" or "Dornogal",
+            note = isRU
+                and (isAlliance and "Комната порталов Дорногала: Портал в Штормград" or "Комната порталов Дорногала: Портал в Оргриммар")
+                or (isAlliance and "Dornogal Portal Room: Portal to Stormwind" or "Dornogal Portal Room: Portal to Orgrimmar"),
+        })
+    elseif playerRegion == "EMERALD_DREAM" then
+        table.insert(steps, {
+            mapID = 2200,
+            x = 62.7,
+            y = 57.6,
+            zone = isRU and "Изумрудный Сон" or "Emerald Dream",
+            note = isRU and "Портал выхода из Изумрудного Сна (Древняя Ветвь)" or "Emerald Dream Exit Portal (Ancient Bough)",
+        })
+        if targetRegion ~= "DRAGON_ISLES" then
+            table.insert(steps, {
+                mapID = 2112,
+                x = 57.9,
+                y = 35.3,
+                zone = isRU and "Вальдраккен" or "Valdrakken",
+                note = isRU and "Престол Аспектов (Вальдраккен): Портал в столицу" or "The Seat of the Aspects (Valdrakken): Capital Portal",
+            })
+        end
+    elseif playerRegion == "DRAGON_ISLES" then
+        table.insert(steps, {
+            mapID = 2112,
+            x = 57.9,
+            y = 35.3,
+            zone = isRU and "Вальдраккен" or "Valdrakken",
+            note = isRU and "Престол Аспектов (Вальдраккен): Портал в столицу" or "The Seat of the Aspects (Valdrakken): Capital Portal",
+        })
+    elseif playerRegion == "SHADOWLANDS" then
+        table.insert(steps, {
+            mapID = 1670,
+            x = 22.4,
+            y = 50.2,
+            zone = isRU and "Орибос" or "Oribos",
+            note = isRU and "Портал в столицу (Кольцо Судеб, Орибос)" or "Capital Portal (Ring of Fates, Oribos)",
+        })
+    elseif playerRegion == "ZANDALAR" then
+        table.insert(steps, {
+            mapID = 1165,
+            x = 49.9,
+            y = 85.0,
+            zone = isRU and "Дазар'алор" or "Dazar'alor",
+            note = isRU and "Комната порталов в Оргриммар (Великая Печать)" or "Portal Room to Orgrimmar (The Great Seal)",
+        })
+    elseif playerRegion == "KUL_TIRAS" then
+        table.insert(steps, {
+            mapID = 1161,
+            x = 70.4,
+            y = 16.8,
+            zone = isRU and "Боралус" or "Boralus",
+            note = isRU and "Комната порталов в Штормград (Боралус)" or "Portal Room to Stormwind (Boralus)",
+        })
+    elseif playerRegion == "BROKEN_ISLES" then
+        table.insert(steps, {
+            mapID = 627,
+            x = isAlliance and 39.5 or 55.3,
+            y = isAlliance and 63.2 or 24.0,
+            zone = isRU and "Даларан" or "Dalaran",
+            note = isRU
+                and (isAlliance and "Портал в Штормград (Даларан)" or "Портал в Оргриммар (Даларан)")
+                or (isAlliance and "Portal to Stormwind (Dalaran)" or "Portal to Orgrimmar (Dalaran)"),
+        })
+    elseif playerRegion == "PANDARIA" then
+        table.insert(steps, {
+            mapID = 371,
+            x = isAlliance and 46.2 or 28.5,
+            y = isAlliance and 85.2 or 14.0,
+            zone = isRU and "Нефритовый лес" or "The Jade Forest",
+            note = isRU
+                and (isAlliance and "Портал в Штормград (Деревня Лап'дон)" or "Портал в Оргриммар (Деревня Медовой Росы)")
+                or (isAlliance and "Portal to Stormwind (Paw'don Village)" or "Portal to Orgrimmar (Honeydew Village)"),
+        })
+    elseif playerRegion ~= capRegion then
+        local dx, dy, dnote = FindDynamicExitOrPortalOnMap(playerMapID, { "оргриммар", "штормград", "портал", "portal", "выход" }, isRU)
+        if dx and dy then
+            table.insert(steps, {
+                mapID = playerMapID,
+                x = dx,
+                y = dy,
+                note = dnote or ((isRU and "Выход / Портал в " or "Exit / Portal to ") .. capName),
+            })
+        end
+    end
+
+    -- ЭТАП Б: СТОЛИЦА (Штормград #84 / Оргриммар #85) -> ПОРТАЛ В КОНТИНЕНТ ЦЕЛИ
+    local DEST_PORTAL_NAMES = isRU and {
+        PANDARIA            = isAlliance and "Портал в Деревню Лап'дон (Нефритовый лес, Пандария)" or "Портал в Деревню Медовой Росы (Нефритовый лес, Пандария)",
+        BROKEN_ISLES        = "Портал в Азсуну / Даларан (Расколотые острова)",
+        ARGUS               = "Портал в Азсуну -> Даларан -> Аргус",
+        ZANDALAR            = "Портал в Зулдазар (Зандалар)",
+        KUL_TIRAS           = "Портал в Боралус (Кул-Тирас)",
+        SHADOWLANDS         = "Портал в Орибос (Темные Земли)",
+        DRAGON_ISLES        = "Портал в Вальдраккен (Драконьи острова)",
+        EMERALD_DREAM       = "Портал в Вальдраккен -> Изумрудный Сон",
+        KHAZ_ALGAR          = "Портал в Дорногал (Каз Алгар)",
+        MIDNIGHT_QUELTHALAS = "Портал в Луносвет (Midnight)",
+        HARANDAR            = "Портал в Луносвет -> Харандар",
+        VOIDSTORM           = "Портал в Луносвет -> Буря Бездны",
+        NORTHREND           = "Портал в Даларан (Нордскол)",
+        OUTLAND             = "Портал в Шаттрат (Запределье)",
+        DRAENOR             = "Портал в Ашран (Дренор)",
+    } or {
+        PANDARIA            = isAlliance and "Portal to Paw'don Village (The Jade Forest, Pandaria)" or "Portal to Honeydew Village (The Jade Forest, Pandaria)",
+        BROKEN_ISLES        = "Portal to Azsuna / Dalaran (Broken Isles)",
+        ARGUS               = "Portal to Azsuna -> Dalaran -> Argus",
+        ZANDALAR            = "Portal to Zuldazar (Zandalar)",
+        KUL_TIRAS           = "Portal to Boralus (Kul Tiras)",
+        SHADOWLANDS         = "Portal to Oribos (Shadowlands)",
+        DRAGON_ISLES        = "Portal to Valdrakken (Dragon Isles)",
+        EMERALD_DREAM       = "Portal to Valdrakken -> Emerald Dream",
+        KHAZ_ALGAR          = "Portal to Dornogal (Khaz Algar)",
+        MIDNIGHT_QUELTHALAS = "Portal to Silvermoon City (Midnight)",
+        HARANDAR            = "Portal to Silvermoon -> Harandar",
+        VOIDSTORM           = "Portal to Silvermoon -> Voidstorm",
+        NORTHREND           = "Portal to Dalaran (Northrend)",
+        OUTLAND             = "Portal to Shattrath (Outland)",
+        DRAENOR             = "Portal to Ashran (Draenor)",
+    }
+
+    if targetRegion ~= capRegion then
+        local portalAction = DEST_PORTAL_NAMES[targetRegion] or ((isRU and "Портал в " or "Portal to ") .. (targetZone or "target continent"))
+        if not (playerRegion == "HARANDAR" and targetRegion == "MIDNIGHT_QUELTHALAS") then
+            local stepX, stepY = capX, capY
+            local stepNote = string.format("%s: %s", capName, portalAction)
+            if targetRegion == "PANDARIA" then
+                stepX = isAlliance and 68.7 or 68.6
+                stepY = isAlliance and 17.2 or 40.7
+                stepNote = isRU
+                    and (isAlliance
+                        and "Портал в Деревню Лап'дон (Нефритовый лес) — у шара пандаренов (68.7, 17.2) или в Зале порталов"
+                        or "Портал в Деревню Медовой Росы (Нефритовый лес) — Аллея Чести (68.6, 40.7) или в Зале порталов")
+                    or (isAlliance
+                        and "Portal to Paw'don Village (Jade Forest) — Pandaren Hot Air Balloon (68.7, 17.2) or Portal Room"
+                        or "Portal to Honeydew Village (Jade Forest) — Valley of Honor (68.6, 40.7) or Portal Room")
+            end
+            table.insert(steps, {
+                mapID = capMapID,
+                x = stepX,
+                y = stepY,
+                zone = isRU and (isAlliance and "Штормград" or "Оргриммар") or (isAlliance and "Stormwind City" or "Orgrimmar"),
+                note = stepNote,
+            })
+        end
+    end
+
+    -- ЭТАП В: ПРОМЕЖУТОЧНЫЙ ПОРТАЛ ХАБА (если цель в Харандаре или Изумрудном Сне)
+    if targetRegion == "HARANDAR" and playerRegion ~= "HARANDAR" then
+        table.insert(steps, {
+            mapID = 2395,
+            x = 47.9,
+            y = 26.6,
+            subMapID = 2393,
+            subX = 36.7,
+            subY = 68.2,
+            zone = isRU and "Луносвет (Сады Памяти)" or "Silvermoon City (Memorial Garden)",
+            note = isRU and "Корнистый путь в Харандар (Луносвет 36.7, 68.2)" or "Rootway to Harandar (Silvermoon 36.7, 68.2)",
+        })
+    elseif targetRegion == "EMERALD_DREAM" and playerRegion ~= "EMERALD_DREAM" then
+        table.insert(steps, {
+            mapID = 2023,
+            x = 18.6,
+            y = 52.2,
+            zone = isRU and "Равнины Он'ары" or "Ohn'ahran Plains",
+            note = isRU and "Портал в Изумрудный Сон (Древняя Ветвь, Равнины Он'ары)" or "Portal to Emerald Dream (Ancient Bough, Ohn'ahran Plains)",
+        })
+    end
+
+    -- ЭТАП Г: ФИНАЛЬНАЯ ТОЧКА (Маунт / Рарник / Квест)
+    table.insert(steps, {
+        mapID = targetMapID,
+        x = targetX,
+        y = targetY,
+        zone = targetZone,
+        note = targetNote or targetName,
+    })
+
+    return steps
+end
+
+function addon:ActivateCurrentRouteStep(silent)
+    local route = self.activePortalRoute
+    if not route or not route.steps or #route.steps == 0 then return end
+
+    local step = route.steps[route.currentStep] or route.steps[#route.steps]
+    if not step then return end
+
+    local isRU = (self:GetActiveLocaleCode() == "ruRU")
+
+    if _G.TomTom and _G.TomTom.RemoveWaypoint and self.portalTomTomUids then
+        for _, uid in ipairs(self.portalTomTomUids) do
+            pcall(_G.TomTom.RemoveWaypoint, _G.TomTom, uid)
+        end
+        wipe(self.portalTomTomUids)
+    end
+    self.portalTomTomUids = self.portalTomTomUids or {}
+
+    local totalSteps = #route.steps
+    local stepPrefix = isRU and "Шаг" or "Step"
+    local stepLabel = totalSteps > 1
+        and string.format("[%s %d/%d] %s", stepPrefix, route.currentStep, totalSteps, step.note or route.targetLabel or route.targetName)
+        or string.format("[MountCollector] %s (%s)", route.targetLabel or route.targetName, route.targetName)
+
+    if _G.TomTom and _G.TomTom.AddWaypoint then
+        local ok, uid = pcall(_G.TomTom.AddWaypoint, _G.TomTom, step.mapID, step.x / 100.0, step.y / 100.0, {
+            title = stepLabel,
+            persistent = false,
+            minimap = true,
+            world = true,
+            crazy = true,
+        })
+        if ok and uid then
+            table.insert(self.portalTomTomUids, uid)
+            if _G.TomTom.SetCrazyArrow then
+                pcall(_G.TomTom.SetCrazyArrow, _G.TomTom, uid, 15, stepLabel)
+            end
+        end
+        if step.subMapID and step.subX and step.subY then
+            local okSub, uidSub = pcall(_G.TomTom.AddWaypoint, _G.TomTom, step.subMapID, step.subX / 100.0, step.subY / 100.0, {
+                title = stepLabel,
+                persistent = false,
+                minimap = true,
+                world = true,
+                crazy = true,
+            })
+            if okSub and uidSub then
+                table.insert(self.portalTomTomUids, uidSub)
+            end
+        end
+    end
+
+    local pinMapID, pinX, pinY = ResolvePinnableMapCoords(step.mapID, step.x / 100.0, step.y / 100.0)
+    if C_Map and C_Map.SetUserWaypoint and _G.UiMapPoint and _G.UiMapPoint.CreateFromCoordinates then
+        local okCan, canSet = pcall(C_Map.CanSetUserWaypointOnMap, pinMapID)
+        if not okCan or canSet then
+            local uiPt = UiMapPoint.CreateFromCoordinates(pinMapID, pinX, pinY)
+            pcall(C_Map.SetUserWaypoint, uiPt)
+            self.lastAddonWaypoint = {
+                mapID = pinMapID,
+                x = pinX,
+                y = pinY,
+                setAt = GetTime(),
+            }
+            local superTrackAPI = _G.C_SuperTrack or _G.C_SuperTracked
+            if superTrackAPI and superTrackAPI.SetSuperTrackedUserWaypoint then
+                pcall(superTrackAPI.SetSuperTrackedUserWaypoint, true)
+                C_Timer.After(0.08, function()
+                    local stAPI = _G.C_SuperTrack or _G.C_SuperTracked
+                    if stAPI and stAPI.SetSuperTrackedUserWaypoint and C_Map and C_Map.HasUserWaypoint and C_Map.HasUserWaypoint() then
+                        pcall(stAPI.SetSuperTrackedUserWaypoint, true)
+                    end
+                end)
+            end
+        end
+    end
+
+    if not silent then
+        local zoneName = step.zone or self:GetMapName(step.mapID) or "Zone"
+        local x10000 = math.max(0, math.min(10000, math.floor(pinX * 10000 + 0.5)))
+        local y10000 = math.max(0, math.min(10000, math.floor(pinY * 10000 + 0.5)))
+        local pinLink = string.format("|cffffff00|Hworldmap:%d:%d:%d|h[|A:Waypoint-MapPin-ChatIcon:13:13:0:0|a %s (%.1f, %.1f)]|h|r", pinMapID, x10000, y10000, step.note or zoneName, step.x, step.y)
+        if totalSteps > 1 then
+            local hdr = isRU and "Маршрут" or "Route"
+            print(string.format("|cff00ccff[MountCollector %s %d/%d]|r %s -> |cffa335ee[%s]|r", hdr, route.currentStep, totalSteps, pinLink, route.targetName))
+        else
+            local pinPrefix = isRU and "3D-метка:" or "3D Pin:"
+            print(string.format("|cff00ccff[MountCollector]|r %s %s -> |cffa335ee[%s]|r", pinPrefix, pinLink, route.targetName))
+        end
+    end
+end
+
+function addon:CheckPortalRouteProgress()
+    local route = self.activePortalRoute
+    if not route or not route.steps or #route.steps <= 1 then return end
+
+    local playerMapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    if not playerMapID then return end
+
+    local playerRegion = GetMapMacroRegion(playerMapID)
+    local playerInstID = GetMapInstanceID(playerMapID)
+    local finalStep = route.steps[#route.steps]
+    local finalRegion = GetMapMacroRegion(finalStep.mapID)
+    local finalInstID = GetMapInstanceID(finalStep.mapID)
+
+    if playerMapID == finalStep.mapID
+        or (playerRegion == finalRegion and finalRegion ~= "HARANDAR" and finalRegion ~= "VOIDSTORM" and finalRegion ~= "EMERALD_DREAM")
+        or (playerInstID and finalInstID and playerInstID == finalInstID and playerRegion == finalRegion)
+    then
+        if route.currentStep ~= #route.steps then
+            route.currentStep = #route.steps
+            self:ActivateCurrentRouteStep(false)
+        elseif C_Map and C_Map.HasUserWaypoint and not C_Map.HasUserWaypoint() then
+            self:ActivateCurrentRouteStep(true)
+        end
+        return
+    end
+
+    for i = #route.steps, 1, -1 do
+        local st = route.steps[i]
+        local stRegion = GetMapMacroRegion(st.mapID)
+        if playerMapID == st.mapID or playerMapID == st.subMapID or playerRegion == stRegion then
+            if i > route.currentStep then
+                route.currentStep = i
+                self:ActivateCurrentRouteStep(false)
+            elseif i == route.currentStep then
+                if C_Map and C_Map.HasUserWaypoint and not C_Map.HasUserWaypoint() then
+                    self:ActivateCurrentRouteStep(true)
+                else
+                    local stAPI = _G.C_SuperTrack or _G.C_SuperTracked
+                    if stAPI and stAPI.IsSuperTrackingUserWaypoint and not stAPI.IsSuperTrackingUserWaypoint() then
+                        pcall(stAPI.SetSuperTrackedUserWaypoint, true)
+                    end
+                end
+            end
+            return
+        end
+    end
+end
+
+-- Поставить метку на карте и 3D-стрелку (Blizzard UserWaypoint + SuperTrack + TomTom + межконтинентальный маршрут по порталам)
 function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLabel, silent, customMountNames)
     local name = customMountNames or self:GetMountInfoByID(mountID) or "Mount"
     local info = self.DropInfoByMount[mountID]
@@ -160,36 +785,44 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
     local dispX = normX * 100.0
     local dispY = normY * 100.0
 
+    -- Проверяем, нужен ли многошаговый маршрут через порталы на другой континент
+    local targetZoneName = self:GetMapName(mapID)
+    local steps = self:BuildMultiHopRoute(mapID, dispX, dispY, name, targetZoneName, npcLabel)
+    if #steps > 1 then
+        self.activePortalRoute = {
+            mountID = mountID,
+            targetName = name,
+            targetLabel = npcLabel,
+            targetMapID = mapID,
+            steps = steps,
+            currentStep = 1,
+        }
+        self:ActivateCurrentRouteStep(silent)
+        self:StartSpawnTourTicker()
+        if not silent then
+            local chainParts = {}
+            for idx, st in ipairs(steps) do
+                table.insert(chainParts, string.format("%d) %s", idx, st.note or st.zone or ""))
+            end
+            local isRU = (self:GetActiveLocaleCode() == "ruRU")
+            local routeHdr = isRU and "|cff00ccff[MountCollector Навигатор]|r Маршрут по порталам: |cffffffff" or "|cff00ccff[MountCollector Navigator]|r Portal route: |cffffffff"
+            print(routeHdr .. table.concat(chainParts, " -> ") .. "|r")
+        end
+        return true
+    else
+        self.activePortalRoute = nil
+        if _G.TomTom and _G.TomTom.RemoveWaypoint and self.portalTomTomUids then
+            for _, uid in ipairs(self.portalTomTomUids) do
+                pcall(_G.TomTom.RemoveWaypoint, _G.TomTom, uid)
+            end
+            wipe(self.portalTomTomUids)
+        end
+    end
+
     -- 1. Стандартная метка и 3D-ромбик Blizzard (с авто-проекцией на родительскую карту для городов/подзон вроде Даларана или Дорногала)
-    local wpMapID, wpNormX, wpNormY = mapID, normX, normY
+    local wpMapID, wpNormX, wpNormY = ResolvePinnableMapCoords(mapID, normX, normY)
     if C_Map and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates then
         pcall(function()
-            local canSet = true
-            if C_Map.CanSetUserWaypointOnMap then
-                local ok, res = pcall(C_Map.CanSetUserWaypointOnMap, wpMapID)
-                if ok then canSet = res end
-            end
-            if not canSet and C_Map.GetWorldPosFromMapPos and C_Map.GetMapPosFromWorldPos and C_Map.GetMapInfo and CreateVector2D then
-                local instID, worldPos = C_Map.GetWorldPosFromMapPos(wpMapID, CreateVector2D(wpNormX, wpNormY))
-                local curMap = wpMapID
-                for _ = 1, 5 do
-                    local mInfo = C_Map.GetMapInfo(curMap)
-                    local parentID = mInfo and mInfo.parentMapID
-                    if not parentID or parentID <= 0 or parentID == curMap then break end
-                    curMap = parentID
-                    if C_Map.CanSetUserWaypointOnMap(curMap) and instID and worldPos then
-                        local _, parentVec = C_Map.GetMapPosFromWorldPos(instID, worldPos, curMap)
-                        if parentVec and parentVec.GetXY then
-                            local px, py = parentVec:GetXY()
-                            if px and py and px > 0 and px < 1 and py > 0 and py < 1 then
-                                wpMapID, wpNormX, wpNormY = curMap, px, py
-                                canSet = true
-                                break
-                            end
-                        end
-                    end
-                end
-            end
             local pt = UiMapPoint.CreateFromCoordinates(wpMapID, wpNormX, wpNormY)
             C_Map.SetUserWaypoint(pt)
             self.lastAddonWaypoint = {
@@ -400,15 +1033,16 @@ end
 
 -- Проверить, не переключился ли игрок вручную на свою метку на карте или на отслеживание квеста
 function addon:CheckAndCancelTourIfUserOverrode()
-    if not self.activeSpawnTour then return true end
+    if not self.activeSpawnTour and not self.activePortalRoute then return true end
     local lastWP = self.lastAddonWaypoint
-    if not lastWP or (GetTime() - (lastWP.setAt or 0)) <= 1.0 then
+    if not lastWP or (GetTime() - (lastWP.setAt or 0)) <= 1.5 then
         return false
     end
 
     -- 1. Игрок вручную удалил метку с карты
     if C_Map and C_Map.HasUserWaypoint and not C_Map.HasUserWaypoint() then
         self.activeSpawnTour = nil
+        self.activePortalRoute = nil
         if self.RefreshWorldMapPins then self:RefreshWorldMapPins() end
         return true
     end
@@ -429,6 +1063,7 @@ function addon:CheckAndCancelTourIfUserOverrode()
     if not isStillAddonPin then
         -- Не трогаем новую пользовательскую метку, просто тихо выходим из режима облёта рарников!
         self.activeSpawnTour = nil
+        self.activePortalRoute = nil
         if self.RefreshWorldMapPins then self:RefreshWorldMapPins() end
         return true
     end
@@ -437,6 +1072,7 @@ function addon:CheckAndCancelTourIfUserOverrode()
     local stAPI = _G.C_SuperTrack or _G.C_SuperTracked
     if stAPI and stAPI.IsSuperTrackingUserWaypoint and not stAPI.IsSuperTrackingUserWaypoint() then
         self.activeSpawnTour = nil
+        self.activePortalRoute = nil
         if isStillAddonPin and C_Map and C_Map.ClearUserWaypoint then
             pcall(C_Map.ClearUserWaypoint)
         end
@@ -447,10 +1083,13 @@ function addon:CheckAndCancelTourIfUserOverrode()
     return false
 end
 
--- Авто-переключение 3D-ромбика Blizzard по мере облёта точек спавна (без TomTom)
+-- Авто-переключение 3D-ромбика Blizzard по мере облёта точек спавна и переходов по порталам (без TomTom)
 function addon:StartSpawnTourTicker()
     if self.spawnTourTicker then return end
     self.spawnTourTicker = C_Timer.NewTicker(0.75, function()
+        if self.activePortalRoute then
+            self:CheckPortalRouteProgress()
+        end
         if self:CheckAndCancelTourIfUserOverrode() then
             if self.spawnTourTicker then
                 self.spawnTourTicker:Cancel()
@@ -458,9 +1097,12 @@ function addon:StartSpawnTourTicker()
             end
             return
         end
+        if self.activePortalRoute and self.activePortalRoute.steps and self.activePortalRoute.currentStep < #self.activePortalRoute.steps then
+            return
+        end
         local tour = self.activeSpawnTour
         if not tour or not tour.points or tour.index > tour.total then
-            if self.spawnTourTicker then
+            if not self.activePortalRoute and self.spawnTourTicker then
                 self.spawnTourTicker:Cancel()
                 self.spawnTourTicker = nil
             end

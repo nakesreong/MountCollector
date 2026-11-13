@@ -58,13 +58,11 @@ function addon:CheckUnitForMountDrop(unit, isRetry)
     local isAlive = not UnitIsDead(unit)
     if isAlive and mounts then
         local isLockedNow, lockQid = self:IsNpcLockedToday(npcID)
-        if not isLockedNow then
+        if not isLockedNow and lockQid then
             self.RecentlySpottedUnlockedRares = self.RecentlySpottedUnlockedRares or {}
             self.RecentlySpottedUnlockedRares[npcID] = GetTime()
-            if lockQid then
-                self.CompletedRareQuestsSnapshot = self.CompletedRareQuestsSnapshot or {}
-                self.CompletedRareQuestsSnapshot[lockQid] = false
-            end
+            self.CompletedRareQuestsSnapshot = self.CompletedRareQuestsSnapshot or {}
+            self.CompletedRareQuestsSnapshot[lockQid] = false
         end
     end
 
@@ -90,18 +88,28 @@ function addon:CheckUnitForMountDrop(unit, isRetry)
     if not isAlive or not mounts then return end
 
     -- Если этот конкретный рарник уже убит сегодня этим персонажем (КД до сброса), не вопим и не ставим метку на второй круг!
-    if self:IsNpcLockedToday(npcID) then return end
+    local isLockedToday, lockQuestID = self:IsNpcLockedToday(npcID)
+    if isLockedToday then return end
+
+    local rsEntry = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
+    if not rsEntry and not lockQuestID and UnitClassification then
+        local okCls, uClass = pcall(UnitClassification, unit)
+        if okCls and uClass ~= "rare" and uClass ~= "rareelite" and uClass ~= "worldboss" then
+            -- Обычные мобы в зоне (например, динозавры на Острове Великанов или мобы BfA) не должны спамить баннером рарника!
+            return
+        end
+    end
 
     local npcMapID, npcX, npcY = nil, nil, nil
-    local rsEntry = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
     if rsEntry and type(rsEntry.coords) == "table" and rsEntry.coords[1] then
         local rc = rsEntry.coords[1]
         npcMapID, npcX, npcY = rc.m, rc.x, rc.y
     end
 
     for _, mountID in ipairs(mounts) do
-        if self:IsOpenWorldRareOrWorldBossMount(mountID) and not self:IsMountRareLockedToday(mountID) then
-            local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
+        local info = self.DropInfoByMount and self.DropInfoByMount[mountID]
+        if (not info or info.method ~= "COLLECTION") and self:IsOpenWorldRareOrWorldBossMount(mountID) and not self:IsMountRareLockedToday(mountID) then
+            local _, _, _, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
             if not isCollected then
                 self:TriggerRareMountAlert(mountID, npcID, npcName, false, npcMapID, npcX, npcY)
                 break
