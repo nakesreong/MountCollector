@@ -58,11 +58,13 @@ function addon:CheckUnitForMountDrop(unit, isRetry)
     local isAlive = not UnitIsDead(unit)
     if isAlive and mounts then
         local isLockedNow, lockQid = self:IsNpcLockedToday(npcID)
-        if not isLockedNow and lockQid then
+        if not isLockedNow then
             self.RecentlySpottedUnlockedRares = self.RecentlySpottedUnlockedRares or {}
             self.RecentlySpottedUnlockedRares[npcID] = GetTime()
-            self.CompletedRareQuestsSnapshot = self.CompletedRareQuestsSnapshot or {}
-            self.CompletedRareQuestsSnapshot[lockQid] = false
+            if lockQid then
+                self.CompletedRareQuestsSnapshot = self.CompletedRareQuestsSnapshot or {}
+                self.CompletedRareQuestsSnapshot[lockQid] = false
+            end
         end
     end
 
@@ -85,7 +87,23 @@ function addon:CheckUnitForMountDrop(unit, isRetry)
         npcName = (self.KnownNpcNames and self.KnownNpcNames[npcID]) or (rs and rs.name) or "Rare NPC"
     end
 
-    if not isAlive or not mounts then return end
+    if not isAlive or not mounts then
+        if not isAlive and mounts then
+            local _, lockQid = self:IsNpcLockedToday(npcID)
+            local isRareNpc = (self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID] ~= nil) or (lockQid ~= nil)
+            if isRareNpc and self.RecentlySpottedUnlockedRares and self.RecentlySpottedUnlockedRares[npcID] then
+                self.KilledRareNpcIDsToday = self.KilledRareNpcIDsToday or {}
+                self.KilledRareNpcIDsToday[npcID] = GetTime()
+            end
+            if self.RefreshWorldMapPins then
+                self:RefreshWorldMapPins()
+            end
+            if self.SyncActiveTourAfterKillOrAlert then
+                self:SyncActiveTourAfterKillOrAlert(npcID)
+            end
+        end
+        return
+    end
 
     -- Если этот конкретный рарник уже убит сегодня этим персонажем (КД до сброса), не вопим и не ставим метку на второй круг!
     local isLockedToday, lockQuestID = self:IsNpcLockedToday(npcID)
@@ -424,7 +442,7 @@ local function HandleAlertClick(_, button)
     if button == "RightButton" then
         alertFrame:Hide()
     elseif alertFrame.currentMountID then
-        addon:SetMountWaypoint(alertFrame.currentMountID, alertFrame.alertMapID, alertFrame.alertX, alertFrame.alertY, alertFrame.alertNpcName, false)
+        addon:SetMountWaypoint(alertFrame.currentMountID, alertFrame.alertMapID, alertFrame.alertX, alertFrame.alertY, alertFrame.alertNpcName, false, nil, alertFrame.alertNpcID)
         if IsShiftKeyDown and IsShiftKeyDown() then
             addon:OpenMountInJournal(alertFrame.currentMountID)
         end
@@ -521,7 +539,7 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
     end
 
     if self.db and self.db.settings.autoWaypoint then
-        self:SetMountWaypoint(mountID, mapID, liveX, liveY, npcName, false, displayMountNames)
+        self:SetMountWaypoint(mountID, mapID, liveX, liveY, npcName, false, displayMountNames, npcID)
     end
 
     if self.alertHideTimer then

@@ -93,7 +93,7 @@ local function GetOrCreateMapPin(parent, index)
                     combinedNames = table.concat(names, ", ")
                 end
             end
-            addon:SetMountWaypoint(self.mountID, self.mapID, self.coordX, self.coordY, self.npcName, false, combinedNames)
+            addon:SetMountWaypoint(self.mountID, self.mapID, self.coordX, self.coordY, self.npcName, false, combinedNames, self.npcID)
         end
     end)
 

@@ -991,12 +991,35 @@ function addon:RecordAttempt(mountID, sourceName, allowRapidMultiKill)
     end
 end
 
--- Проверить, убит ли уже сегодня конкретный рарник (по его индивидуальному скрытому daily questID)
+-- Проверить, убит ли уже сегодня конкретный рарник (по его индивидуальному скрытому daily questID или сессионному киллу)
 function addon:IsNpcLockedToday(npcID)
-    if not npcID or not C_QuestLog or not C_QuestLog.IsQuestFlaggedCompleted then
+    if not npcID then
         return false, nil
     end
     local rs = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
+    local primaryQid = (rs and type(rs.quests) == "table" and rs.quests[1]) or nil
+    if not primaryQid and self.MountsByNpc and self.MountsByNpc[npcID] then
+        for _, mID in ipairs(self.MountsByNpc[npcID]) do
+            local info = self.DropInfoByMount and self.DropInfoByMount[mID]
+            if info and type(info.quests) == "table" and #info.quests == 1 then
+                primaryQid = info.quests[1]
+                break
+            end
+        end
+    end
+
+    if self.KilledRareNpcIDsToday and self.KilledRareNpcIDsToday[npcID] then
+        local killedAt = self.KilledRareNpcIDsToday[npcID]
+        -- Для рарников с суточным КД (или всех рарников актуальных дополнений npcID >= 110000) лок держится всю сессию;
+        -- для старых рарников без суточного квеста (например, Хуолон) скрываем метку на 15 минут после убийства до респавна
+        if primaryQid or npcID >= 110000 or type(killedAt) ~= "number" or (GetTime() - killedAt) < 900 then
+            return true, primaryQid
+        end
+    end
+
+    if not C_QuestLog or not C_QuestLog.IsQuestFlaggedCompleted then
+        return false, primaryQid
+    end
     if rs and type(rs.quests) == "table" and #rs.quests > 0 then
         for _, qid in ipairs(rs.quests) do
             if C_QuestLog.IsQuestFlaggedCompleted(qid) then
@@ -1009,12 +1032,19 @@ function addon:IsNpcLockedToday(npcID)
     if mounts then
         for _, mID in ipairs(mounts) do
             local info = self.DropInfoByMount and self.DropInfoByMount[mID]
-            if info and type(info.quests) == "table" and #info.quests == 1 then
-                local qid = info.quests[1]
-                if C_QuestLog.IsQuestFlaggedCompleted(qid) then
-                    return true, qid
+            if info and type(info.quests) == "table" and #info.quests > 0 then
+                local numNpcs = 0
+                if info.npcs then
+                    for _ in pairs(info.npcs) do numNpcs = numNpcs + 1 end
                 end
-                return false, qid
+                if #info.quests == 1 or numNpcs <= 1 then
+                    for _, qid in ipairs(info.quests) do
+                        if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                            return true, qid
+                        end
+                    end
+                    return false, info.quests[1]
+                end
             end
         end
     end
@@ -1027,7 +1057,49 @@ function addon:IsMountRareLockedToday(mountID)
         return true, 1, 1
     end
     local info = self.DropInfoByMount[mountID]
-    if not info or not info.quests or #info.quests == 0 then
+    if not info then
+        return false, 0, 0
+    end
+
+    -- Если у маунта есть привязанные рарники в RareScannerNpcToMounts, считаем прогресс по уникальным рарникам
+    -- (объединяя дублирующиеся ID одного босса с общим квестом и корректно учитывая двуфракционные квесты Арати/Тёмных берегов)
+    if info.npcs and self.RareScannerNpcToMounts then
+        local groups = {}
+        local groupOrder = {}
+        for npcID in pairs(info.npcs) do
+            local rs = self.RareScannerNpcToMounts[npcID]
+            if rs then
+                local gKey
+                if type(rs.quests) == "table" and #rs.quests > 0 then
+                    local qCopy = {}
+                    for _, qid in ipairs(rs.quests) do table.insert(qCopy, qid) end
+                    table.sort(qCopy)
+                    gKey = "q:" .. table.concat(qCopy, ",")
+                else
+                    gKey = "npc:" .. tostring(npcID)
+                end
+                if not groups[gKey] then
+                    groups[gKey] = { locked = false }
+                    table.insert(groupOrder, gKey)
+                end
+                if self:IsNpcLockedToday(npcID) then
+                    groups[gKey].locked = true
+                end
+            end
+        end
+        if #groupOrder > 0 then
+            local doneCount = 0
+            local totalCount = #groupOrder
+            for _, gKey in ipairs(groupOrder) do
+                if groups[gKey].locked then
+                    doneCount = doneCount + 1
+                end
+            end
+            return (doneCount >= totalCount and totalCount > 0), doneCount, totalCount
+        end
+    end
+
+    if not info.quests or #info.quests == 0 then
         return false, 0, 0
     end
     local doneCount = 0
@@ -1038,6 +1110,13 @@ function addon:IsMountRareLockedToday(mountID)
                 doneCount = doneCount + 1
             end
         end
+    end
+    local numNpcs = 0
+    if info.npcs then
+        for _ in pairs(info.npcs) do numNpcs = numNpcs + 1 end
+    end
+    if numNpcs <= 1 and doneCount > 0 then
+        return true, 1, 1
     end
     return (doneCount >= totalCount and totalCount > 0), doneCount, totalCount
 end
@@ -1090,6 +1169,8 @@ function addon:CheckRecentlyKilledRares()
             local isLocked, lockQid = self:IsNpcLockedToday(npcID)
             if isLocked then
                 self.RecentlySpottedUnlockedRares[npcID] = nil
+                self.KilledRareNpcIDsToday = self.KilledRareNpcIDsToday or {}
+                self.KilledRareNpcIDsToday[npcID] = now
                 if lockQid then
                     self.CompletedRareQuestsSnapshot = self.CompletedRareQuestsSnapshot or {}
                     self.CompletedRareQuestsSnapshot[lockQid] = true
@@ -1108,7 +1189,7 @@ function addon:CheckRecentlyKilledRares()
                 if self.RefreshWorldMapPins then
                     self:RefreshWorldMapPins()
                 end
-                self:SyncActiveTourAfterKillOrAlert()
+                self:SyncActiveTourAfterKillOrAlert(npcID)
             end
         else
             self.RecentlySpottedUnlockedRares[npcID] = nil

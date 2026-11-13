@@ -443,8 +443,15 @@ function addon:BuildMountIndex()
                 for _, qid in ipairs(dropData.quests or {}) do
                     AddUniqueToList(info.quests, qid)
                 end
+                local singleDropNpc = (type(dropData.npcs) == "table" and #dropData.npcs == 1) and dropData.npcs[1] or nil
                 for _, c in ipairs(dropData.coords or {}) do
-                    table.insert(info.coords, c)
+                    table.insert(info.coords, {
+                        m = c.m,
+                        x = c.x,
+                        y = c.y,
+                        n = c.n,
+                        npcID = c.npcID or singleDropNpc,
+                    })
                 end
                 if dropData.itemId and dropData.itemId > 0 then
                     self.MountByItem[dropData.itemId] = mountID
@@ -524,13 +531,30 @@ function addon:BuildMountIndex()
                             self.MountsByMap[c.m] = self.MountsByMap[c.m] or {}
                             AddUniqueToList(self.MountsByMap[c.m], mountID)
                             if c.x and c.x > 0 and c.y and c.y > 0 then
-                                table.insert(info.coords, {
-                                    m = c.m,
-                                    x = c.x,
-                                    y = c.y,
-                                    n = rsData.name or info.boss or name,
-                                    npcID = npcID,
-                                })
+                                local mergedExisting = false
+                                for _, ex in ipairs(info.coords) do
+                                    if ex.m == c.m then
+                                        local dx = (ex.x or 0) - c.x
+                                        local dy = (ex.y or 0) - c.y
+                                        if not ex.npcID or (ex.npcID == npcID and (dx * dx + dy * dy) <= 36) then
+                                            ex.x = c.x
+                                            ex.y = c.y
+                                            ex.n = rsData.name or info.boss or name
+                                            ex.npcID = npcID
+                                            mergedExisting = true
+                                            break
+                                        end
+                                    end
+                                end
+                                if not mergedExisting then
+                                    table.insert(info.coords, {
+                                        m = c.m,
+                                        x = c.x,
+                                        y = c.y,
+                                        n = rsData.name or info.boss or name,
+                                        npcID = npcID,
+                                    })
+                                end
                             end
                         end
                     end
@@ -1076,6 +1100,12 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if addon.FlushPendingAlertTarget then
             addon:FlushPendingAlertTarget()
         end
+        if UnitExists("target") and UnitIsDead("target") then
+            addon:CheckUnitForMountDrop("target")
+        end
+        C_Timer.After(0.2, function()
+            addon:CheckRecentlyKilledRares()
+        end)
         C_Timer.After(2.0, function()
             addon:CheckRecentlyKilledRares()
         end)
@@ -1102,8 +1132,12 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         local vignetteGUID = ...
         addon:CheckVignetteForMountDrop(vignetteGUID, false)
     elseif event == "VIGNETTES_UPDATED" then
+        if UnitExists("target") and UnitIsDead("target") then
+            addon:CheckUnitForMountDrop("target")
+        end
+        addon:CheckRecentlyKilledRares()
         addon:ScanAllActiveVignettes()
-            if addon.ValidateModuleIntegrity then addon:ValidateModuleIntegrity(true) end
+        if addon.ValidateModuleIntegrity then addon:ValidateModuleIntegrity(true) end
     elseif event == "CHAT_MSG_MONSTER_YELL" or event == "CHAT_MSG_MONSTER_EMOTE" or event == "CHAT_MSG_MONSTER_SAY" or event == "CHAT_MSG_MONSTER_WHISPER" then
         local _, senderName = ...
         addon:CheckMonsterChatForMountDrop(senderName)
@@ -1172,11 +1206,15 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                                                 addon:RecordAttempt(mountID, srcName, not lockQid)
                                             end
                                         end
-                                        if addon.RefreshWorldMapPins then
-                                            addon:RefreshWorldMapPins()
-                                        end
-                                        addon:SyncActiveTourAfterKillOrAlert()
                                     end
+                                    if rs or lockQid then
+                                        addon.KilledRareNpcIDsToday = addon.KilledRareNpcIDsToday or {}
+                                        addon.KilledRareNpcIDsToday[npcID] = now
+                                    end
+                                    if addon.RefreshWorldMapPins then
+                                        addon:RefreshWorldMapPins()
+                                    end
+                                    addon:SyncActiveTourAfterKillOrAlert(npcID)
                                 end
                             end
                         end
@@ -1193,12 +1231,16 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             addon.CompletedRareQuestsSnapshot[questID] = true
 
             local matchedNpcName = nil
+            local matchedNpcID = nil
             if addon.RareScannerNpcToMounts then
                 for nid, rsData in pairs(addon.RareScannerNpcToMounts) do
                     if rsData and type(rsData.quests) == "table" then
                         for _, rq in ipairs(rsData.quests) do
                             if rq == questID then
+                                matchedNpcID = nid
                                 matchedNpcName = (addon.KnownNpcNames and addon.KnownNpcNames[nid]) or rsData.name
+                                addon.KilledRareNpcIDsToday = addon.KilledRareNpcIDsToday or {}
+                                addon.KilledRareNpcIDsToday[nid] = GetTime()
                                 break
                             end
                         end
@@ -1220,7 +1262,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             if addon.RefreshWorldMapPins then
                 addon:RefreshWorldMapPins()
             end
-            addon:SyncActiveTourAfterKillOrAlert()
+            addon:SyncActiveTourAfterKillOrAlert(matchedNpcID)
         end
         C_Timer.After(0.5, function() if addon.CheckActiveQuestChainProgress then addon:CheckActiveQuestChainProgress() end end)
     elseif event == "QUEST_ACCEPTED" then

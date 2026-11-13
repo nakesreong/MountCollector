@@ -673,6 +673,8 @@ function addon:ActivateCurrentRouteStep(silent)
                 x = pinX,
                 y = pinY,
                 setAt = GetTime(),
+                mountID = route.mountID,
+                npcID = route.npcID,
             }
             local superTrackAPI = _G.C_SuperTrack or _G.C_SuperTracked
             if superTrackAPI and superTrackAPI.SetSuperTrackedUserWaypoint then
@@ -750,8 +752,56 @@ function addon:CheckPortalRouteProgress()
     end
 end
 
+-- Очистить все активные метки аддона (Blizzard UserWaypoint, TomTom, межконтинентальный маршрут и подсветку на карте)
+function addon:ClearAddonWaypoints()
+    local lastWP = self.lastAddonWaypoint
+    if lastWP and C_Map and C_Map.HasUserWaypoint and C_Map.HasUserWaypoint() and C_Map.GetUserWaypoint then
+        local isStillAddonPin = true
+        local ok, wp = pcall(C_Map.GetUserWaypoint)
+        if ok and wp and wp.uiMapID and wp.position and wp.position.GetXY then
+            local wx, wy = wp.position:GetXY()
+            if SafeNotSecret(wx) and SafeNotSecret(wy) and wx and wy then
+                if wp.uiMapID ~= lastWP.mapID or math.abs(wx - lastWP.x) > 0.015 or math.abs(wy - lastWP.y) > 0.015 then
+                    isStillAddonPin = false
+                end
+            end
+        end
+        if isStillAddonPin and C_Map.ClearUserWaypoint then
+            pcall(C_Map.ClearUserWaypoint)
+        end
+    end
+    self.lastAddonWaypoint = nil
+    self.activePortalRoute = nil
+    self.highlightedMapMountID = nil
+
+    if _G.TomTom and _G.TomTom.RemoveWaypoint then
+        if self.lastTomTomUid then
+            pcall(_G.TomTom.RemoveWaypoint, _G.TomTom, self.lastTomTomUid)
+            self.lastTomTomUid = nil
+        end
+        if self.multiTomTomUids then
+            for _, uid in ipairs(self.multiTomTomUids) do
+                pcall(_G.TomTom.RemoveWaypoint, _G.TomTom, uid)
+            end
+            wipe(self.multiTomTomUids)
+        end
+        if self.portalTomTomUids then
+            for _, uid in ipairs(self.portalTomTomUids) do
+                pcall(_G.TomTom.RemoveWaypoint, _G.TomTom, uid)
+            end
+            wipe(self.portalTomTomUids)
+        end
+    end
+    if self.multiTomTomByNpc then
+        wipe(self.multiTomTomByNpc)
+    end
+    if self.RefreshWorldMapPins then
+        self:RefreshWorldMapPins()
+    end
+end
+
 -- Поставить метку на карте и 3D-стрелку (Blizzard UserWaypoint + SuperTrack + TomTom + межконтинентальный маршрут по порталам)
-function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLabel, silent, customMountNames)
+function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLabel, silent, customMountNames, explicitNpcID)
     local name = customMountNames or self:GetMountInfoByID(mountID) or "Mount"
     local info = self.DropInfoByMount[mountID]
     local mapID = preferredMapID or (C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player"))
@@ -765,6 +815,18 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
             mapID = c.m
             x = c.x
             y = c.y
+        end
+    end
+    local resolvedNpcID = explicitNpcID or (c and c.npcID) or nil
+    if not resolvedNpcID and info and info.npcs then
+        local onlyNpc = nil
+        local countNpcs = 0
+        for nid in pairs(info.npcs) do
+            onlyNpc = nid
+            countNpcs = countNpcs + 1
+        end
+        if countNpcs == 1 then
+            resolvedNpcID = onlyNpc
         end
     end
     if not validCustomLabel and c then
@@ -791,6 +853,7 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
     if #steps > 1 then
         self.activePortalRoute = {
             mountID = mountID,
+            npcID = resolvedNpcID,
             targetName = name,
             targetLabel = npcLabel,
             targetMapID = mapID,
@@ -827,9 +890,12 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
             C_Map.SetUserWaypoint(pt)
             self.lastAddonWaypoint = {
                 mapID = wpMapID,
+                rawMapID = mapID,
                 x = wpNormX,
                 y = wpNormY,
                 setAt = GetTime(),
+                mountID = mountID,
+                npcID = resolvedNpcID,
             }
             local superTrackAPI = _G.C_SuperTrack or _G.C_SuperTracked
             if superTrackAPI and superTrackAPI.SetSuperTrackedUserWaypoint then
@@ -919,6 +985,7 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
         end
     end
     self.multiTomTomUids = {}
+    self.multiTomTomByNpc = {}
 
     local playerMapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
     local availCoords = {}
@@ -930,9 +997,7 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
 
     if #availCoords == 0 then
         self.activeSpawnTour = nil
-        if self.RefreshWorldMapPins then
-            self:RefreshWorldMapPins()
-        end
+        self:ClearAddonWaypoints()
         return false
     end
     local routeCoords = availCoords
@@ -997,6 +1062,10 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
                 })
                 if uid then
                     table.insert(self.multiTomTomUids, uid)
+                    if c.npcID then
+                        self.multiTomTomByNpc[c.npcID] = self.multiTomTomByNpc[c.npcID] or {}
+                        table.insert(self.multiTomTomByNpc[c.npcID], uid)
+                    end
                 end
             end)
         end
@@ -1014,11 +1083,11 @@ function addon:PinAllMountSpawns(mountID, openWorldMap)
         self:StartSpawnTourTicker()
         local dispNpc = self:GetNpcDisplayName(primaryCoord.npcID, primaryCoord.n)
         local pLabel = (IsValidNpcName(dispNpc) and dispNpc) or ((primaryCoord.n and primaryCoord.n ~= "") and primaryCoord.n) or (info and info.boss) or name
-        self:SetMountWaypoint(mountID, primaryCoord.m, primaryCoord.x, primaryCoord.y, string.format("[1/%d] %s", #routeCoords, pLabel), true)
+        self:SetMountWaypoint(mountID, primaryCoord.m, primaryCoord.x, primaryCoord.y, string.format("[1/%d] %s", #routeCoords, pLabel), true, nil, primaryCoord.npcID)
         print(string.format(L.CHAT_TOUR_STARTED, name, #routeCoords, pLabel, primaryCoord.x, primaryCoord.y))
     else
         self.activeSpawnTour = nil
-        self:SetMountWaypoint(mountID, primaryCoord.m, primaryCoord.x, primaryCoord.y, self:GetNpcDisplayName(primaryCoord.npcID, primaryCoord.n) or (info and info.boss), false)
+        self:SetMountWaypoint(mountID, primaryCoord.m, primaryCoord.x, primaryCoord.y, self:GetNpcDisplayName(primaryCoord.npcID, primaryCoord.n) or (info and info.boss), false, nil, primaryCoord.npcID)
     end
 
     if openWorldMap and primaryCoord.m and OpenWorldMap then
@@ -1179,7 +1248,7 @@ function addon:AdvanceSpawnTourStep(fromAutoProximity)
         tour.stepSetAt = GetTime()
         local dispNpc = self:GetNpcDisplayName(nextPt.npcID, nextPt.n)
         local nLabel = (IsValidNpcName(dispNpc) and dispNpc) or ((nextPt.n and nextPt.n ~= "") and nextPt.n) or tour.name
-        self:SetMountWaypoint(tour.mountID, nextPt.m, nextPt.x, nextPt.y, string.format("[%d/%d] %s", tour.index, tour.total, nLabel), true)
+        self:SetMountWaypoint(tour.mountID, nextPt.m, nextPt.x, nextPt.y, string.format("[%d/%d] %s", tour.index, tour.total, nLabel), true, nil, nextPt.npcID)
         print(string.format(L.CHAT_TOUR_NEXT, tour.index, tour.total, nLabel, nextPt.x, nextPt.y))
         if self.RefreshWorldMapPins then
             self:RefreshWorldMapPins()
@@ -1187,14 +1256,14 @@ function addon:AdvanceSpawnTourStep(fromAutoProximity)
         return true
     else
         -- Проверяем, остались ли ещё НЕ убитые нами сегодня рарники (которых в первом круге убили другие игроки):
-        -- если остались, автоматически начинаем новый круг только по живым (не убитым нами сегодня)!
+        -- если остались и их больше 1 (или мы убили хотя бы часть тура), автоматически начинаем новый круг только по живым!
         local remaining = {}
         for _, c in ipairs(tour.points) do
-            if not (c.npcID and self:IsNpcLockedToday(c.npcID)) then
+            if c.npcID and not self:IsNpcLockedToday(c.npcID) then
                 table.insert(remaining, c)
             end
         end
-        if #remaining > 0 then
+        if #remaining > 1 or (#remaining == 1 and tour.total > 1) then
             tour.points = remaining
             tour.index = 1
             tour.total = #remaining
@@ -1202,7 +1271,7 @@ function addon:AdvanceSpawnTourStep(fromAutoProximity)
             local firstPt = remaining[1]
             local dispNpc = self:GetNpcDisplayName(firstPt.npcID, firstPt.n)
             local nLabel = (IsValidNpcName(dispNpc) and dispNpc) or ((firstPt.n and firstPt.n ~= "") and firstPt.n) or tour.name
-            self:SetMountWaypoint(tour.mountID, firstPt.m, firstPt.x, firstPt.y, string.format("[1/%d] %s", tour.total, nLabel), true)
+            self:SetMountWaypoint(tour.mountID, firstPt.m, firstPt.x, firstPt.y, string.format("[1/%d] %s", tour.total, nLabel), true, nil, firstPt.npcID)
             print(string.format(L.CHAT_TOUR_NEXT, 1, tour.total, nLabel, firstPt.x, firstPt.y))
             if self.RefreshWorldMapPins then
                 self:RefreshWorldMapPins()
@@ -1211,35 +1280,98 @@ function addon:AdvanceSpawnTourStep(fromAutoProximity)
         end
         print(string.format(L.CHAT_TOUR_FINISHED, tour.name, tour.total))
         self.activeSpawnTour = nil
-        if self.RefreshWorldMapPins then
-            self:RefreshWorldMapPins()
-        end
+        self:ClearAddonWaypoints()
         return false
     end
 end
 
-function addon:SyncActiveTourAfterKillOrAlert()
+function addon:SyncActiveTourAfterKillOrAlert(killedNpcID, killedMountID)
+    if self.inSyncAfterKill then return end
+    self.inSyncAfterKill = true
+
+    -- 1. Скрываем радар-баннер, если он относится к убитому или закрытому на сегодня рарнику
     if _G.MountCollectorAlertFrame and _G.MountCollectorAlertFrame:IsShown() then
         local aNpc = _G.MountCollectorAlertFrame.alertNpcID
-        if aNpc and self:IsNpcLockedToday(aNpc) then
+        local aMount = _G.MountCollectorAlertFrame.currentMountID
+        if (killedNpcID and aNpc == killedNpcID)
+            or (aNpc and self:IsNpcLockedToday(aNpc))
+            or (killedMountID and aMount == killedMountID and self:IsMountRareLockedToday(aMount))
+        then
             _G.MountCollectorAlertFrame:Hide()
+        end
+    end
+
+    -- 2. Удаляем одиночные пины TomTom для убитого/закрытого рарника из мульти-списка тура
+    if _G.TomTom and _G.TomTom.RemoveWaypoint and self.multiTomTomByNpc then
+        if killedNpcID and self.multiTomTomByNpc[killedNpcID] then
+            for _, uid in ipairs(self.multiTomTomByNpc[killedNpcID]) do
+                pcall(_G.TomTom.RemoveWaypoint, _G.TomTom, uid)
+            end
+            self.multiTomTomByNpc[killedNpcID] = nil
+        end
+        for nid, uidList in pairs(self.multiTomTomByNpc) do
+            if self:IsNpcLockedToday(nid) then
+                for _, uid in ipairs(uidList) do
+                    pcall(_G.TomTom.RemoveWaypoint, _G.TomTom, uid)
+                end
+                self.multiTomTomByNpc[nid] = nil
+            end
+        end
+    end
+
+    local tour = self.activeSpawnTour
+    if tour and tour.points then
+        if self:CheckAndCancelTourIfUserOverrode() then
+            self.inSyncAfterKill = false
+            return
+        end
+        local curPt = tour.points[tour.index]
+        if curPt and ((killedNpcID and curPt.npcID == killedNpcID) or (curPt.npcID and self:IsNpcLockedToday(curPt.npcID))) then
+            self:AdvanceSpawnTourStep(true)
+        elseif curPt and not (_G.MountCollectorAlertFrame and _G.MountCollectorAlertFrame:IsShown()) then
+            local dispNpc = self:GetNpcDisplayName(curPt.npcID, curPt.n)
+            local nLabel = (IsValidNpcName(dispNpc) and dispNpc) or ((curPt.n and curPt.n ~= "") and curPt.n) or tour.name
+            self:SetMountWaypoint(tour.mountID, curPt.m, curPt.x, curPt.y, string.format("[%d/%d] %s", tour.index, tour.total, nLabel), true, nil, curPt.npcID)
+            if self.RefreshWorldMapPins then
+                self:RefreshWorldMapPins()
+            end
+        end
+        self.inSyncAfterKill = false
+        return
+    end
+
+    -- 3. Если активного многоточечного тура нет, но стоит одиночная метка нашего аддона (с баннера, карты или /mc):
+    -- проверяем, не относится ли она к только что убитому рарнику (или уже закрытому на сегодня маунту), и сразу убираем её с карты!
+    local lastWP = self.lastAddonWaypoint
+    if lastWP then
+        local shouldClear = false
+        if killedNpcID and lastWP.npcID and lastWP.npcID == killedNpcID then
+            shouldClear = true
+        elseif lastWP.npcID and self:IsNpcLockedToday(lastWP.npcID) then
+            shouldClear = true
+        elseif killedMountID and lastWP.mountID and lastWP.mountID == killedMountID and self:IsMountRareLockedToday(killedMountID) then
+            shouldClear = true
+        elseif lastWP.mountID and self:IsMountRareLockedToday(lastWP.mountID) then
+            shouldClear = true
+        elseif killedNpcID and lastWP.mountID and self.MountsByNpc and self.MountsByNpc[killedNpcID] then
+            for _, mID in ipairs(self.MountsByNpc[killedNpcID]) do
+                if mID == lastWP.mountID then
+                    shouldClear = true
+                    break
+                end
+            end
+        end
+        if shouldClear then
+            self:ClearAddonWaypoints()
+            self.inSyncAfterKill = false
             return
         end
     end
-    if self:CheckAndCancelTourIfUserOverrode() then return end
-    local tour = self.activeSpawnTour
-    if not tour or not tour.points then return end
-    local curPt = tour.points[tour.index]
-    if curPt and curPt.npcID and self:IsNpcLockedToday(curPt.npcID) then
-        self:AdvanceSpawnTourStep(true)
-    elseif curPt and not (_G.MountCollectorAlertFrame and _G.MountCollectorAlertFrame:IsShown()) then
-        local dispNpc = self:GetNpcDisplayName(curPt.npcID, curPt.n)
-        local nLabel = (IsValidNpcName(dispNpc) and dispNpc) or ((curPt.n and curPt.n ~= "") and curPt.n) or tour.name
-        self:SetMountWaypoint(tour.mountID, curPt.m, curPt.x, curPt.y, string.format("[%d/%d] %s", tour.index, tour.total, nLabel), true)
-        if self.RefreshWorldMapPins then
-            self:RefreshWorldMapPins()
-        end
+
+    if self.RefreshWorldMapPins then
+        self:RefreshWorldMapPins()
     end
+    self.inSyncAfterKill = false
 end
 
 
