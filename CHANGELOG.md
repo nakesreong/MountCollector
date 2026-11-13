@@ -1,5 +1,32 @@
 # Changelog — MountCollector
 
+## [v1.7.1] - 2026-11-13
+### Added
+- **Full Official Blizzard `Mount.db2` & `UiMap.db2` English Localization Bridge (`Locales.lua`, `Core.lua`)**:
+  - Embedded all **1,716 mounts** (`EnglishMountDB` with official English names, source texts, lore descriptions, and `SourceSpellID`s) and all **1,974 zones/maps** (`EnglishMapNames`) so selecting `Language: English (enUS)` on any non-English WoW client renders 100% of mount names, drop sources, rare NPC names, quest titles, zones, realms, and alt names in pure English without `/reload`.
+
+### Fixed
+- **Cold-Login / Instance `spellID = 0` Guard (`Core.lua`, `Navigation.lua`)**:
+  - Added automatic `SourceSpellID` fallback from `Mount.db2` inside `addon:GetMountInfoByID(mountID)` when `C_MountJournal.GetMountInfoByID` temporarily returns `spellID = 0` before the client spell cache warms up or during zone transitions, preventing false-positive `ValidateModuleIntegrity` warnings and ensuring all 1,716 mounts are indexed on login.
+- **Class Color Escape Prefix in Alt Lockout Matrix (`Lockouts.lua`)**:
+  - Fixed missing `c` in `|c` class color escape prefix (`RAID_CLASS_COLORS[classFile].colorStr`) in `FormatClassColoredChar`.
+
+---
+
+## [v1.7.0] - 2026-11-12
+### Added
+- **6-Module Architecture & Self-Diagnostic Integrity Check (`Core.lua`, `Navigation.lua`, `Lockouts.lua`, `RareRadar.lua`, `MapPins.lua`, `RadarUI.lua`)**:
+  - Refactored the codebase into 6 focused modules and added `/mc check` (`addon:ValidateModuleIntegrity()`).
+- **Dedicated `World Bosses` Tab & Dynamic Multilingual Layout (`RadarUI.lua`, `MountDungeonsDB.lua`)**:
+  - Reordered top tabs to `[In Current Zone] -> [World Bosses] -> [Dungeon & Raid] -> [Quest Chains] -> [All Account Attempts] | [Settings]` with auto-sizing buttons for all 10 supported locales and automatic responsive window scaling for laptop/compact screens.
+  - Added *Beledar's Spawn* (`2192` / `448941` with live 3-hour Void Phase countdown timer), *Doomwalker* (*Illidari Doomhawk* + *Azure Worldchiller*), *Daetan Swiftplume* (*Noble Flying Carpet*), *The Headless Horseman's Ghoulish Charger*, *Love Witch's Sweeper*, *Spring Butterfly*, and *Brewfest Bomber*.
+- **100% Official Blizzard DB2 ID Verification (`MountQuestsDB.lua`, `MountDungeonsDB.lua`)**:
+  - Verified all `mountID`, `spellID`, and `itemID` entries against official `Mount.db2`, `ItemEffect.db2`, and `Rarity` databases (43 total quest chains & 61 dungeon/raid/world boss entries).
+- **New Radar Settings (`Config.lua`, `RareRadar.lua`)**:
+  - Added toggles to hide the popup alert banner while keeping sound/3D arrow alerts active, and to auto-target nearby rares on approach via mousewheel/click; strictly suppressed rare alert banners inside instanced dungeons and raids.
+
+---
+
 ## [v1.6.1] - 2026-11-10
 ### Fixed
 - **Auto-Exit Spawn Tour on Manual Map Pin or Quest Tracking (`Core.lua`)**:
