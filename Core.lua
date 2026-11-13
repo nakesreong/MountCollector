@@ -304,8 +304,14 @@ end
 function addon:GetMountInfoByID(mountID)
     if not mountID or not C_MountJournal or not C_MountJournal.GetMountInfoByID then return nil end
     local name, spellID, icon, isActive, isUsable, sourceType, isFavorite, isFactionSpecific, faction, shouldHideOnChar, isCollected, mID, isSteadyFlight = C_MountJournal.GetMountInfoByID(mountID)
-    if name and self:GetActiveLocaleCode() == "enUS" and self.EnglishMountDB and self.EnglishMountDB[mountID] and self.EnglishMountDB[mountID].n then
-        name = self.EnglishMountDB[mountID].n
+    local en = self.EnglishMountDB and self.EnglishMountDB[mountID]
+    if en then
+        if (not spellID or not SafeNotSecret(spellID) or spellID == 0) and en.sp then
+            spellID = en.sp
+        end
+        if name and self:GetActiveLocaleCode() == "enUS" and en.n then
+            name = en.n
+        end
     end
     return name, spellID, icon, isActive, isUsable, sourceType, isFavorite, isFactionSpecific, faction, shouldHideOnChar, isCollected, mID, isSteadyFlight
 end
@@ -396,7 +402,7 @@ function addon:BuildMountIndex()
 
     for _, mountID in ipairs(mountIDs) do
         local name, spellID = self:GetMountInfoByID(mountID)
-        if spellID and SafeNotSecret(spellID) then
+        if spellID and SafeNotSecret(spellID) and spellID > 0 then
             self.MountBySpell[spellID] = mountID
 
             local dropData = self.MountDropsBySpell and self.MountDropsBySpell[spellID]
@@ -885,10 +891,10 @@ function addon:ValidateModuleIntegrity(silentIfOk)
         if type(self.MountDungeonsDB) == "table" then
             for idx, dEntry in ipairs(self.MountDungeonsDB) do
                 if dEntry.mountID then
-                    local mName, mSpell = C_MountJournal.GetMountInfoByID(dEntry.mountID)
+                    local mName, mSpell = self:GetMountInfoByID(dEntry.mountID)
                     if not mName then
                         table.insert(warnings, string.format("MountDungeonsDB[%d]: несуществующий mountID=%s (%s)", idx, tostring(dEntry.mountID), tostring(dEntry.bossEN or "?")))
-                    elseif dEntry.spellID and mSpell and mSpell ~= dEntry.spellID then
+                    elseif dEntry.spellID and mSpell and SafeNotSecret(mSpell) and mSpell > 0 and mSpell ~= dEntry.spellID then
                         table.insert(warnings, string.format("MountDungeonsDB[%d] (%s): spellID=%d не совпадает с клиентским spellID=%d", idx, mName, dEntry.spellID, mSpell))
                     end
                 end
@@ -897,10 +903,10 @@ function addon:ValidateModuleIntegrity(silentIfOk)
         if type(self.MountQuestsDB) == "table" then
             for idx, qChain in ipairs(self.MountQuestsDB) do
                 if qChain.mountID then
-                    local mName, mSpell = C_MountJournal.GetMountInfoByID(qChain.mountID)
+                    local mName, mSpell = self:GetMountInfoByID(qChain.mountID)
                     if not mName then
                         table.insert(warnings, string.format("MountQuestsDB[%d]: несуществующий mountID=%s", idx, tostring(qChain.mountID)))
-                    elseif qChain.spellID and mSpell and mSpell ~= qChain.spellID then
+                    elseif qChain.spellID and mSpell and SafeNotSecret(mSpell) and mSpell > 0 and mSpell ~= qChain.spellID then
                         table.insert(warnings, string.format("MountQuestsDB[%d] (%s): spellID=%d не совпадает с клиентским spellID=%d", idx, mName, qChain.spellID, mSpell))
                     end
                 end
@@ -912,7 +918,7 @@ function addon:ValidateModuleIntegrity(silentIfOk)
         for _, w in ipairs(warnings) do
             print("|cffff4444[MountCollector WARNING]|r " .. w)
         end
-        if geterrorhandler then
+        if not silentIfOk and geterrorhandler then
             geterrorhandler()("MountCollector Module Integrity Warning: " .. table.concat(warnings, "; "))
         end
         return false, warnings
@@ -1021,7 +1027,6 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         addon:SnapshotPreLockedRares()
         addon:ScanAllActiveVignettes()
-            if addon.ValidateModuleIntegrity then addon:ValidateModuleIntegrity(true) end
         if addon.UpdateLDBText then
             addon:UpdateLDBText()
         end

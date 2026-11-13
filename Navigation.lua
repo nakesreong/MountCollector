@@ -32,7 +32,7 @@ function addon:GetMountWowheadURL(mountID, questID)
     if info and info.itemID and info.itemID > 0 then
         return domain .. "item=" .. tostring(info.itemID)
     end
-    local _, spellID = C_MountJournal.GetMountInfoByID(mountID)
+    local _, spellID = self:GetMountInfoByID(mountID)
     if spellID and spellID > 0 then
         return domain .. "spell=" .. tostring(spellID)
     end
