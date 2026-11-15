@@ -17,12 +17,19 @@ local L = addon.L
 local SafeNotSecret = addon.SafeNotSecret
 local IsValidNpcName = addon.IsValidNpcName
 
-function addon:GetMountWowheadURL(mountID, questID)
+function addon:GetMountWowheadURL(mountID, questID, achievementID)
     local locCode = self:GetActiveLocaleCode()
     local subPath = WOWHEAD_LOCALE_PATH[locCode] or ""
     local domain = "https://www.wowhead.com/" .. subPath
+    if achievementID and achievementID > 0 then
+        return domain .. "achievement=" .. tostring(achievementID)
+    end
     if questID and questID > 0 then
         return domain .. "quest=" .. tostring(questID)
+    end
+    local gEntry = self.MountGloryByMountID and self.MountGloryByMountID[mountID]
+    if gEntry and gEntry.achievementID and gEntry.achievementID > 0 then
+        return domain .. "achievement=" .. tostring(gEntry.achievementID)
     end
     local chain = self.MountQuestsByMountID and self.MountQuestsByMountID[mountID]
     if chain and chain.wowheadUrl then
@@ -1514,7 +1521,26 @@ function addon:SyncActiveTourAfterKillOrAlert(killedNpcID, killedMountID)
 end
 
 
--- Универсальная навигация для любого маунта (квестового, данжевого, ворлдбосса или дропового рарника)
+function addon:OpenAchievementInBlizzardUI(achID)
+    if not achID or achID <= 0 then return end
+    if C_AddOns and C_AddOns.IsAddOnLoaded and not C_AddOns.IsAddOnLoaded("Blizzard_AchievementUI") then
+        if C_AddOns.LoadAddOn then
+            pcall(C_AddOns.LoadAddOn, "Blizzard_AchievementUI")
+        elseif UIParentLoadAddOn then
+            pcall(UIParentLoadAddOn, "Blizzard_AchievementUI")
+        end
+    end
+    if OpenAchievementFrameToAchievement then
+        pcall(OpenAchievementFrameToAchievement, achID)
+    elseif ToggleAchievementFrame then
+        pcall(ToggleAchievementFrame)
+        if AchievementFrame_SelectAchievement then
+            pcall(AchievementFrame_SelectAchievement, achID)
+        end
+    end
+end
+
+-- Универсальная навигация для любого маунта (квестового, данжевого, ворлдбосса, ачивочного или дропового рарника)
 -- ВАЖНО: Никогда не открывает принудительно Карту Мира (WorldMapFrame), чтобы не перекрывать экран игрока в полёте!
 function addon:NavigateMountTarget(mountID, forceFirstStep)
     if not mountID then return end
@@ -1523,6 +1549,16 @@ function addon:NavigateMountTarget(mountID, forceFirstStep)
         local stepIdx = forceFirstStep and 1 or qStatus.currentStepIndex or 1
         self:NavigateMountQuestStep(mountID, stepIdx, false)
         return
+    end
+    local gStatus = self.GetGloryMountStatus and self:GetGloryMountStatus(mountID) or nil
+    if gStatus then
+        if forceFirstStep and gStatus.achievementID then
+            self:OpenAchievementInBlizzardUI(gStatus.achievementID)
+            return
+        elseif gStatus.mapID and gStatus.x and gStatus.y then
+            self:SetMountWaypoint(mountID, gStatus.mapID, gStatus.x, gStatus.y, gStatus.instanceTitle .. " (" .. gStatus.achTitle .. ")", false)
+            return
+        end
     end
     local dStatus = self:GetDungeonMountStatus(mountID)
     if dStatus and dStatus.mapID and dStatus.x and dStatus.y then

@@ -209,6 +209,15 @@ function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText, is
                     dStatus.isLockedOnCurrentChar and L.ALT_STATUS_LOCKED or L.ALT_STATUS_READY
                 )
             end
+        else
+            local gStatus = self.GetGloryMountStatus and self:GetGloryMountStatus(mountID)
+            if gStatus then
+                local modeBadge = gStatus.soloable and (L.GLORY_SOLO_BADGE or "[Solo]") or string.format(L.GLORY_GROUP_BADGE_FMT or "[%d+]", gStatus.minPlayers)
+                tooltip:AddDoubleLine(
+                    L.TT_GLORY_LABEL or "|cffddddddGlory Meta-Achievement:|r",
+                    string.format("|cffffd100%s|r — |cff00ff96%d/%d (%d%%)|r %s", gStatus.achTitle, gStatus.completedCount, gStatus.totalCount, gStatus.progressPct, modeBadge)
+                )
+            end
         end
     end
 

@@ -26,6 +26,7 @@ addon.MountsBySourceItem = {}
 addon.DropInfoByMount = {}
 addon.MountQuestsByMountID = {}
 addon.MountDungeonsByMountID = {}
+addon.MountGloryByMountID = {}
 addon.MountsByNpc = {}
 addon.MountsByMap = {}
 addon.RecentAttemptLock = {}
@@ -723,6 +724,48 @@ function addon:BuildMountIndex()
         end
     end
 
+    -- 7. Индексируем мета-достижения «Слава герою / рейдеру / знатоку вылазок» из MountGloryDB
+    if type(self.MountGloryDB) == "table" then
+        for _, gEntry in ipairs(self.MountGloryDB) do
+            local mID = (gEntry.spellID and self.MountBySpell[gEntry.spellID])
+                or (gEntry.spellID and C_MountJournal.GetMountFromSpell and C_MountJournal.GetMountFromSpell(gEntry.spellID))
+                or gEntry.mountID
+            if mID and C_MountJournal.GetMountInfoByID(mID) then
+                gEntry.resolvedMountID = mID
+                self.MountGloryByMountID[mID] = gEntry
+
+                local info = self.DropInfoByMount[mID]
+                if not info then
+                    local name, spellID = self:GetMountInfoByID(mID)
+                    info = {
+                        mountID = mID,
+                        name = name,
+                        spellID = spellID or gEntry.spellID,
+                        method = "ACHIEVEMENT",
+                        boss = gEntry.titleEN or gEntry.titleRU,
+                        bossRU = gEntry.titleRU,
+                        bossEN = gEntry.titleEN,
+                        npcs = {},
+                        stats = {},
+                        quests = {},
+                        maps = {},
+                        coords = {},
+                    }
+                    self.DropInfoByMount[mID] = info
+                end
+                if gEntry.mapID and gEntry.x and gEntry.y and #info.coords == 0 then
+                    AddUniqueToList(info.maps, gEntry.mapID)
+                    table.insert(info.coords, {
+                        m = gEntry.mapID,
+                        x = gEntry.x,
+                        y = gEntry.y,
+                        n = gEntry.instanceRU or gEntry.instanceEN or gEntry.titleRU or gEntry.titleEN or info.name,
+                    })
+                end
+            end
+        end
+    end
+
     if self.KnownNpcNames then
         for nid, kName in pairs(self.KnownNpcNames) do
             if IsValidNpcName(kName) then
@@ -894,7 +937,7 @@ function addon:ValidateModuleIntegrity(silentIfOk)
     local warnings = {}
     local requiredTables = {
         "L", "MountDropsBySpell", "RareScannerMountItems", "RareScannerNpcToMounts",
-        "MountQuestsDB", "MountDungeonsDB", "MountBySpell", "DropInfoByMount",
+        "MountQuestsDB", "MountDungeonsDB", "MountGloryDB", "MountBySpell", "DropInfoByMount",
     }
     for _, tblName in ipairs(requiredTables) do
         if type(self[tblName]) ~= "table" then
@@ -913,7 +956,7 @@ function addon:ValidateModuleIntegrity(silentIfOk)
         "GetMountQuestChainStatus", "GetMountSpecialConditions", "BuildMountDebugReport",
         "ScanAllCharacterStatistics", "GetMountAttempts", "SetManualMountAttempts", "RecordAttempt",
         "IsNpcLockedToday", "IsMountRareLockedToday", "GetZoneUncollectedMounts",
-        "ScanCurrentCharacterLockouts", "GetDungeonMountStatus",
+        "ScanCurrentCharacterLockouts", "GetDungeonMountStatus", "GetGloryMountStatus",
         -- RareRadar.lua
         "IsPlayerInInstancedContent", "IsOpenWorldRareOrWorldBossMount", "CheckUnitForMountDrop",
         "CheckVignetteForMountDrop", "ScanAllActiveVignettes", "CheckMonsterChatForMountDrop",
@@ -951,6 +994,18 @@ function addon:ValidateModuleIntegrity(silentIfOk)
                         table.insert(warnings, string.format("MountQuestsDB[%d]: несуществующий mountID=%s", idx, tostring(qChain.mountID)))
                     elseif qChain.spellID and mSpell and SafeNotSecret(mSpell) and mSpell > 0 and mSpell ~= qChain.spellID then
                         table.insert(warnings, string.format("MountQuestsDB[%d] (%s): spellID=%d не совпадает с клиентским spellID=%d", idx, mName, qChain.spellID, mSpell))
+                    end
+                end
+            end
+        end
+        if type(self.MountGloryDB) == "table" then
+            for idx, gEntry in ipairs(self.MountGloryDB) do
+                if gEntry.mountID then
+                    local mName, mSpell = self:GetMountInfoByID(gEntry.mountID)
+                    if not mName then
+                        table.insert(warnings, string.format("MountGloryDB[%d]: несуществующий mountID=%s", idx, tostring(gEntry.mountID)))
+                    elseif gEntry.spellID and mSpell and SafeNotSecret(mSpell) and mSpell > 0 and mSpell ~= gEntry.spellID then
+                        table.insert(warnings, string.format("MountGloryDB[%d] (%s): spellID=%d не совпадает с клиентским spellID=%d", idx, mName, gEntry.spellID, mSpell))
                     end
                 end
             end
@@ -1004,6 +1059,7 @@ eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("ZONE_CHANGED")
 eventFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
 eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+eventFrame:RegisterEvent("ACHIEVEMENT_EARNED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
@@ -1060,7 +1116,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             addon:ScanAllActiveVignettes()
             if addon.ValidateModuleIntegrity then addon:ValidateModuleIntegrity(true) end
         end)
-    elseif event == "UPDATE_INSTANCE_INFO" or event == "PLAYER_LEVEL_UP" then
+    elseif event == "UPDATE_INSTANCE_INFO" or event == "PLAYER_LEVEL_UP" or event == "ACHIEVEMENT_EARNED" then
         addon:ScanCurrentCharacterLockouts()
         if addon.RefreshRadarUI then
             addon:RefreshRadarUI()

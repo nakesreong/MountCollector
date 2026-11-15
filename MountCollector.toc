@@ -30,6 +30,7 @@ Locales.lua
 MountDropsDB.lua
 MountQuestsDB.lua
 MountDungeonsDB.lua
+MountGloryDB.lua
 Core.lua
 Navigation.lua
 Lockouts.lua

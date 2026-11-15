@@ -1664,6 +1664,128 @@ function addon:GetDungeonMountStatus(mountID)
 end
 
 
+function addon:GetGloryMountStatus(mountID)
+    if not mountID or not self.MountGloryByMountID then return nil end
+    local gEntry = self.MountGloryByMountID[mountID]
+    if not gEntry then return nil end
+
+    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
+    local isRU = self:IsRussianLocale()
+    local achID = gEntry.achievementID or 0
+
+    local liveAchName, achCompleted = nil, false
+    if achID > 0 and GetAchievementInfo then
+        local ok, _, aName, _, aDone = pcall(GetAchievementInfo, achID)
+        if ok then
+            liveAchName = aName
+            achCompleted = (aDone == true)
+        end
+    end
+
+    local achTitle = (isRU and gEntry.titleRU) or gEntry.titleEN or liveAchName or ("Achievement #" .. tostring(achID))
+    local expansionTitle = (isRU and gEntry.expansionRU) or gEntry.expansionEN or "WoW"
+    local instanceTitle = (isRU and gEntry.instanceRU) or gEntry.instanceEN or achTitle
+    local zoneTitle = (isRU and gEntry.zoneRU) or gEntry.zoneEN or instanceTitle
+    local soloNote = (isRU and gEntry.soloNoteRU) or gEntry.soloNoteEN or ""
+
+    local critDoneByAsset = {}
+    local critDoneByIdx = {}
+    if achID > 0 and GetAchievementNumCriteria and GetAchievementCriteriaInfo then
+        local okNum, numCrit = pcall(GetAchievementNumCriteria, achID)
+        if okNum and type(numCrit) == "number" and numCrit > 0 then
+            for i = 1, numCrit do
+                local okC, _, _, cDone, _, _, _, _, assetID = pcall(GetAchievementCriteriaInfo, achID, i)
+                if okC then
+                    if cDone then
+                        critDoneByIdx[i] = true
+                        if type(assetID) == "number" and assetID > 0 then
+                            critDoneByAsset[assetID] = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local subList = {}
+    local completedCount = 0
+    local rawSubs = gEntry.subAchievements or {}
+    local totalCount = #rawSubs
+
+    for idx, sub in ipairs(rawSubs) do
+        local subID = sub.achID or 0
+        local subLiveName, subLiveDesc, subDone = nil, nil, false
+        if subID > 0 and GetAchievementInfo then
+            local okS, _, sName, _, sComp, _, _, _, sDesc = pcall(GetAchievementInfo, subID)
+            if okS then
+                subLiveName = sName
+                subLiveDesc = sDesc
+                subDone = (sComp == true)
+            end
+        end
+
+        local isSubDone = isCollected or achCompleted or subDone or critDoneByAsset[subID] or critDoneByIdx[idx] or false
+        if isSubDone then
+            completedCount = completedCount + 1
+        end
+
+        local sTitle = (isRU and sub.titleRU) or sub.titleEN or subLiveName or ("#" .. tostring(subID))
+        local sDesc = (isRU and sub.descRU) or sub.descEN or subLiveDesc or ""
+
+        table.insert(subList, {
+            index = idx,
+            achID = subID,
+            title = sTitle,
+            desc = sDesc,
+            isDone = isSubDone,
+        })
+    end
+
+    local progressPct = (totalCount > 0) and math.floor((completedCount / totalCount) * 100 + 0.5) or (isCollected and 100 or 0)
+
+    return {
+        mountID = mountID,
+        name = name or ("Mount #" .. tostring(mountID)),
+        spellID = spellID or gEntry.spellID,
+        icon = icon,
+        isCollected = isCollected,
+        achievementID = achID,
+        achTitle = achTitle,
+        expansionTitle = expansionTitle,
+        instanceTitle = instanceTitle,
+        zoneTitle = zoneTitle,
+        soloable = (gEntry.soloable == true),
+        minPlayers = gEntry.minPlayers or 1,
+        soloNote = soloNote,
+        mapID = gEntry.mapID,
+        x = gEntry.x,
+        y = gEntry.y,
+        completedCount = completedCount,
+        totalCount = totalCount,
+        progressPct = progressPct,
+        hasStarted = (completedCount > 0),
+        subAchievements = subList,
+        entry = gEntry,
+    }
+end
+
+function addon:GetInstanceGloryCrosslink(mapID, instanceEN)
+    if not self.MountGloryDB or not mapID then return nil end
+    for _, gEntry in ipairs(self.MountGloryDB) do
+        if gEntry.mapID == mapID and gEntry.minPlayers and gEntry.minPlayers < 8 then
+            local mID = gEntry.resolvedMountID or gEntry.mountID
+            local st = mID and self:GetGloryMountStatus(mID)
+            if st and not st.isCollected then
+                if not instanceEN or not gEntry.instanceEN or string.find(gEntry.instanceEN, instanceEN, 1, true) or string.find(instanceEN, gEntry.instanceEN, 1, true) then
+                    return st
+                end
+            end
+        end
+    end
+    return nil
+end
+
+
 function addon:CheckActiveQuestChainProgress()
     if addon.RefreshRadarUI then
         addon:RefreshRadarUI()

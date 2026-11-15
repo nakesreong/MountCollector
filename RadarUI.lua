@@ -345,7 +345,7 @@ local function GetOrCreateChecklistCard(pool, parent, index, cardWidth)
             GameTooltip:AddLine(self.rawDesc, 1, 1, 1, true)
         end
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(L.QUEST_STEP_CLICK_HINT)
+        GameTooltip:AddLine(self.achID and (L.GLORY_CLICK_HINT or L.QUEST_STEP_CLICK_HINT) or L.QUEST_STEP_CLICK_HINT)
         GameTooltip:Show()
     end)
 
@@ -359,8 +359,10 @@ local function GetOrCreateChecklistCard(pool, parent, index, cardWidth)
     card:SetScript("OnClick", function(self, button)
         if not self.mountID then return end
         if button == "RightButton" then
-            local url = addon:GetMountWowheadURL(self.mountID, self.doneQuest)
+            local url = addon:GetMountWowheadURL(self.mountID, self.doneQuest, self.achID)
             addon:ShowCopyLinkPopup(url, self.rawTitle)
+        elseif self.achID and IsShiftKeyDown() and addon.OpenAchievementInBlizzardUI then
+            addon:OpenAchievementInBlizzardUI(self.achID)
         elseif self.stepIndex then
             addon:NavigateMountQuestStep(self.mountID, self.stepIndex, false)
         elseif self.customMapID and self.customX and self.customY then
@@ -424,10 +426,11 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
     local attempts, byChar, dropInfo = addon:GetMountAttempts(mountID)
     local qStatus = addon:GetMountQuestChainStatus(mountID)
     local dStatus = (not qStatus) and addon:GetDungeonMountStatus(mountID) or nil
+    local gStatus = (not qStatus and not dStatus and addon.GetGloryMountStatus) and addon:GetGloryMountStatus(mountID) or nil
     local bestCoord = addon:GetBestMountCoords(mountID)
 
     if panel.btnSetAttempts then
-        if qStatus then
+        if qStatus or gStatus then
             panel.btnSetAttempts:Hide()
             if panel.secLabel and panel.btnDebug then
                 panel.secLabel:ClearAllPoints()
@@ -453,6 +456,21 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         if panel.btnBar then panel.btnBar:SetHeight(24) end
         if panel.scrollFrame then
             panel.scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 38)
+        end
+    elseif gStatus then
+        if panel.btnNavNow then
+            panel.btnNavNow:SetWidth(halfW)
+            panel.btnNavNow:SetText(L.GLORY_ENTRANCE_BTN or L.DUNGEON_ENTRANCE_BTN)
+            panel.btnNavNow:Show()
+        end
+        if panel.btnNavStart then
+            panel.btnNavStart:SetWidth(halfW)
+            panel.btnNavStart:SetText(L.GLORY_OPEN_ACH_BTN or L.QUEST_START_BTN)
+            panel.btnNavStart:Show()
+        end
+        if panel.btnBar then panel.btnBar:SetHeight(54) end
+        if panel.scrollFrame then
+            panel.scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 68)
         end
     elseif dStatus and dStatus.sourceKind ~= "WORLD_BOSS" and not (dStatus.entry and dStatus.entry.isWorldBoss) then
         -- Для боссов подземелий и рейдов скрываем «Отметить все спавны» и растягиваем «Отметить вход в данж» на всю ширину
@@ -510,6 +528,11 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         local curZone = (qStatus.currentStep and qStatus.currentStep.zone) or ""
         table.insert(metaLines, string.format(L.META_CHAIN_TYPE_ZONE, qStatus.category, curZone ~= "" and curZone or "—"))
         table.insert(metaLines, string.format(L.META_CHAIN_PROGRESS, qStatus.completedSteps, qStatus.totalSteps))
+    elseif gStatus then
+        local modeTag = gStatus.soloable and (L.GLORY_SOLO_BADGE or "[Solo]") or string.format(L.GLORY_GROUP_BADGE_FMT or "[Group %d+]", gStatus.minPlayers)
+        table.insert(metaLines, string.format(L.GLORY_META_LINE1_FMT, gStatus.achTitle, gStatus.achievementID))
+        table.insert(metaLines, string.format(L.GLORY_META_LINE2_FMT, gStatus.instanceTitle .. " (" .. gStatus.expansionTitle .. ")", modeTag))
+        table.insert(metaLines, string.format(L.GLORY_META_PROGRESS_FMT, gStatus.completedCount, gStatus.totalCount, gStatus.progressPct))
     elseif dStatus then
         if dStatus.eventTitle then
             table.insert(metaLines, string.format(L.REQUIRES_EVENT_FMT, dStatus.eventTitle))
@@ -625,6 +648,10 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
             local luck = (1.0 - ((1.0 - (1.0 / dStatus.chance)) ^ attempts)) * 100.0
             table.insert(descLines, string.format(L.TT_ACCOUNT_ATTEMPTS .. " |cffffd100%d|r" .. L.TT_LUCK_INLINE, attempts, luck))
         end
+        local gloryCross = (dStatus.sourceKind == "RAID" and addon.GetInstanceGloryCrosslink) and addon:GetInstanceGloryCrosslink(dStatus.mapID, dStatus.entry and dStatus.entry.instanceEN) or nil
+        if gloryCross and L.DUNGEON_GLORY_CROSSLINK_FMT then
+            table.insert(descLines, string.format(L.DUNGEON_GLORY_CROSSLINK_FMT, gloryCross.achTitle, gloryCross.name, gloryCross.completedCount, gloryCross.totalCount))
+        end
         table.insert(descLines, L.QUEST_STEP_CLICK_HINT)
 
         table.insert(stepsToRender, {
@@ -679,6 +706,66 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
             bg = allLocked and { 0.10, 0.06, 0.06, 0.92 } or { 0.07, 0.10, 0.12, 0.95 },
             br = allLocked and { 0.65, 0.25, 0.25, 0.90 } or { 0.25, 0.70, 0.95, 0.95 },
         })
+    elseif gStatus then
+        -- 1. Верхняя сводная карточка мета-достижения «Слава» (соло/пати + вход в рейд)
+        local badgeOverview
+        if isCollected then
+            badgeOverview = L.QUEST_STEP_DONE
+        elseif gStatus.soloable then
+            badgeOverview = L.GLORY_OVERVIEW_BADGE_SOLO
+        else
+            badgeOverview = string.format(L.GLORY_OVERVIEW_BADGE_GROUP, gStatus.minPlayers)
+        end
+
+        local coordText = "|cff00ccff" .. (gStatus.zoneTitle or "") .. "|r"
+        if gStatus.mapID and gStatus.x and gStatus.y then
+            coordText = string.format("|cff00ccff%s [%.1f, %.1f]|r", gStatus.zoneTitle or "", gStatus.x, gStatus.y)
+        end
+
+        local overviewLines = {}
+        if gStatus.soloNote and gStatus.soloNote ~= "" then
+            table.insert(overviewLines, gStatus.soloNote)
+        end
+        table.insert(overviewLines, L.GLORY_CLICK_HINT or L.QUEST_STEP_CLICK_HINT)
+
+        table.insert(stepsToRender, {
+            mountID = mountID,
+            achID = gStatus.achievementID,
+            customMapID = gStatus.mapID,
+            customX = gStatus.x,
+            customY = gStatus.y,
+            customNpc = gStatus.instanceTitle .. " (" .. gStatus.achTitle .. ")",
+            badge = badgeOverview,
+            coords = coordText,
+            title = string.format("%s — %s (%s)", gStatus.achTitle, gStatus.instanceTitle, gStatus.expansionTitle),
+            npc = string.format(L.GLORY_META_PROGRESS_FMT, gStatus.completedCount, gStatus.totalCount, gStatus.progressPct),
+            desc = table.concat(overviewLines, "\n"),
+            bg = isCollected and { 0.06, 0.12, 0.08, 0.92 } or (gStatus.soloable and { 0.06, 0.11, 0.10, 0.95 } or { 0.14, 0.10, 0.05, 0.95 }),
+            br = isCollected and { 0.18, 0.58, 0.30, 0.95 } or (gStatus.soloable and { 0.20, 0.78, 0.52, 0.95 } or { 1.0, 0.62, 0.15, 0.95 }),
+        })
+
+        -- 2. Пошаговые карточки каждого под-достижения из мета-ачивки
+        for _, sub in ipairs(gStatus.subAchievements or {}) do
+            local subBadge = sub.isDone and L.GLORY_SUB_DONE_BADGE or L.GLORY_SUB_TODO_BADGE
+            local subBg = sub.isDone and { 0.06, 0.12, 0.08, 0.92 } or { 0.11, 0.10, 0.06, 0.94 }
+            local subBr = sub.isDone and { 0.18, 0.58, 0.30, 0.95 } or { 0.85, 0.68, 0.15, 0.95 }
+
+            table.insert(stepsToRender, {
+                mountID = mountID,
+                achID = sub.achID,
+                customMapID = gStatus.mapID,
+                customX = gStatus.x,
+                customY = gStatus.y,
+                customNpc = gStatus.instanceTitle .. " — " .. sub.title,
+                badge = subBadge,
+                coords = string.format("|cffffd100#%d [%d/%d]|r", sub.achID, sub.index, gStatus.totalCount),
+                title = sub.title,
+                npc = "",
+                desc = sub.desc,
+                bg = subBg,
+                br = subBr,
+            })
+        end
     else
         -- 1. Основная карточка источника дропа / торговца / достижения
         local lockedToday = addon:IsMountRareLockedToday(mountID)
@@ -781,6 +868,7 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         card.mountID = item.mountID
         card.stepIndex = item.stepIndex
         card.doneQuest = item.doneQuest
+        card.achID = item.achID
         card.customMapID = item.customMapID
         card.customX = item.customX
         card.customY = item.customY
@@ -1000,7 +1088,7 @@ radarClose:SetPoint("RIGHT", topBar, "RIGHT", -4, 0)
 radarClose:SetScript("OnClick", function() radarFrame:Hide() end)
 
 -- Панель вкладок и счётчика «Всего: X»
--- Порядок вкладок: 1. В текущей зоне -> 2. Ворлдбоссы -> 3. Данж-лут -> 4. Цепочки и Квесты -> 5. Все траи аккаунта | Настройки
+-- Порядок вкладок: 1. В текущей зоне -> 2. Ворлдбоссы -> 3. Данж-лут -> 4. Цепочки и Квесты -> 5. Слава и Ачивки -> 6. Все траи аккаунта | Настройки
 local totalBox = CreateFrame("Frame", nil, radarFrame, "BackdropTemplate")
 totalBox:SetSize(96, 24)
 totalBox:SetPoint("TOPLEFT", radarFrame, "TOPLEFT", 12, -36)
@@ -1010,20 +1098,23 @@ local totalFS = totalBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 totalFS:SetPoint("CENTER", totalBox, "CENTER", 0, 0)
 totalFS:SetTextColor(1.0, 0.82, 0.0, 1.0)
 
-local tabZoneBtn = CreateFlatButton(radarFrame, 120, 24, "", false)
-tabZoneBtn:SetPoint("LEFT", totalBox, "RIGHT", 5, 0)
+local tabZoneBtn = CreateFlatButton(radarFrame, 110, 24, "", false)
+tabZoneBtn:SetPoint("LEFT", totalBox, "RIGHT", 4, 0)
 
-local tabWorldBossBtn = CreateFlatButton(radarFrame, 104, 24, "", false)
-tabWorldBossBtn:SetPoint("LEFT", tabZoneBtn, "RIGHT", 5, 0)
+local tabWorldBossBtn = CreateFlatButton(radarFrame, 96, 24, "", false)
+tabWorldBossBtn:SetPoint("LEFT", tabZoneBtn, "RIGHT", 4, 0)
 
-local tabDungeonsBtn = CreateFlatButton(radarFrame, 102, 24, "", false)
-tabDungeonsBtn:SetPoint("LEFT", tabWorldBossBtn, "RIGHT", 5, 0)
+local tabDungeonsBtn = CreateFlatButton(radarFrame, 96, 24, "", false)
+tabDungeonsBtn:SetPoint("LEFT", tabWorldBossBtn, "RIGHT", 4, 0)
 
-local tabQuestsBtn = CreateFlatButton(radarFrame, 130, 24, "", false)
-tabQuestsBtn:SetPoint("LEFT", tabDungeonsBtn, "RIGHT", 5, 0)
+local tabQuestsBtn = CreateFlatButton(radarFrame, 114, 24, "", false)
+tabQuestsBtn:SetPoint("LEFT", tabDungeonsBtn, "RIGHT", 4, 0)
 
-local tabAllBtn = CreateFlatButton(radarFrame, 130, 24, "", false)
-tabAllBtn:SetPoint("LEFT", tabQuestsBtn, "RIGHT", 5, 0)
+local tabGloryBtn = CreateFlatButton(radarFrame, 114, 24, "", false)
+tabGloryBtn:SetPoint("LEFT", tabQuestsBtn, "RIGHT", 4, 0)
+
+local tabAllBtn = CreateFlatButton(radarFrame, 114, 24, "", false)
+tabAllBtn:SetPoint("LEFT", tabGloryBtn, "RIGHT", 4, 0)
 
 local btnSettings = CreateFlatButton(radarFrame, 86, 24, "", false)
 btnSettings:SetPoint("TOPRIGHT", radarFrame, "TOPRIGHT", -12, -36)
@@ -1037,29 +1128,29 @@ btnSettings:SetScript("OnClick", function()
     addon:RefreshRadarUI()
 end)
 
-local topTabButtons = { tabZoneBtn, tabWorldBossBtn, tabDungeonsBtn, tabQuestsBtn, tabAllBtn }
+local topTabButtons = { tabZoneBtn, tabWorldBossBtn, tabDungeonsBtn, tabQuestsBtn, tabGloryBtn, tabAllBtn }
 
 -- Динамический расчёт ширины всех кнопок верхней панели для любого языка клиента (без наездов!)
 local function LayoutTopTabBar()
     local totalTextW = math.ceil(totalFS:GetStringWidth() or 64)
-    local totalBoxW = math.max(84, math.min(126, totalTextW + 18))
+    local totalBoxW = math.max(76, math.min(118, totalTextW + 14))
     totalBox:SetWidth(totalBoxW)
 
-    local settingsW = btnSettings:AutoSizeWidth(78, 135, 16)
-    local availForTabs = (radarFrame:GetWidth() or 880) - 24 - totalBoxW - settingsW - (#topTabButtons * 5) - 10
+    local settingsW = btnSettings:AutoSizeWidth(74, 128, 14)
+    local availForTabs = (radarFrame:GetWidth() or 880) - 24 - totalBoxW - settingsW - (#topTabButtons * 4) - 8
 
     local rawTabWidths = {}
     local sumRaw = 0
     for i, btn in ipairs(topTabButtons) do
-        local w = math.ceil((btn.label and btn.label:GetStringWidth()) or 80) + 18
-        w = math.max(82, w)
+        local w = math.ceil((btn.label and btn.label:GetStringWidth()) or 76) + 12
+        w = math.max(66, w)
         rawTabWidths[i] = w
         sumRaw = sumRaw + w
     end
 
     local scale = (sumRaw > availForTabs and sumRaw > 0) and (availForTabs / sumRaw) or 1.0
     for i, btn in ipairs(topTabButtons) do
-        btn:SetWidth(math.max(72, math.floor(rawTabWidths[i] * scale)))
+        btn:SetWidth(math.max(62, math.floor(rawTabWidths[i] * scale)))
     end
 end
 
@@ -1222,6 +1313,8 @@ function addon:InspectMountInCollector(mountID)
     local dStatus = self:GetDungeonMountStatus(mountID)
     if self:GetMountQuestChainStatus(mountID) then
         ui.currentTab = "QUESTS"
+    elseif self.GetGloryMountStatus and self:GetGloryMountStatus(mountID) then
+        ui.currentTab = "GLORY"
     elseif dStatus and dStatus.sourceKind == "WORLD_BOSS" then
         ui.currentTab = "WORLDBOSS"
     elseif dStatus then
@@ -1249,6 +1342,7 @@ function addon:RefreshRadarUI()
     tabWorldBossBtn:SetText(L.TAB_WORLD_BOSSES or "Ворлдбоссы")
     tabDungeonsBtn:SetText(L.TAB_DUNGEON_LOOT)
     tabQuestsBtn:SetText(L.TAB_QUEST_CHAINS)
+    tabGloryBtn:SetText(L.TAB_GLORY or "Слава и Ачивки")
     tabAllBtn:SetText(L.TAB_ALL_ATTEMPTS)
     btnPinZone:SetText(L.BTN_PIN_ALL_ZONE)
     btnSettings:SetText(L.BTN_SETTINGS)
@@ -1268,6 +1362,7 @@ function addon:RefreshRadarUI()
     tabWorldBossBtn:SetActiveTab(ui.currentTab == "WORLDBOSS")
     tabDungeonsBtn:SetActiveTab(ui.currentTab == "DUNGEONS")
     tabQuestsBtn:SetActiveTab(ui.currentTab == "QUESTS")
+    tabGloryBtn:SetActiveTab(ui.currentTab == "GLORY")
     tabAllBtn:SetActiveTab(ui.currentTab == "ALL")
     btnSettings:SetActiveTab(ui.currentTab == "SETTINGS")
 
@@ -1358,6 +1453,52 @@ function addon:RefreshRadarUI()
             end
             if (a.completedSteps or 0) ~= (b.completedSteps or 0) then
                 return (a.completedSteps or 0) > (b.completedSteps or 0)
+            end
+            return (a.dbOrder or 0) < (b.dbOrder or 0)
+        end)
+    elseif ui.currentTab == "GLORY" then
+        if type(self.MountGloryDB) == "table" then
+            for dbIdx, gEntry in ipairs(self.MountGloryDB) do
+                local mID = gEntry.resolvedMountID or (gEntry.spellID and self.MountBySpell[gEntry.spellID]) or gEntry.mountID
+                local st = mID and self.GetGloryMountStatus and self:GetGloryMountStatus(mID) or nil
+                if st and (not st.isCollected or ui.pinnedInspectMountID == mID) then
+                    local sTxt = ui.searchText or ""
+                    local matchSearch = (sTxt == "")
+                        or string.find(string.lower(st.name or ""), sTxt, 1, true)
+                        or string.find(string.lower(st.achTitle or ""), sTxt, 1, true)
+                        or string.find(string.lower(st.instanceTitle or ""), sTxt, 1, true)
+                        or string.find(string.lower(st.expansionTitle or ""), sTxt, 1, true)
+                    if matchSearch then
+                        local modeBadge = st.soloable and (L.GLORY_SOLO_BADGE or "|cff33ff88[Solo]|r") or string.format(L.GLORY_GROUP_BADGE_FMT or "|cffff8800[%d+]|r", st.minPlayers)
+                        local progBadge = st.isCollected and L.TAG_COLLECTED or string.format(L.GLORY_ROW_PROGRESS_FMT, st.completedCount, st.totalCount, st.progressPct)
+                        table.insert(listEntries, {
+                            mountID = st.mountID,
+                            name = st.name,
+                            icon = st.icon,
+                            isCollected = st.isCollected,
+                            soloable = st.soloable,
+                            progressPct = st.progressPct or 0,
+                            completedCount = st.completedCount or 0,
+                            dbOrder = dbIdx,
+                            subLine = string.format("%s %s |cff888888• %s|r", progBadge, modeBadge, st.achTitle),
+                        })
+                    end
+                end
+            end
+        end
+
+        table.sort(listEntries, function(a, b)
+            if a.isCollected ~= b.isCollected then
+                return not a.isCollected
+            end
+            if (a.progressPct or 0) ~= (b.progressPct or 0) then
+                return (a.progressPct or 0) > (b.progressPct or 0)
+            end
+            if (a.completedCount or 0) ~= (b.completedCount or 0) then
+                return (a.completedCount or 0) > (b.completedCount or 0)
+            end
+            if a.soloable ~= b.soloable then
+                return a.soloable
             end
             return (a.dbOrder or 0) < (b.dbOrder or 0)
         end)
@@ -1569,6 +1710,11 @@ end)
 
 tabQuestsBtn:SetScript("OnClick", function()
     ui.currentTab = "QUESTS"
+    addon:RefreshRadarUI()
+end)
+
+tabGloryBtn:SetScript("OnClick", function()
+    ui.currentTab = "GLORY"
     addon:RefreshRadarUI()
 end)
 
