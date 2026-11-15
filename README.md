@@ -1,6 +1,6 @@
 # MountCollector — Rare Radar, World Boss & Dungeon Lockouts, Quest Chain Navigator & Rarity Census
 
-**Version:** 1.7.1  
+**Version:** 1.7.2  
 **Authors:** Gemini (Tiger) & Anya (5cr3am1ng5oul)  
 **Compatibility:** World of Warcraft: Retail / Midnight (`12.1.7`, `12.1.5`) & The War Within (`11.2.7`)  
 **Source Repository:** [https://github.com/nakesreong/MountCollector](https://github.com/nakesreong/MountCollector)  
@@ -39,10 +39,10 @@ A standalone dark flat interface (`MountCollectorRadarFrame`) organized into fiv
 
 Built on a verified database of 264 drop mounts, 353 mount items, and 223 rare NPCs:
 
-*   **Nearest-Neighbor Spawn Tour (`Navigation.lua`):** Orders all remaining unlocked spawn points for a rare mount into an optimal loop starting from your player position. As you fly within 18 yards of a point, the 3D diamond pin (`C_SuperTrack`) automatically advances to the next live coordinate.
+*   **Nearest-Neighbor Spawn Tour & Cross-Continent Portal Routing (`Navigation.lua`):** Orders all remaining unlocked spawn points for a rare mount into an optimal loop starting from your player position, and automatically guides you step-by-step through capital portal rooms when routing across continents. As you fly into/touch a point (`<= 48` yards) or kill a rare, the 3D diamond pin (`C_SuperTrack`), TomTom arrow, and World Map pin automatically clear or advance to the next coordinate.
 *   **Non-Intrusive Manual Override:** If you manually Ctrl/Shift-click a custom pin on the World Map or switch super-tracking to a quest objective, MountCollector immediately exits the automated spawn tour so it never fights your manual waypoints.
 *   **Open-World Rare Radar & Auto-Target (`RareRadar.lua`):** Monitors unit targets, mouseovers, nameplates, vignettes, and monster yells exclusively in the open world (`IsPlayerInInstancedContent()` blocks all alerts inside dungeons, raids, arenas, and battlegrounds). Left-clicking the alert banner (or pressing `Tab` on approach when out of combat) targets the rare via a taint-free `SecureActionButtonTemplate` overlay and sets a 3D waypoint.
-*   **Interactive World Map Pins (`MapPins.lua`):** Renders interactive mount icons on the World Map (`M`) for uncollected rares and World Bosses that are still available to loot today.
+*   **Interactive World Map Pins & Repeatable Rare Respawn Timers (`MapPins.lua`, `Lockouts.lua`):** Renders interactive mount icons on the World Map (`M`) for uncollected rares and World Bosses that are still available to loot today, tracks Unique 3-day incubating eggs (_Primal Egg_ / _Mysterious Egg_), per-corpse AoE mob counters, and live respawn countdowns (`Killed X min ago — respawn ~30–60 min`) for repeatable rares.
 
 ### 3. Mount Journal (`CollectionsJournal`) Integration & Side-Dock
 
