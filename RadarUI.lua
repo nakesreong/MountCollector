@@ -68,6 +68,9 @@ function addon:ShowCopyLinkPopup(url, subtitle)
         p.editBox = eb
 
         ui.copyPopup = p
+        if type(UISpecialFrames) == "table" then
+            table.insert(UISpecialFrames, "MountCollectorCopyPopup")
+        end
     end
 
     local p = ui.copyPopup
@@ -149,6 +152,9 @@ function addon:ShowMountDebugWindow(mountID)
         f.btnCopy = btnCopy
 
         ui.debugFrame = f
+        if type(UISpecialFrames) == "table" then
+            table.insert(UISpecialFrames, "MountCollectorDebugFrame")
+        end
     end
 
     local f = ui.debugFrame
@@ -269,6 +275,9 @@ function addon:ShowSetAttemptsPopup(mountID)
         end)
 
         ui.setAttemptsFrame = f
+        if type(UISpecialFrames) == "table" then
+            table.insert(UISpecialFrames, "MountCollectorSetAttemptsFrame")
+        end
     end
 
     local f = ui.setAttemptsFrame
@@ -1071,6 +1080,9 @@ radarFrame:SetScript("OnShow", function(self)
 end)
 radarFrame:Hide()
 ui.radarFrame = radarFrame
+if type(UISpecialFrames) == "table" then
+    table.insert(UISpecialFrames, "MountCollectorRadarFrame")
+end
 
 -- Верхняя полоса заголовка (как в «Транспорт»)
 local topBar = CreateFrame("Frame", nil, radarFrame, "BackdropTemplate")
