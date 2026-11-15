@@ -2,8 +2,9 @@ name: Update Armory Mount Rarity DB (Twice Weekly)
 
 on:
   schedule:
-    # Runs every Tuesday and Friday at 08:00 UTC
-    - cron: "0 8 * * 2,5"
+    # Upstream Protuhj/MountsRarity publishes new dumps on Thursday (~07:30 UTC) and Sunday (~06:51 UTC).
+    # Runs every Sunday, Thursday, and Friday at 08:30 UTC so Sunday & Thursday dumps are picked up the same morning.
+    - cron: "30 8 * * 0,4,5"
   workflow_dispatch:
 
 jobs:
@@ -14,6 +15,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -35,3 +38,11 @@ jobs:
           git add Libs/MountsRarity-2.0.lua
           git commit -m "chore(db): update Armory mount rarity DB (MountsRarity-2.0 v${MINOR})"
           git push origin HEAD:main
+          if git show-ref --verify --quiet refs/remotes/origin/dev; then
+            git checkout -B dev origin/dev
+            git checkout main -- Libs/MountsRarity-2.0.lua
+            if ! git diff --staged --quiet; then
+              git commit -m "chore(db): sync Armory mount rarity DB (MountsRarity-2.0 v${MINOR})"
+              git push origin dev
+            fi
+          fi
