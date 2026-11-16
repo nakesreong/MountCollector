@@ -30,25 +30,44 @@ function addon:IsPlayerInInstancedContent()
     return false
 end
 
--- Множество ID маунтов с групповых элитных рарников-боссов актуального контента (Midnight 12.x / TWW 11.x),
--- которых невозможно убить в одиночку на квестах (требуется группа) и которые иначе спамят при полётах по локации:
-local GroupRareBossMountIDs = {
-    [2176] = true, [2178] = true, [2192] = true, [2204] = true, [2205] = true, [2222] = true,
-    [2291] = true, [2293] = true, [2497] = true, [2498] = true,
-    [2601] = true, [2603] = true, [2605] = true, [2607] = true, [2615] = true,
-    [2708] = true, [2749] = true, [2751] = true, [2758] = true, [2760] = true,
-    [2762] = true, [2775] = true, [2805] = true, [2817] = true, [2827] = true,
-    [2961] = true, [3051] = true, [3061] = true,
+-- Точный список NPC ID групповых элитных рарников-боссов актуального контента (Midnight 12.x / TWW 11.x)
+-- из официальной таблицы Vignette.db2 (QuestFeedbackEffectID = 1113 / 1313 — VignetteKillElite / Boss),
+-- которых нельзя убить в одиночку на квестах (требуется группа), в отличие от обычных сольных рарников (QuestFeedbackEffectID = 1114):
+local GroupRareBossNpcIDs = {
+    -- The War Within (qfe = 1113)
+    [207802] = true, -- Beledar's Spawn
+    [216046] = true, -- Tka'ktath
+    [219281] = true, -- Alunira
+    [220285] = true, -- Lurker of the Deeps
+    [231310] = true, -- Darkfuse Precipitant
+    [234621] = true, -- Gallagio Garbage
+    [234845] = true, -- Sthaarbs
+    -- Midnight 12.x (qfe = 1113 / 1313 — групповые рарники-боссы с черепом/элитной звездой)
+    [245691] = true, -- The Decaying Diamondback
+    [245692] = true, -- Ash'an the Empowered
+    [248068] = true, -- Nullspiral
+    [248459] = true, -- The Many-Broken
+    [248700] = true, -- Abysslick
+    [248791] = true, -- Voidseer Orivane
+    [248823] = true, -- Blackcore
+    [250086] = true, -- Stumpy
+    [250317] = true, -- Oro'ohna
+    [250358] = true, -- Annulus the Worldshaker
+    [255087] = true, -- Malformed Leviathan
+    [255088] = true, -- Looming Mutagenitor
+    [255927] = true, -- Venom Lancer Ori'kassi
+    [256808] = true, -- Ravengerus
+    [256821] = true, -- Far'thana the Mad (Фар'тана Безумная)
+    [257199] = true, -- Hardin Steellock
+    [257231] = true, -- Gar'chak Skullcleave
+    [257863] = true, -- Vassti, the Exalted Broodmother
 }
 
 -- Проверить, является ли маунт / NPC боссом или групповым элитным рарником-боссом (требующим группу),
 -- а не обычным сольным рарником открытого мира
-function addon:IsBossOrWorldBossMount(mountID, npcID, unit)
+function addon:IsBossOrWorldBossMount(mountID, npcID, unit, vignetteAtlasName)
     if not mountID then return false end
-    if GroupRareBossMountIDs[mountID] or mountID >= 2600 then
-        return true
-    end
-    if npcID and npcID >= 230000 then
+    if npcID and GroupRareBossNpcIDs[npcID] then
         return true
     end
     local dEntry = self.MountDungeonsByMountID and self.MountDungeonsByMountID[mountID]
@@ -63,8 +82,14 @@ function addon:IsBossOrWorldBossMount(mountID, npcID, unit)
         if type(info.stats) == "table" and #info.stats > 0 then
             return true
         end
-        if info.chance and info.chance >= 500 and type(info.coords) == "table" and #info.coords >= 8 then
-            return true
+    end
+    if vignetteAtlasName and SafeNotSecret(vignetteAtlasName) and type(vignetteAtlasName) == "string" then
+        local lowAtlas = string.lower(vignetteAtlasName)
+        if string.find(lowAtlas, "elite", 1, true) or string.find(lowAtlas, "worldboss", 1, true) then
+            local curMap = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+            if not curMap or curMap >= 2200 then
+                return true
+            end
         end
     end
     if unit and SafeNotSecret(unit) and UnitExists and UnitExists(unit) and UnitClassification then
@@ -74,7 +99,7 @@ function addon:IsBossOrWorldBossMount(mountID, npcID, unit)
                 return true
             elseif uClass == "rareelite" then
                 local curMap = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
-                if curMap and curMap >= 2200 then
+                if not curMap or curMap >= 2200 then
                     return true
                 end
             end
@@ -85,14 +110,14 @@ end
 
 -- Проверить, разрешён ли радар-алерт для данного маунта согласно настройкам:
 --   * Рарники открытого мира проверяют alertRares (вкл. по умолчанию)
---   * Боссы и ворлдбоссы проверяют alertBosses (выкл. по умолчанию — включаются отдельно в Настройках!)
-function addon:IsOpenWorldRareOrWorldBossMount(mountID, npcID, unit)
+--   * Боссы и групповые рарники-боссы проверяют alertBosses (выкл. по умолчанию — включаются отдельно в Настройках!)
+function addon:IsOpenWorldRareOrWorldBossMount(mountID, npcID, unit, vignetteAtlasName)
     if not mountID then return false end
     local info = self.DropInfoByMount and self.DropInfoByMount[mountID]
     if info and (info.method == "COLLECTION" or info.method == "ACHIEVEMENT") then
         return false
     end
-    local isBoss = self:IsBossOrWorldBossMount(mountID, npcID, unit)
+    local isBoss = self:IsBossOrWorldBossMount(mountID, npcID, unit, vignetteAtlasName)
     if isBoss then
         return (self.db and self.db.settings and self.db.settings.alertBosses == true) or false
     end
@@ -280,11 +305,12 @@ function addon:CheckVignetteForMountDrop(vignetteGUID, isRetry)
         end
     end
 
+    local vAtlas = SafeNotSecret(vInfo.atlasName) and vInfo.atlasName or nil
     for _, mountID in ipairs(mounts) do
-        if self:IsOpenWorldRareOrWorldBossMount(mountID, npcID, nil) and not self:IsMountRareLockedToday(mountID) then
+        if self:IsOpenWorldRareOrWorldBossMount(mountID, npcID, nil, vAtlas) and not self:IsMountRareLockedToday(mountID) then
             local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
             if not isCollected then
-                self:TriggerRareMountAlert(mountID, npcID, vName, false, mapID, liveX, liveY)
+                self:TriggerRareMountAlert(mountID, npcID, vName, false, mapID, liveX, liveY, nil, vAtlas)
                 break
             end
         end
@@ -535,10 +561,10 @@ alertFrame:SetScript("OnHide", function()
     end
 end)
 
-function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, liveX, liveY, unit)
+function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, liveX, liveY, unit, vignetteAtlasName)
     if not forceShow then
         if not self.db or not self.db.settings then return end
-        if not self:IsOpenWorldRareOrWorldBossMount(mountID, npcID, unit) then return end
+        if not self:IsOpenWorldRareOrWorldBossMount(mountID, npcID, unit, vignetteAtlasName) then return end
     end
     local key = (npcID and npcID > 0 and npcID ~= 99999) and ("npc:" .. tostring(npcID)) or (tostring(npcID or 0) .. ":" .. tostring(mountID or 0))
     local now = GetTime()
