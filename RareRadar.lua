@@ -30,9 +30,27 @@ function addon:IsPlayerInInstancedContent()
     return false
 end
 
--- Проверить, является ли маунт / NPC боссом (данж, рейд, мировой босс или ивентовый босс), а не обычным рарником открытого мира
+-- Множество ID маунтов с групповых элитных рарников-боссов актуального контента (Midnight 12.x / TWW 11.x),
+-- которых невозможно убить в одиночку на квестах (требуется группа) и которые иначе спамят при полётах по локации:
+local GroupRareBossMountIDs = {
+    [2176] = true, [2178] = true, [2192] = true, [2204] = true, [2205] = true, [2222] = true,
+    [2291] = true, [2293] = true, [2497] = true, [2498] = true,
+    [2601] = true, [2603] = true, [2605] = true, [2607] = true, [2615] = true,
+    [2708] = true, [2749] = true, [2751] = true, [2758] = true, [2760] = true,
+    [2762] = true, [2775] = true, [2805] = true, [2817] = true, [2827] = true,
+    [2961] = true, [3051] = true, [3061] = true,
+}
+
+-- Проверить, является ли маунт / NPC боссом или групповым элитным рарником-боссом (требующим группу),
+-- а не обычным сольным рарником открытого мира
 function addon:IsBossOrWorldBossMount(mountID, npcID, unit)
     if not mountID then return false end
+    if GroupRareBossMountIDs[mountID] or mountID >= 2600 then
+        return true
+    end
+    if npcID and npcID >= 230000 then
+        return true
+    end
     local dEntry = self.MountDungeonsByMountID and self.MountDungeonsByMountID[mountID]
     if dEntry then
         return true
@@ -45,11 +63,21 @@ function addon:IsBossOrWorldBossMount(mountID, npcID, unit)
         if type(info.stats) == "table" and #info.stats > 0 then
             return true
         end
+        if info.chance and info.chance >= 500 and type(info.coords) == "table" and #info.coords >= 8 then
+            return true
+        end
     end
     if unit and SafeNotSecret(unit) and UnitExists and UnitExists(unit) and UnitClassification then
         local okCls, uClass = pcall(UnitClassification, unit)
-        if okCls and uClass == "worldboss" then
-            return true
+        if okCls then
+            if uClass == "worldboss" then
+                return true
+            elseif uClass == "rareelite" then
+                local curMap = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+                if curMap and curMap >= 2200 then
+                    return true
+                end
+            end
         end
     end
     return false

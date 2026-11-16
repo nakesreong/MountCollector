@@ -119,7 +119,13 @@ function addon:BuildSettingsControls(parent, isEmbeddedInRadar)
     controls.secRadar = secRadar
 
     local cb7 = CreateOptionCheckbox("alertRares", "CFG_ALERT_RARES", secRadar, -1)
-    local cbBosses = CreateOptionCheckbox("alertBosses", "CFG_ALERT_BOSSES", cb7, 6)
+    local cbBosses = CreateOptionCheckbox("alertBosses", "CFG_ALERT_BOSSES", cb7, 6, function(checked)
+        if not addon.db or not addon.db.settings then return end
+        addon.db.settings.alertBosses = checked
+        if not checked and _G.MountCollectorAlertFrame and _G.MountCollectorAlertFrame:IsShown() then
+            _G.MountCollectorAlertFrame:Hide()
+        end
+    end)
     local cbBanner = CreateOptionCheckbox("showAlertBanner", "CFG_SHOW_ALERT_BANNER", cbBosses, 6, function(checked)
         if not addon.db or not addon.db.settings then return end
         addon.db.settings.showAlertBanner = checked

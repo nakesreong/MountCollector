@@ -211,8 +211,8 @@ local Locales = {
         CFG_SHOW_ATTEMPTS = "Показывать количество траев на аккаунте и разбивку по персонажам",
 
         CFG_SEC_RADAR = "Радар рарников, Карта мира и Миникарта",
-        CFG_ALERT_RARES = "Включить радар рарников в открытом мире",
-        CFG_ALERT_BOSSES = "Включить радар-алерты на боссов и мировых боссов (по умолч. выкл.)",
+        CFG_ALERT_RARES = "Включить радар сольных рарников в открытом мире",
+        CFG_ALERT_BOSSES = "Включить алерты на боссов и групповых рарников-боссов (требующих пати)",
         CFG_SHOW_ALERT_BANNER = "Показывать всплывающий тултип-баннер рарника сверху экрана",
         CFG_AUTO_TARGET_RARE = "Авто-взятие рарника в цель на подлёте (по прокрутке колёсика мыши / клику)",
         CFG_ALERT_SOUND = "Проигрывать звуковой сигнал тревоги при обнаружении рарника",
@@ -426,8 +426,8 @@ local Locales = {
         CFG_SHOW_ATTEMPTS = "Show account-wide attempts and per-character breakdown",
 
         CFG_SEC_RADAR = "Boss / Rare Radar, World Map Pins & Minimap Icon",
-        CFG_ALERT_RARES = "Enable open-world Rare NPC radar alerts",
-        CFG_ALERT_BOSSES = "Enable radar alerts for Bosses & World Bosses (off by default)",
+        CFG_ALERT_RARES = "Enable soloable open-world Rare NPC radar alerts",
+        CFG_ALERT_BOSSES = "Enable radar alerts for Bosses & Group Rare-Bosses (requires party, off by default)",
         CFG_SHOW_ALERT_BANNER = "Show popup alert banner (tooltip) at the top of the screen when a rare is detected",
         CFG_AUTO_TARGET_RARE = "Auto-target rare on approach (via mousewheel scroll / click)",
         CFG_ALERT_SOUND = "Play alert sound when a rare/boss with a missing mount is detected",
