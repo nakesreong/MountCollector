@@ -158,6 +158,7 @@ function addon:InitDB()
         showServerRarity = true,
         showAttempts = true,
         alertRares = true,
+        alertBosses = false,
         showAlertBanner = true,
         autoTargetOnApproach = true,
         alertSound = true,

@@ -30,14 +30,48 @@ function addon:IsPlayerInInstancedContent()
     return false
 end
 
--- Проверить, относится ли маунт к открытому миру (рарник или ворлдбосс), а не к инстансовому данжу/рейду
-function addon:IsOpenWorldRareOrWorldBossMount(mountID)
+-- Проверить, является ли маунт / NPC боссом (данж, рейд, мировой босс или ивентовый босс), а не обычным рарником открытого мира
+function addon:IsBossOrWorldBossMount(mountID, npcID, unit)
     if not mountID then return false end
     local dEntry = self.MountDungeonsByMountID and self.MountDungeonsByMountID[mountID]
-    if dEntry and dEntry.sourceKind ~= "WORLD_BOSS" and not dEntry.isWorldBoss then
+    if dEntry then
+        return true
+    end
+    local info = self.DropInfoByMount and self.DropInfoByMount[mountID]
+    if info then
+        if info.method == "BOSS" or info.method == "ENCOUNTER" then
+            return true
+        end
+        if type(info.stats) == "table" and #info.stats > 0 then
+            return true
+        end
+    end
+    if unit and SafeNotSecret(unit) and UnitExists and UnitExists(unit) and UnitClassification then
+        local okCls, uClass = pcall(UnitClassification, unit)
+        if okCls and uClass == "worldboss" then
+            return true
+        end
+    end
+    return false
+end
+
+-- Проверить, разрешён ли радар-алерт для данного маунта согласно настройкам:
+--   * Рарники открытого мира проверяют alertRares (вкл. по умолчанию)
+--   * Боссы и ворлдбоссы проверяют alertBosses (выкл. по умолчанию — включаются отдельно в Настройках!)
+function addon:IsOpenWorldRareOrWorldBossMount(mountID, npcID, unit)
+    if not mountID then return false end
+    local info = self.DropInfoByMount and self.DropInfoByMount[mountID]
+    if info and (info.method == "COLLECTION" or info.method == "ACHIEVEMENT") then
         return false
     end
-    return true
+    local isBoss = self:IsBossOrWorldBossMount(mountID, npcID, unit)
+    if isBoss then
+        return (self.db and self.db.settings and self.db.settings.alertBosses == true) or false
+    end
+    if self:IsPlayerInInstancedContent() then
+        return false
+    end
+    return (not self.db or not self.db.settings or self.db.settings.alertRares ~= false)
 end
 
 function addon:CheckUnitForMountDrop(unit, isRetry)
@@ -47,8 +81,10 @@ function addon:CheckUnitForMountDrop(unit, isRetry)
         return
     end
 
-    -- Никогда не спамим радар-баннерами внутри данжей, рейдов, сценариев и PvP-инстансов!
-    if self:IsPlayerInInstancedContent() then return end
+    -- Никогда не спамим радар-баннерами внутри данжей, рейдов, сценариев и PvP-инстансов (если не включены алерты на боссов)!
+    if self:IsPlayerInInstancedContent() and not (self.db and self.db.settings and self.db.settings.alertBosses == true) then
+        return
+    end
 
     local guid = UnitGUID(unit)
     local npcID = self:GetNPCIDFromGUID(guid)
@@ -130,10 +166,10 @@ function addon:CheckUnitForMountDrop(unit, isRetry)
 
     for _, mountID in ipairs(mounts) do
         local info = self.DropInfoByMount and self.DropInfoByMount[mountID]
-        if (not info or info.method ~= "COLLECTION") and self:IsOpenWorldRareOrWorldBossMount(mountID) and not self:IsMountRareLockedToday(mountID) then
+        if (not info or info.method ~= "COLLECTION") and self:IsOpenWorldRareOrWorldBossMount(mountID, npcID, unit) and not self:IsMountRareLockedToday(mountID) then
             local _, _, _, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
             if not isCollected then
-                self:TriggerRareMountAlert(mountID, npcID, npcName, false, npcMapID, npcX, npcY)
+                self:TriggerRareMountAlert(mountID, npcID, npcName, false, npcMapID, npcX, npcY, unit)
                 break
             end
         end
@@ -141,7 +177,7 @@ function addon:CheckUnitForMountDrop(unit, isRetry)
 end
 
 function addon:CheckVignetteForMountDrop(vignetteGUID, isRetry)
-    if self:IsPlayerInInstancedContent() then return end
+    if self:IsPlayerInInstancedContent() and not (self.db and self.db.settings and self.db.settings.alertBosses == true) then return end
     if not vignetteGUID or not SafeNotSecret(vignetteGUID) then return end
     if not C_VignetteInfo or not C_VignetteInfo.GetVignetteInfo then return end
     local vInfo = C_VignetteInfo.GetVignetteInfo(vignetteGUID)
@@ -217,7 +253,7 @@ function addon:CheckVignetteForMountDrop(vignetteGUID, isRetry)
     end
 
     for _, mountID in ipairs(mounts) do
-        if self:IsOpenWorldRareOrWorldBossMount(mountID) and not self:IsMountRareLockedToday(mountID) then
+        if self:IsOpenWorldRareOrWorldBossMount(mountID, npcID, nil) and not self:IsMountRareLockedToday(mountID) then
             local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
             if not isCollected then
                 self:TriggerRareMountAlert(mountID, npcID, vName, false, mapID, liveX, liveY)
@@ -229,7 +265,7 @@ end
 
 -- Просканировать все активные виньетки миникарты/карты (радиус 250-400+ ярдов, как в RareScanner)
 function addon:ScanAllActiveVignettes()
-    if self:IsPlayerInInstancedContent() then return end
+    if self:IsPlayerInInstancedContent() and not (self.db and self.db.settings and self.db.settings.alertBosses == true) then return end
     if not C_VignetteInfo or not C_VignetteInfo.GetVignettes then return end
     local ok, vignettes = pcall(C_VignetteInfo.GetVignettes)
     if not ok or type(vignettes) ~= "table" then return end
@@ -240,7 +276,7 @@ end
 
 -- Дальнобойный детект рарников по крику / эмоции / фразе в чат на всю локацию
 function addon:CheckMonsterChatForMountDrop(senderName)
-    if self:IsPlayerInInstancedContent() then return end
+    if self:IsPlayerInInstancedContent() and not (self.db and self.db.settings and self.db.settings.alertBosses == true) then return end
     if not IsValidNpcName(senderName) or not self.NpcByRareName then return end
     local npcID = self.NpcByRareName[string.lower(senderName)]
     if not npcID then return end
@@ -253,7 +289,7 @@ function addon:CheckMonsterChatForMountDrop(senderName)
 
     local mapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
     for _, mountID in ipairs(mounts) do
-        if self:IsOpenWorldRareOrWorldBossMount(mountID) and not self:IsMountRareLockedToday(mountID) then
+        if self:IsOpenWorldRareOrWorldBossMount(mountID, npcID, nil) and not self:IsMountRareLockedToday(mountID) then
             local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(mountID)
             if not isCollected then
                 local c = self:GetBestMountCoords(mountID, mapID)
@@ -471,11 +507,10 @@ alertFrame:SetScript("OnHide", function()
     end
 end)
 
-function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, liveX, liveY)
+function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, liveX, liveY, unit)
     if not forceShow then
-        if not self.db or not self.db.settings.alertRares then return end
-        if self.IsPlayerInInstancedContent and self:IsPlayerInInstancedContent() then return end
-        if self.IsOpenWorldRareOrWorldBossMount and not self:IsOpenWorldRareOrWorldBossMount(mountID) then return end
+        if not self.db or not self.db.settings then return end
+        if not self:IsOpenWorldRareOrWorldBossMount(mountID, npcID, unit) then return end
     end
     local key = (npcID and npcID > 0 and npcID ~= 99999) and ("npc:" .. tostring(npcID)) or (tostring(npcID or 0) .. ":" .. tostring(mountID or 0))
     local now = GetTime()

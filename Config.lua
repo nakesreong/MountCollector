@@ -107,38 +107,39 @@ function addon:BuildSettingsControls(parent, isEmbeddedInRadar)
     end
 
     local cb1 = CreateOptionCheckbox("showInTooltips", "CFG_SHOW_TOOLTIPS", secTooltips, -1)
-    local cb2 = CreateOptionCheckbox("showInJournalRowHover", "CFG_SHOW_ROW_HOVER", cb1, 4)
-    local cb3 = CreateOptionCheckbox("showInMountDisplay", "CFG_SHOW_MOUNT_DISPLAY", cb2, 4)
-    local cb4 = CreateOptionCheckbox("showGlobalRarity", "CFG_SHOW_GLOBAL_RARITY", cb3, 4)
-    local cb5 = CreateOptionCheckbox("showServerRarity", "CFG_SHOW_SERVER_RARITY", cb4, 4)
-    local cb6 = CreateOptionCheckbox("showAttempts", "CFG_SHOW_ATTEMPTS", cb5, 4)
+    local cb2 = CreateOptionCheckbox("showInJournalRowHover", "CFG_SHOW_ROW_HOVER", cb1, 6)
+    local cb3 = CreateOptionCheckbox("showInMountDisplay", "CFG_SHOW_MOUNT_DISPLAY", cb2, 6)
+    local cb4 = CreateOptionCheckbox("showGlobalRarity", "CFG_SHOW_GLOBAL_RARITY", cb3, 6)
+    local cb5 = CreateOptionCheckbox("showServerRarity", "CFG_SHOW_SERVER_RARITY", cb4, 6)
+    local cb6 = CreateOptionCheckbox("showAttempts", "CFG_SHOW_ATTEMPTS", cb5, 6)
 
     -- Секция 2: Радар рарников, Карта мира и Миникарта
     local secRadar = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    secRadar:SetPoint("TOPLEFT", cb6, "BOTTOMLEFT", 0, -4)
+    secRadar:SetPoint("TOPLEFT", cb6, "BOTTOMLEFT", 0, -2)
     controls.secRadar = secRadar
 
     local cb7 = CreateOptionCheckbox("alertRares", "CFG_ALERT_RARES", secRadar, -1)
-    local cbBanner = CreateOptionCheckbox("showAlertBanner", "CFG_SHOW_ALERT_BANNER", cb7, 4, function(checked)
+    local cbBosses = CreateOptionCheckbox("alertBosses", "CFG_ALERT_BOSSES", cb7, 6)
+    local cbBanner = CreateOptionCheckbox("showAlertBanner", "CFG_SHOW_ALERT_BANNER", cbBosses, 6, function(checked)
         if not addon.db or not addon.db.settings then return end
         addon.db.settings.showAlertBanner = checked
         if not checked and _G.MountCollectorAlertFrame and _G.MountCollectorAlertFrame:IsShown() then
             _G.MountCollectorAlertFrame:Hide()
         end
     end)
-    local cbAutoTarget = CreateOptionCheckbox("autoTargetOnApproach", "CFG_AUTO_TARGET_RARE", cbBanner, 4, function(checked)
+    local cbAutoTarget = CreateOptionCheckbox("autoTargetOnApproach", "CFG_AUTO_TARGET_RARE", cbBanner, 6, function(checked)
         if not addon.db or not addon.db.settings then return end
         addon.db.settings.autoTargetOnApproach = checked
         if not checked and addon.ClearAutoTargetOverrideBinding then
             addon:ClearAutoTargetOverrideBinding()
         end
     end)
-    local cb8 = CreateOptionCheckbox("alertSound", "CFG_ALERT_SOUND", cbAutoTarget, 4)
-    local cb9 = CreateOptionCheckbox("autoWaypoint", "CFG_AUTO_WAYPOINT", cb8, 4)
-    local cb10 = CreateOptionCheckbox("showWorldMapPins", "CFG_WORLD_MAP_PINS", cb9, 4)
-    local cb11 = CreateOptionCheckbox("showNpcTooltip", "CFG_SHOW_NPC_TT", cb10, 4)
-    local cb12 = CreateOptionCheckbox("announceAttempts", "CFG_ANNOUNCE_ATTEMPTS", cb11, 4)
-    local cb13 = CreateOptionCheckbox("_minimap", "CFG_SHOW_MINIMAP", cb12, 4, function(checked)
+    local cb8 = CreateOptionCheckbox("alertSound", "CFG_ALERT_SOUND", cbAutoTarget, 6)
+    local cb9 = CreateOptionCheckbox("autoWaypoint", "CFG_AUTO_WAYPOINT", cb8, 6)
+    local cb10 = CreateOptionCheckbox("showWorldMapPins", "CFG_WORLD_MAP_PINS", cb9, 6)
+    local cb11 = CreateOptionCheckbox("showNpcTooltip", "CFG_SHOW_NPC_TT", cb10, 6)
+    local cb12 = CreateOptionCheckbox("announceAttempts", "CFG_ANNOUNCE_ATTEMPTS", cb11, 6)
+    local cb13 = CreateOptionCheckbox("_minimap", "CFG_SHOW_MINIMAP", cb12, 6, function(checked)
         if not addon.db or not addon.db.minimap then return end
         addon.db.minimap.hide = not checked
         if not LDBIcon and LibStub then
@@ -239,6 +240,7 @@ end
 
 -- 2. Регистрируем панель в стандартных настройках Blizzard (ESC -> Параметры -> Модификации)
 local blizzPanel = CreateFrame("Frame", "MountCollectorOptionsPanel", UIParent)
+blizzPanel:Hide()
 blizzPanel.name = "MountCollector"
 local blizzControls = addon:BuildSettingsControls(blizzPanel, false)
 
