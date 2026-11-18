@@ -1,6 +1,6 @@
 # MountCollector — Rare Radar, World Boss & Dungeon Lockouts, Quest Chain Navigator & Rarity Census
 
-**Version:** 1.7.2  
+**Version:** 1.8.0  
 **Authors:** Gemini (Tiger) & Anya (5cr3am1ng5oul)  
 **Compatibility:** World of Warcraft: Retail / Midnight (`12.1.7`, `12.1.5`) & The War Within (`11.2.7`)  
 **Source Repository:** [https://github.com/nakesreong/MountCollector](https://github.com/nakesreong/MountCollector)  
@@ -15,6 +15,7 @@
 *   **Open-World Rare Radar & Smart 3D Spawn Tour:** Detects uncollected mount-dropping rares in your current zone, filters out rares already killed today, and builds an automated Nearest-Neighbor 3D waypoint tour (`C_Map.SetUserWaypoint` + `C_SuperTrack` + optional **TomTom**) that automatically yields control whenever you manually place a map pin or track a quest.
 *   **World Bosses & Dungeon/Raid Alt Lockout Matrix:** Dedicated **World Bosses** and **Dungeon & Raid** tabs track 78 instance, raid, holiday, and open-world boss mounts across all eligible characters on your account (filtering out underleveled alts and sorting bosses available on your active character to the top).
 *   **Step-by-Step Quest Chain & Egg Incubation Navigator:** Tracks progress across 54 multi-day questlines, secret mounts, Class Order Hall campaigns (including all alternate class mount tints), and hatchling incubation chains (`MountQuestsDB`), verified against official Blizzard `Mount.db2` and `ItemEffect.db2` data.
+*   **Glory & Meta-Achievement Tracker (`MountGloryDB`):** Dedicated **Glory & Achievements** tab tracking 43 _Glory of the Hero_, _Glory of the Raider_, _Glory of the Delver_, and _Guild Glory_ mounts across 604 verified sub-achievements (`Achievement.db2` + `CriteriaTree.db2`), displaying live completion percentages, `[100% Solo]` vs `[Group N+]` mechanical indicators, 3D raid entrance routing, and one-click jumping into Blizzard's Achievement window.
 *   **Global & Realm Rarity Census:** Integrates **Data for Azeroth** global ownership percentages for 1,574 mounts (`MountsRarity-2.0`) with realm population ownership estimates and a live out-of-instance player mount scanner.
 *   **Account-Wide Attempt Counter & Probability Engine:** Tracks boss, rare NPC, and cache/bag attempts across all characters on your account (`MountCollectorDB`), bridges with **Rarity** and Blizzard's internal kill statistics (`GetStatistic`), and calculates cumulative drop odds (`1 - (1 - 1/N)^K`).
 *   **World of Warcraft 12.x (Midnight) Taint-Safe & Instance-Safe Architecture:** Engineered with `issecretvalue()` guards, combat-safe `SecureActionButtonTemplate` targeting, and strict instance suppression (`IsInInstance()`) so rare alerts never spam during dungeon or raid encounters.
@@ -24,16 +25,17 @@
 
 ## Architecture & Core Subsystems
 
-### 1. Two-Column Radar Window (`/mc`) & Six Integrated Views
+### 1. Two-Column Radar Window (`/mc`) & Seven Integrated Views
 
-A standalone dark flat interface (`MountCollectorRadarFrame`) organized into five progression views and an integrated configuration tab:
+A standalone dark flat interface (`MountCollectorRadarFrame`, registered in `UISpecialFrames` for instant `Esc` closing in ActionCam/Combat Mode) organized into six progression views and an integrated configuration tab:
 
 1.  **In Current Zone Tab:** Lists all uncollected rare and World Boss mounts in the player's current zone (`C_Map.GetBestMapForUnit("player")`), displaying live daily rare lockout progress (`Rares: X/Y`) and one-click **Pin All on Map** routing without forcing the World Map open.
 2.  **World Bosses Tab:** Dedicated tracker for open-world and holiday World Boss mounts (_Sha of Anger_, _Galleon_, _Nalak_, _Oondasta_, _Rukhmar_, _Dunegorger Kraulok / Mollie_, _Beledar's Spawn_ with a live 3-hour Void Phase countdown timer, _Doomwalker_, and _Daetan Swiftplume_), cross-linked with the **In Current Zone** tab.
-3.  **Dungeon & Raid Tab:** Tracks 70+ dungeon, mega-dungeon, raid, and holiday boss mounts from Classic through _The War Within_ and _Midnight_, showing required character levels, difficulty modes, and an account-wide readiness roster (`Ready` vs `Locked` per character) with a single full-width **Mark Dungeon Entrance** 3D waypoint button.
+3.  **Dungeon & Raid Tab:** Tracks 70+ dungeon, mega-dungeon, raid, and holiday boss mounts from Classic through _The War Within_ and _Midnight_, showing required character levels, difficulty modes, cross-linked raid _Glory_ progress, and an account-wide readiness roster (`Ready` vs `Locked` per character) with a single full-width **Mark Dungeon Entrance** 3D waypoint button.
 4.  **Quest Chains Tab:** Covers 54 multi-step questline, secret, reputation, and incubation mounts (including _Siesbarg_, _Alunira_, _Kah, Legend of the Deep_, _Ochre Dreamtalon_, _Otto_, _Lizi_, _Loyal Magmammoth_, _Pattie_, _Sinrunner Blanchy_, _Loyal Gorger_, _Hand of Nilganihmaht_, _Maelie_, _Kua'fon_, _Honeyback Harvester_, _Shadowbarb Drone_, _Springfur Alpaca_, _Lucid Nightmare_, _Riddler's Mind-Worm_, _Long-Forgotten Hippogryph_, all four _Legion Falcosaurs_, and all 12 _Legion Class Order Hall_ mount chains and alternate tints).
-5.  **All Account Attempts Tab:** Displays all uncollected mounts with recorded attempts across your account, sorted by total tries, with manual attempt override support (`Set Attempts`).
-6.  **Integrated Settings Tab:** Opens directly inside `/mc` alongside standard registration in Blizzard's `ESC -> Options -> AddOns -> MountCollector` panel.
+5.  **Glory & Achievements Tab:** Tracks 43 meta-achievement mounts and 604 boss sub-achievements from _Wrath of the Lich King_ through _Midnight_, sorted by closest completion percentage and `[100% Solo]` soloability.
+6.  **All Account Attempts Tab:** Displays all uncollected mounts with recorded attempts across your account, sorted by total tries, with manual attempt override support (`Set Attempts`).
+7.  **Integrated Settings Tab:** Opens directly inside `/mc` alongside standard registration in Blizzard's `ESC -> Options -> AddOns -> MountCollector` panel, featuring independent radar alert toggles for soloable open-world Rares vs Bosses & Group Rare-Bosses (`Vignette.db2` `VignetteKill` vs `VignetteKillElite`).
 
 ### 2. Smart 3D Navigation, Nearest-Neighbor Spawn Tour & Rare Alert Banner
 
