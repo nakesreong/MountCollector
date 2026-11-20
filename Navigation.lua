@@ -709,6 +709,12 @@ function addon:ActivateCurrentRouteStep(silent)
             print(string.format("|cff00ccff[MountCollector]|r %s %s -> |cffa335ee[%s]|r", pinPrefix, pinLink, route.targetName))
         end
     end
+
+    -- Как только финальный шаг межконтинентального маршрута поставлен на карту,
+    -- очищаем activePortalRoute, чтобы после удаления/достижения точки она никогда не воскресала при ZONE_CHANGED!
+    if route.currentStep >= totalSteps then
+        self.activePortalRoute = nil
+    end
 end
 
 function addon:CheckPortalRouteProgress()
@@ -731,8 +737,8 @@ function addon:CheckPortalRouteProgress()
         if route.currentStep ~= #route.steps then
             route.currentStep = #route.steps
             self:ActivateCurrentRouteStep(false)
-        elseif C_Map and C_Map.HasUserWaypoint and not C_Map.HasUserWaypoint() then
-            self:ActivateCurrentRouteStep(true)
+        else
+            self.activePortalRoute = nil
         end
         return
     end
@@ -746,7 +752,9 @@ function addon:CheckPortalRouteProgress()
                 self:ActivateCurrentRouteStep(false)
             elseif i == route.currentStep then
                 if C_Map and C_Map.HasUserWaypoint and not C_Map.HasUserWaypoint() then
-                    self:ActivateCurrentRouteStep(true)
+                    -- Игрок сам снял или достиг промежуточную метку — отменяем маршрут вместо воскрешения зомби-точки
+                    self.activePortalRoute = nil
+                    return
                 else
                     local stAPI = _G.C_SuperTrack or _G.C_SuperTracked
                     if stAPI and stAPI.IsSuperTrackingUserWaypoint and not stAPI.IsSuperTrackingUserWaypoint() then

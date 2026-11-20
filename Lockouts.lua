@@ -1664,13 +1664,17 @@ function addon:GetDungeonMountStatus(mountID)
 end
 
 
+function addon:IsRussianLocale()
+    return self.GetActiveLocaleCode and (self:GetActiveLocaleCode() == "ruRU") or false
+end
+
 function addon:GetGloryMountStatus(mountID)
     if not mountID or not self.MountGloryByMountID then return nil end
     local gEntry = self.MountGloryByMountID[mountID]
     if not gEntry then return nil end
 
     local name, spellID, icon, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
-    local isRU = self:IsRussianLocale()
+    local isRU = (self:GetActiveLocaleCode() == "ruRU")
     local achID = gEntry.achievementID or 0
 
     local liveAchName, achCompleted = nil, false
