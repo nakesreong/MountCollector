@@ -211,21 +211,32 @@ MOUNT_OVERRIDES = {
         "costs": [{"kind": "ITEM", "id": 21100, "amount": 75}],
     },
     550: {
-        "primary": {"vendorEN": "Quackenbush", "vendorRU": "Квакенбуш", "zoneEN": "Bizmo's Brawlpub", "zoneRU": "Потасовочная \"У Бизмо\"", "mapID": 84, "x": 67.0, "y": 33.6, "side": "ALLIANCE"},
-        "alt": {"vendorEN": "Paul North", "vendorRU": "Пол Норт", "zoneEN": "Brawl'gar Arena", "zoneRU": "Арена \"Морд'Бой\"", "mapID": 85, "x": 70.6, "y": 30.8, "side": "HORDE"},
+        "primary": {"vendorEN": "Quackenbush", "vendorRU": "Квакенбуш", "zoneEN": "Bizmo's Brawlpub", "zoneRU": "Потасовочная \"У Бизмо\"", "mapID": 500, "outMapID": 84, "x": 67.0, "y": 33.6, "side": "ALLIANCE"},
+        "alt": {"vendorEN": "Paul North", "vendorRU": "Пол Норт", "zoneEN": "Brawl'gar Arena", "zoneRU": "Арена \"Морд'Бой\"", "mapID": 503, "outMapID": 85, "x": 70.6, "y": 30.8, "side": "HORDE"},
     },
     878: {
-        "primary": {"vendorEN": "Quackenbush", "vendorRU": "Квакенбуш", "zoneEN": "Bizmo's Brawlpub", "zoneRU": "Потасовочная \"У Бизмо\"", "mapID": 84, "x": 67.0, "y": 33.6, "side": "ALLIANCE"},
-        "alt": {"vendorEN": "Paul North", "vendorRU": "Пол Норт", "zoneEN": "Brawl'gar Arena", "zoneRU": "Арена \"Морд'Бой\"", "mapID": 85, "x": 70.6, "y": 30.8, "side": "HORDE"},
+        "primary": {"vendorEN": "Quackenbush", "vendorRU": "Квакенбуш", "zoneEN": "Bizmo's Brawlpub", "zoneRU": "Потасовочная \"У Бизмо\"", "mapID": 500, "outMapID": 84, "x": 67.0, "y": 33.6, "side": "ALLIANCE"},
+        "alt": {"vendorEN": "Paul North", "vendorRU": "Пол Норт", "zoneEN": "Brawl'gar Arena", "zoneRU": "Арена \"Морд'Бой\"", "mapID": 503, "outMapID": 85, "x": 70.6, "y": 30.8, "side": "HORDE"},
     },
     2807: {
-        "primary": {"vendorEN": "Quackenbush", "vendorRU": "Квакенбуш", "zoneEN": "Bizmo's Brawlpub", "zoneRU": "Потасовочная \"У Бизмо\"", "mapID": 84, "x": 67.0, "y": 33.6, "side": "ALLIANCE"},
-        "alt": {"vendorEN": "Paul North", "vendorRU": "Пол Норт", "zoneEN": "Brawl'gar Arena", "zoneRU": "Арена \"Морд'Бой\"", "mapID": 85, "x": 70.6, "y": 30.8, "side": "HORDE"},
+        "primary": {"vendorEN": "Quackenbush", "vendorRU": "Квакенбуш", "zoneEN": "Bizmo's Brawlpub", "zoneRU": "Потасовочная \"У Бизмо\"", "mapID": 500, "outMapID": 84, "x": 67.0, "y": 33.6, "side": "ALLIANCE"},
+        "alt": {"vendorEN": "Paul North", "vendorRU": "Пол Норт", "zoneEN": "Brawl'gar Arena", "zoneRU": "Арена \"Морд'Бой\"", "mapID": 503, "outMapID": 85, "x": 70.6, "y": 30.8, "side": "HORDE"},
     },
     2808: {
-        "primary": {"vendorEN": "Quackenbush", "vendorRU": "Квакенбуш", "zoneEN": "Bizmo's Brawlpub", "zoneRU": "Потасовочная \"У Бизмо\"", "mapID": 84, "x": 67.0, "y": 33.6, "side": "ALLIANCE"},
-        "alt": {"vendorEN": "Paul North", "vendorRU": "Пол Норт", "zoneEN": "Brawl'gar Arena", "zoneRU": "Арена \"Морд'Бой\"", "mapID": 85, "x": 70.6, "y": 30.8, "side": "HORDE"},
+        "primary": {"vendorEN": "Quackenbush", "vendorRU": "Квакенбуш", "zoneEN": "Bizmo's Brawlpub", "zoneRU": "Потасовочная \"У Бизмо\"", "mapID": 500, "outMapID": 84, "x": 67.0, "y": 33.6, "side": "ALLIANCE"},
+        "alt": {"vendorEN": "Paul North", "vendorRU": "Пол Норт", "zoneEN": "Brawl'gar Arena", "zoneRU": "Арена \"Морд'Бой\"", "mapID": 503, "outMapID": 85, "x": 70.6, "y": 30.8, "side": "HORDE"},
     },
+    236: {"reqClass": "DEATHKNIGHT"},
+    338: {"reqClass": "PALADIN"},
+    870: {"reqClass": "HUNTER"},
+    872: {"reqClass": "HUNTER"},
+    889: {"reqClass": "ROGUE"},
+    890: {"reqClass": "ROGUE"},
+    891: {"reqClass": "ROGUE"},
+    892: {"reqClass": "PALADIN"},
+    893: {"reqClass": "PALADIN"},
+    894: {"reqClass": "PALADIN"},
+    930: {"reqClass": "WARLOCK"},
 }
 
 # Fallback Zone -> (mapID, x, y)
@@ -912,6 +923,10 @@ def main():
                 if alt is None:
                     alt = dict(primary)
                 alt.update(ovr["alt"])
+            if "reqClass" in ovr:
+                primary["reqClass"] = ovr["reqClass"]
+                if alt:
+                    alt["reqClass"] = ovr["reqClass"]
             if "costs" in ovr:
                 costs = []
                 for oc in ovr["costs"]:
@@ -948,8 +963,12 @@ def main():
             f'x={b["x"]}',
             f'y={b["y"]}',
         ]
+        if b.get("outMapID"):
+            parts.append(f'outMapID={b["outMapID"]}')
         if b.get("side"):
             parts.append(f'side="{b["side"]}"')
+        if b.get("reqClass"):
+            parts.append(f'reqClass="{b["reqClass"]}"')
         if b.get("freeRace"):
             parts.append(f'freeRace="{b["freeRace"]}"')
         if b.get("reqCovID", 0) > 0:

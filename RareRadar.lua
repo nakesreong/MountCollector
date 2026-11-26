@@ -421,7 +421,7 @@ local function SyncSecureAlertOverlay()
         return
     end
     addon.pendingAlertOverlaySync = false
-    if not alertFrame:IsShown() then
+    if not alertFrame:IsShown() or alertFrame.alertMode == "VENDOR" then
         secureTargetBtn:Hide()
         return
     end
@@ -454,7 +454,22 @@ secureTargetBtn:SetScript("OnEnter", function()
     alertFrame:SetBackdropBorderColor(0.0, 0.95, 1.0, 1.0)
 end)
 secureTargetBtn:SetScript("OnLeave", function()
-    alertFrame:SetBackdropBorderColor(1.0, 0.82, 0.0, 1.0)
+    if alertFrame.alertMode == "VENDOR" then
+        alertFrame:SetBackdropBorderColor(0.20, 0.92, 0.52, 1.0)
+    else
+        alertFrame:SetBackdropBorderColor(1.0, 0.82, 0.0, 1.0)
+    end
+end)
+
+alertFrame:SetScript("OnEnter", function(self)
+    self:SetBackdropBorderColor(0.0, 0.95, 1.0, 1.0)
+end)
+alertFrame:SetScript("OnLeave", function(self)
+    if self.alertMode == "VENDOR" then
+        self:SetBackdropBorderColor(0.20, 0.92, 0.52, 1.0)
+    else
+        self:SetBackdropBorderColor(1.0, 0.82, 0.0, 1.0)
+    end
 end)
 
 function addon:ClearAutoTargetOverrideBinding()
@@ -536,9 +551,17 @@ local function HandleAlertClick(_, button)
     if button == "RightButton" then
         alertFrame:Hide()
     elseif alertFrame.currentMountID then
-        addon:SetMountWaypoint(alertFrame.currentMountID, alertFrame.alertMapID, alertFrame.alertX, alertFrame.alertY, alertFrame.alertNpcName, false, nil, alertFrame.alertNpcID)
-        if IsShiftKeyDown and IsShiftKeyDown() then
-            addon:OpenMountInJournal(alertFrame.currentMountID)
+        if alertFrame.alertMode == "VENDOR" then
+            if IsShiftKeyDown and IsShiftKeyDown() and addon.InspectMountInCollector then
+                addon:InspectMountInCollector(alertFrame.currentMountID)
+            elseif addon.NavigateMountTarget then
+                addon:NavigateMountTarget(alertFrame.currentMountID, false)
+            end
+        else
+            addon:SetMountWaypoint(alertFrame.currentMountID, alertFrame.alertMapID, alertFrame.alertX, alertFrame.alertY, alertFrame.alertNpcName, false, nil, alertFrame.alertNpcID)
+            if IsShiftKeyDown and IsShiftKeyDown() then
+                addon:OpenMountInJournal(alertFrame.currentMountID)
+            end
         end
     end
 end
@@ -598,6 +621,8 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
 
     local displayNpcName = (npcID and npcID ~= 99999 and self:GetNpcDisplayName(npcID, npcName)) or npcName or "Rare NPC"
 
+    alertFrame.alertMode = "RARE"
+    alertFrame:SetBackdropBorderColor(1.0, 0.82, 0.0, 1.0)
     alertFrame.currentMountID = mountID
     alertFrame.alertNpcID = npcID
     alertFrame.alertMapID = mapID
@@ -640,6 +665,55 @@ function addon:TriggerRareMountAlert(mountID, npcID, npcName, forceShow, mapID, 
     end
     self.alertHideTimer = C_Timer.NewTimer(15, function()
         addon:ClearAutoTargetOverrideBinding()
+        if alertFrame:IsShown() then
+            alertFrame:Hide()
+        end
+    end)
+end
+
+function addon:TriggerVendorMountReadyAlert(mountID, vStatus, combinedNames)
+    if not mountID or not vStatus then return end
+    local name, _, icon, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
+    if not name or isCollected then return end
+
+    alertFrame.alertMode = "VENDOR"
+    alertFrame:SetBackdropBorderColor(0.20, 0.92, 0.52, 1.0)
+    alertFrame.currentMountID = mountID
+    alertFrame.alertNpcID = nil
+    alertFrame.alertMapID = vStatus.routeMapID or vStatus.mapID
+    alertFrame.alertX = vStatus.x
+    alertFrame.alertY = vStatus.y
+    alertFrame.alertNpcName = vStatus.vendorTitle
+
+    self:UpdateAlertSecureTarget("")
+
+    local zDisp = (vStatus.zoneTitle and vStatus.zoneTitle ~= "") and vStatus.zoneTitle or ((vStatus.mapID and self:GetMapName(vStatus.mapID)) or "")
+    alertIcon:SetTexture(icon or "Interface\\ICONS\\Ability_Mount_SpectralTiger")
+    alertHeader:SetText(string.format(L.ALERT_HEADER_VENDOR_READY, vStatus.vendorTitle or "Vendor", zDisp))
+    alertMountName:SetText(string.format("|cffa335ee[%s]|r %s", combinedNames or name, L.VENDOR_READY_BADGE))
+    alertStats:SetText(string.format(L.ALERT_VENDOR_STATS_LINE, vStatus.shortCostText or ""))
+
+    local h1 = alertHeader:GetStringHeight() or 16
+    local h2 = alertMountName:GetStringHeight() or 16
+    local h3 = alertStats:GetStringHeight() or 16
+    local contentH = math.max(74, 10 + h1 + 4 + h2 + 4 + h3 + 12)
+    alertFrame:SetHeight(contentH)
+
+    local shouldShowBanner = (not self.db or not self.db.settings or self.db.settings.showAlertBanner ~= false)
+    if shouldShowBanner then
+        alertFrame:Show()
+        SyncSecureAlertOverlay()
+    end
+
+    if self.db and self.db.settings and self.db.settings.alertSound and PlaySound then
+        local soundID = (SOUNDKIT and SOUNDKIT.UI_GARRISON_TOAST_FOLLOWER_GAINED) or 8959
+        pcall(PlaySound, soundID, "Master")
+    end
+
+    if self.alertHideTimer then
+        self.alertHideTimer:Cancel()
+    end
+    self.alertHideTimer = C_Timer.NewTimer(16, function()
         if alertFrame:IsShown() then
             alertFrame:Hide()
         end

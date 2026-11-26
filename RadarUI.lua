@@ -825,7 +825,7 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
 
         table.insert(stepsToRender, {
             mountID = mountID,
-            customMapID = vStatus.mapID,
+            customMapID = vStatus.routeMapID or vStatus.mapID,
             customX = vStatus.x,
             customY = vStatus.y,
             customNpc = vStatus.vendorTitle,
@@ -841,7 +841,7 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         -- 2. Карточка стоимости и живого баланса золота / валют / предметов в сумках и банке отряда
         table.insert(stepsToRender, {
             mountID = mountID,
-            customMapID = vStatus.mapID,
+            customMapID = vStatus.routeMapID or vStatus.mapID,
             customX = vStatus.x,
             customY = vStatus.y,
             customNpc = vStatus.vendorTitle,
@@ -1675,12 +1675,24 @@ function addon:RefreshRadarUI()
                         or string.find(plainCost, sTxt, 1, true)
                         or string.find(plainRep, sTxt, 1, true)
                     if matchSearch then
-                        local isInCurrentZone = (st.mapID and st.mapID > 0 and (st.mapID == currentPlayerMapID or st.mapID == currentParentMapID)) and true or false
+                        local allowParentVendorMatch = (currentPlayerMapID ~= 499 and currentPlayerMapID ~= 500 and currentPlayerMapID ~= 503)
+                        local isInCurrentZone = false
+                        if st.mapID and st.mapID > 0 then
+                            if st.mapID == currentPlayerMapID then
+                                isInCurrentZone = true
+                            elseif (currentPlayerMapID == 499 or currentPlayerMapID == 500) and st.mapID == 500 then
+                                isInCurrentZone = true
+                            elseif allowParentVendorMatch and currentParentMapID and st.mapID == currentParentMapID then
+                                isInCurrentZone = true
+                            end
+                        end
                         local statusTag = ""
                         if st.isCollected then
                             statusTag = L.TAG_COLLECTED .. " "
                         elseif st.canBuyNow then
                             statusTag = L.VENDOR_READY_BADGE .. " "
+                        elseif st.shortRepBadge then
+                            statusTag = st.shortRepBadge .. " "
                         elseif st.hasKnownCost and st.canAffordAll and st.hasRepReq and not st.repMet then
                             statusTag = L.VENDOR_NEED_REP_BADGE .. " "
                         end
@@ -1784,8 +1796,10 @@ function addon:RefreshRadarUI()
             return (a.dbOrder or 0) < (b.dbOrder or 0)
         end)
     elseif ui.currentTab == "ZONE" then
+        local seenZoneMounts = {}
         local zoneMounts = self:GetZoneUncollectedMounts()
         for _, m in ipairs(zoneMounts) do
+            seenZoneMounts[m.mountID] = true
             if ui.searchText == "" or string.find(string.lower(m.name), ui.searchText, 1, true) then
                 local chPart = (m.chance and m.chance > 0) and string.format(" • 1/%d", m.chance) or ""
                 local lockPart = ""
@@ -1805,6 +1819,61 @@ function addon:RefreshRadarUI()
                     isCollected = false,
                     subLine = string.format(L.ROW_ATTEMPTS_FMT, m.attempts or 0) .. "|cff888888" .. chPart .. "|r" .. lockPart,
                 })
+            end
+        end
+
+        -- Дополняем вкладку «В текущей зоне» несобранными маунтами у торговцев этой же локации (с показом живого ранга/репы!)
+        if currentPlayerMapID and type(self.MountVendorsDB) == "table" then
+            local allowParentVendorMatch = (currentPlayerMapID ~= 499 and currentPlayerMapID ~= 500 and currentPlayerMapID ~= 503)
+            local zoneVendorEntries = {}
+            for _, vEntry in ipairs(self.MountVendorsDB) do
+                local mID = vEntry.resolvedMountID or (vEntry.spellID and self.MountBySpell[vEntry.spellID]) or vEntry.mountID
+                if mID and not seenZoneMounts[mID] then
+                    local st = self.GetVendorMountStatus and self:GetVendorMountStatus(mID) or nil
+                    if st and not st.isCollected and not st.isOppositeFaction and st.mapID and st.mapID > 0 then
+                        local matchZone = (st.mapID == currentPlayerMapID)
+                            or ((currentPlayerMapID == 499 or currentPlayerMapID == 500) and st.mapID == 500)
+                            or (allowParentVendorMatch and currentParentMapID and st.mapID == currentParentMapID)
+                        if matchZone then
+                            local sTxt = ui.searchText or ""
+                            if sTxt == ""
+                                or string.find(string.lower(st.name or ""), sTxt, 1, true)
+                                or string.find(string.lower(st.vendorTitle or ""), sTxt, 1, true)
+                            then
+                                local vBadge = "|cff00ccff[" .. (L.TAB_VENDORS or "Торговцы") .. "]|r "
+                                local reqTag = ""
+                                if st.canBuyNow then
+                                    reqTag = L.VENDOR_READY_BADGE .. " "
+                                elseif st.shortRepBadge then
+                                    reqTag = st.shortRepBadge .. " "
+                                elseif st.hasRepReq and not st.repMet then
+                                    reqTag = L.VENDOR_NEED_REP_BADGE .. " "
+                                end
+                                table.insert(zoneVendorEntries, {
+                                    mountID = st.mountID,
+                                    name = st.name,
+                                    icon = st.icon,
+                                    isCollected = false,
+                                    canBuyNow = st.canBuyNow,
+                                    canAffordAll = st.canAffordAll,
+                                    subLine = string.format("%s%s%s |cff888888• %s|r", vBadge, reqTag, st.shortCostText, st.vendorTitle),
+                                })
+                            end
+                        end
+                    end
+                end
+            end
+            table.sort(zoneVendorEntries, function(a, b)
+                if a.canBuyNow ~= b.canBuyNow then
+                    return a.canBuyNow
+                end
+                if a.canAffordAll ~= b.canAffordAll then
+                    return a.canAffordAll
+                end
+                return (a.mountID or 0) > (b.mountID or 0)
+            end)
+            for _, ve in ipairs(zoneVendorEntries) do
+                table.insert(listEntries, ve)
             end
         end
     else

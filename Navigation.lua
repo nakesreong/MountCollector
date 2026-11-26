@@ -1595,8 +1595,8 @@ function addon:NavigateMountTarget(mountID, forceFirstStep)
         return
     end
     local vStatus = self.GetVendorMountStatus and self:GetVendorMountStatus(mountID) or nil
-    if vStatus and vStatus.mapID and vStatus.mapID > 0 and vStatus.x and vStatus.y then
-        self:SetMountWaypoint(mountID, vStatus.mapID, vStatus.x, vStatus.y, vStatus.vendorTitle, false)
+    if vStatus and vStatus.routeMapID and vStatus.routeMapID > 0 and vStatus.x and vStatus.y then
+        self:SetMountWaypoint(mountID, vStatus.routeMapID, vStatus.x, vStatus.y, vStatus.vendorTitle, false)
         return
     end
     local info = self.DropInfoByMount and self.DropInfoByMount[mountID]

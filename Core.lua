@@ -1016,10 +1016,11 @@ function addon:ValidateModuleIntegrity(silentIfOk)
         "ScanAllCharacterStatistics", "GetMountAttempts", "SetManualMountAttempts", "RecordAttempt",
         "IsNpcLockedToday", "IsMountRareLockedToday", "GetZoneUncollectedMounts",
         "ScanCurrentCharacterLockouts", "GetDungeonMountStatus", "GetGloryMountStatus", "GetVendorMountStatus",
+        "SnapshotBuyableVendorMounts", "CheckVendorMountUnlocks",
         -- RareRadar.lua
         "IsPlayerInInstancedContent", "IsOpenWorldRareOrWorldBossMount", "CheckUnitForMountDrop",
         "CheckVignetteForMountDrop", "ScanAllActiveVignettes", "CheckMonsterChatForMountDrop",
-        "TriggerRareMountAlert", "ClearAutoTargetOverrideBinding", "EnableAutoTargetOverrideBinding",
+        "TriggerRareMountAlert", "TriggerVendorMountReadyAlert", "ClearAutoTargetOverrideBinding", "EnableAutoTargetOverrideBinding",
         -- MapPins.lua
         "RefreshWorldMapPins", "InitWorldMapPins", "UpdateLDBText", "EnsureRoundMinimapButton", "InitLDB",
         -- Tooltips.lua & RadarUI.lua & Config.lua
@@ -1097,15 +1098,23 @@ function addon:ValidateModuleIntegrity(silentIfOk)
 end
 
 local walletRefreshPending = false
-local function ScheduleOpenRadarWalletRefresh()
-    if walletRefreshPending then return end
-    if not (_G.MountCollectorRadarFrame and _G.MountCollectorRadarFrame:IsShown())
-        and not (_G.MountJournal and _G.MountJournal:IsShown()) then
-        return
+local pendingVendorTriggerKind = nil
+local function ScheduleOpenRadarWalletRefresh(triggerKind, invalidateRedLock)
+    if invalidateRedLock and addon.LiveMerchantRedLock then
+        wipe(addon.LiveMerchantRedLock)
     end
+    if triggerKind == "REP" or not pendingVendorTriggerKind then
+        pendingVendorTriggerKind = triggerKind or "WALLET"
+    end
+    if walletRefreshPending then return end
     walletRefreshPending = true
-    C_Timer.After(0.25, function()
+    C_Timer.After(0.35, function()
         walletRefreshPending = false
+        local kind = pendingVendorTriggerKind
+        pendingVendorTriggerKind = nil
+        if addon.CheckVendorMountUnlocks then
+            addon:CheckVendorMountUnlocks(kind)
+        end
         if _G.MountCollectorRadarFrame and _G.MountCollectorRadarFrame:IsShown() and addon.RefreshRadarUI then
             addon:RefreshRadarUI()
         end
@@ -1147,6 +1156,8 @@ eventFrame:RegisterEvent("MERCHANT_SHOW")
 eventFrame:RegisterEvent("ACHIEVEMENT_EARNED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+pcall(eventFrame.RegisterEvent, eventFrame, "CHAT_MSG_COMBAT_FACTION_CHANGE")
+pcall(eventFrame.RegisterEvent, eventFrame, "COVENANT_CHOSEN")
 
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
@@ -1175,6 +1186,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end
         C_Timer.After(1.5, function()
             addon:BuildMountIndex()
+            if addon.SnapshotBuyableVendorMounts then
+                addon:SnapshotBuyableVendorMounts()
+            end
+            addon.VendorUnlockWatchReady = true
             addon:SnapshotPreLockedRares()
             addon:ScanAllCharacterStatistics()
             addon:ScanCurrentCharacterLockouts()
@@ -1203,16 +1218,24 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end)
     elseif event == "UPDATE_INSTANCE_INFO" or event == "PLAYER_LEVEL_UP" or event == "ACHIEVEMENT_EARNED" then
         addon:ScanCurrentCharacterLockouts()
-        if addon.RefreshRadarUI then
+        if event == "ACHIEVEMENT_EARNED" or event == "PLAYER_LEVEL_UP" then
+            ScheduleOpenRadarWalletRefresh("REP", true)
+        elseif addon.RefreshRadarUI then
             addon:RefreshRadarUI()
         end
     elseif event == "NEW_MOUNT_ADDED" then
         addon:BuildMountIndex()
+        if addon.SnapshotBuyableVendorMounts then
+            addon:SnapshotBuyableVendorMounts()
+        end
         if addon.UpdateLDBText then
             addon:UpdateLDBText()
         end
         if addon.RefreshWorldMapPins then
             addon:RefreshWorldMapPins()
+        end
+        if _G.MountCollectorRadarFrame and _G.MountCollectorRadarFrame:IsShown() and addon.RefreshRadarUI then
+            addon:RefreshRadarUI()
         end
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         addon:SnapshotPreLockedRares()
@@ -1230,8 +1253,15 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if addon.CheckPortalRouteProgress then
             addon:CheckPortalRouteProgress()
         end
-    elseif event == "BAG_UPDATE_DELAYED" or event == "CURRENCY_DISPLAY_UPDATE" or event == "PLAYER_MONEY" or event == "UPDATE_FACTION" or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED" then
-        ScheduleOpenRadarWalletRefresh()
+    elseif event == "BAG_UPDATE_DELAYED" or event == "CURRENCY_DISPLAY_UPDATE" or event == "PLAYER_MONEY" then
+        ScheduleOpenRadarWalletRefresh("WALLET", false)
+    elseif event == "UPDATE_FACTION" or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED" or event == "CHAT_MSG_COMBAT_FACTION_CHANGE" or event == "COVENANT_CHOSEN" then
+        ScheduleOpenRadarWalletRefresh("REP", true)
+        if event == "CHAT_MSG_COMBAT_FACTION_CHANGE" then
+            C_Timer.After(1.1, function()
+                ScheduleOpenRadarWalletRefresh("REP", true)
+            end)
+        end
     elseif event == "MERCHANT_SHOW" then
         if addon.lastAddonWaypoint and addon.lastAddonWaypoint.mountID and addon.MountVendorsByMountID and addon.MountVendorsByMountID[addon.lastAddonWaypoint.mountID] then
             if addon.ClearAddonWaypoints then
@@ -1472,9 +1502,15 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             end
             addon:SyncActiveTourAfterKillOrAlert(matchedNpcID)
         end
-        C_Timer.After(0.5, function() if addon.CheckActiveQuestChainProgress then addon:CheckActiveQuestChainProgress() end end)
+        C_Timer.After(0.5, function()
+            if addon.CheckActiveQuestChainProgress then addon:CheckActiveQuestChainProgress() end
+            ScheduleOpenRadarWalletRefresh("REP", true)
+        end)
     elseif event == "QUEST_ACCEPTED" then
-        C_Timer.After(0.5, function() if addon.CheckActiveQuestChainProgress then addon:CheckActiveQuestChainProgress() end end)
+        C_Timer.After(0.5, function()
+            if addon.CheckActiveQuestChainProgress then addon:CheckActiveQuestChainProgress() end
+            ScheduleOpenRadarWalletRefresh("REP", true)
+        end)
     elseif event == "ENCOUNTER_END" then
         local _, encounterName, _, _, success = ...
         if success == 1 and SafeNotSecret(encounterName) and encounterName then

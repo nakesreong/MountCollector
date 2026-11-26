@@ -949,8 +949,9 @@ function addon:GetVendorMountStatus(mountID)
 
     local isRU = (self:GetActiveLocaleCode() == "ruRU")
     local playerFaction = UnitFactionGroup and UnitFactionGroup("player") or nil
+    local _, playerClassFile = UnitClass("player")
 
-    -- Проверяем противоположность фракции самого маунта (faction == 0 Орда, faction == 1 Альянс)
+    -- Проверяем противоположность фракции или чужой класс маунта
     local isOppositeFaction = (shouldHideOnChar == true)
     if isFactionSpecific and playerFaction then
         if (playerFaction == "Alliance" and faction == 0) or (playerFaction == "Horde" and faction == 1) then
@@ -969,6 +970,10 @@ function addon:GetVendorMountStatus(mountID)
             block = altBlock
             altBlock = vEntry.primary
         end
+    end
+
+    if block.reqClass and playerClassFile and block.reqClass ~= playerClassFile then
+        isOppositeFaction = true
     end
 
     local vendorTitle = (isRU and block.vendorRU and block.vendorRU ~= "" and block.vendorRU) or block.vendorEN or "Vendor"
@@ -1090,6 +1095,7 @@ function addon:GetVendorMountStatus(mountID)
     local repMet = true
     local repUncertain = false
     local repSummaryText = L.VENDOR_FREE_REP
+    local shortRepBadge = nil
     local repDetailLines = {}
 
     if hasRepReq then
@@ -1112,6 +1118,9 @@ function addon:GetVendorMountStatus(mountID)
                 if reqRenown > 0 then
                     repMet = (curRenown >= reqRenown)
                     local clr = repMet and "|cff33ff88" or "|cffffaa00"
+                    if not repMet then
+                        shortRepBadge = string.format(isRU and "|cffffaa00[Изв. %d/%d]|r" or "|cffffaa00[Renown %d/%d]|r", curRenown, reqRenown)
+                    end
                     repSummaryText = string.format(
                         isRU and "|cffffffff%s|r — %sИзвестность %d / %d|r" or "|cffffffff%s|r — %sRenown %d / %d|r",
                         facName, clr, curRenown, reqRenown
@@ -1127,6 +1136,9 @@ function addon:GetVendorMountStatus(mountID)
                 local curLvl = tonumber(frRanks.currentLevel) or 0
                 repMet = (curLvl >= reqRenown)
                 local clr = repMet and "|cff33ff88" or "|cffffaa00"
+                if not repMet then
+                    shortRepBadge = string.format(isRU and "|cffffaa00[Ранг %d/%d]|r" or "|cffffaa00[Rank %d/%d]|r", curLvl, reqRenown)
+                end
                 repSummaryText = string.format(
                     isRU and "|cffffffff%s|r — %sУровень %d / %d|r" or "|cffffffff%s|r — %sRank %d / %d|r",
                     facName, clr, curLvl, reqRenown
@@ -1141,6 +1153,9 @@ function addon:GetVendorMountStatus(mountID)
                 elseif reqNote ~= "" then
                     repMet = isMaxFriend
                     if not isMaxFriend then repUncertain = true end
+                end
+                if not repMet then
+                    shortRepBadge = isRU and "|cffffaa00[Нужна репа]|r" or "|cffffaa00[Needs Rep]|r"
                 end
                 local clr = repMet and "|cff33ff88" or "|cffffaa00"
                 local reqDisp = (reqNote ~= "" and reqNote) or (reqStanding > 0 and (facName .. " — " .. GetStandingLabel(reqStanding, isRU))) or facName
@@ -1159,6 +1174,7 @@ function addon:GetVendorMountStatus(mountID)
                     if repMet then
                         repSummaryText = string.format("|cffffffff%s|r — %s%s|r", facName, clr, curLabel)
                     else
+                        shortRepBadge = string.format("|cffffaa00[%s]|r", reqLabel)
                         repSummaryText = string.format(
                             isRU and "|cffffffff%s|r — требуется %s%s|r |cffcccccc(сейчас: %s%s)|r"
                                 or "|cffffffff%s|r — requires %s%s|r |cffcccccc(now: %s%s)|r",
@@ -1169,6 +1185,7 @@ function addon:GetVendorMountStatus(mountID)
                     if reqNote ~= "" then
                         repUncertain = true
                         repMet = false
+                        shortRepBadge = isRU and "|cffffaa00[Условие]|r" or "|cffffaa00[Req]|r"
                         repSummaryText = "|cffffd100" .. reqNote .. "|r"
                     else
                         repSummaryText = string.format("|cffffffff%s|r — |cff00ccff%s%s|r", facName, curLabel, progPart)
@@ -1178,19 +1195,23 @@ function addon:GetVendorMountStatus(mountID)
             else
                 if reqRenown > 0 then
                     repMet = false
+                    shortRepBadge = string.format(isRU and "|cffffaa00[Изв. 0/%d]|r" or "|cffffaa00[Renown 0/%d]|r", reqRenown)
                     repSummaryText = string.format(
                         isRU and "|cffffffff%s|r — |cffffaa00Уровень / Известность 0 / %d|r" or "|cffffffff%s|r — |cffffaa00Rank / Renown 0 / %d|r",
                         facName ~= "" and facName or "Faction", reqRenown
                     )
                 elseif reqStanding > 0 then
                     repMet = false
+                    local reqLabel = GetStandingLabel(reqStanding, isRU)
+                    shortRepBadge = string.format("|cffffaa00[%s]|r", reqLabel)
                     repSummaryText = string.format(
                         isRU and "|cffffffff%s|r — |cffffaa00требуется %s|r" or "|cffffffff%s|r — |cffffaa00requires %s|r",
-                        facName ~= "" and facName or "Faction", GetStandingLabel(reqStanding, isRU)
+                        facName ~= "" and facName or "Faction", reqLabel
                     )
                 elseif reqNote ~= "" then
                     repMet = false
                     repUncertain = true
+                    shortRepBadge = isRU and "|cffffaa00[Условие]|r" or "|cffffaa00[Req]|r"
                     repSummaryText = "|cffffaa00" .. reqNote .. "|r"
                 elseif facName ~= "" then
                     repSummaryText = "|cffffffff" .. facName .. "|r"
@@ -1200,6 +1221,9 @@ function addon:GetVendorMountStatus(mountID)
             if reqNote ~= "" and (facID > 0 and (reqStanding > 0 or reqRenown > 0)) then
                 repUncertain = true
                 repMet = false
+                if not shortRepBadge then
+                    shortRepBadge = isRU and "|cffffaa00[Условие]|r" or "|cffffaa00[Req]|r"
+                end
                 table.insert(repDetailLines, "|cffffaa00• " .. reqNote .. "|r")
             end
         end
@@ -1210,6 +1234,9 @@ function addon:GetVendorMountStatus(mountID)
             local covOk = (activeCov == reqCovID)
             if not covOk then
                 repMet = false
+                if not shortRepBadge then
+                    shortRepBadge = "|cffffaa00[" .. reqCovTitle .. "]|r"
+                end
             end
             local covLine = covOk
                 and string.format(isRU and "|cff33ff88Активный ковенант:|r |cffffffff%s|r" or "|cff33ff88Active Covenant:|r |cffffffff%s|r", reqCovTitle)
@@ -1235,6 +1262,9 @@ function addon:GetVendorMountStatus(mountID)
             end
             if not achDone then
                 repMet = false
+                if not shortRepBadge then
+                    shortRepBadge = isRU and "|cffffaa00[Нужна ачивка]|r" or "|cffffaa00[Needs Ach]|r"
+                end
             end
             local dispAch = reqAchTitle ~= "" and reqAchTitle or liveAchName or ("#" .. tostring(reqAchID))
             local achLine = achDone
@@ -1246,9 +1276,22 @@ function addon:GetVendorMountStatus(mountID)
             end
         end
 
-        -- Живая проверка красной строки требования прямо из открытого окна торговца (MERCHANT_SHOW)
+        -- Живая проверка красной строки требования прямо из открытого окна торговца (MERCHANT_SHOW).
+        -- Если структурированное требование фракции/ранга/ачивки уже выполнено (например, взят новый ранг в Потасовочной),
+        -- а окно торговца сейчас закрыто, сбрасываем устаревший кэш красной строки!
+        local hasStructuredGate = (facID > 0 and (reqStanding > 0 or reqRenown > 0)) or (reqAchID > 0) or (reqCovID > 0)
+        local merchantOpenNow = (_G.MerchantFrame and _G.MerchantFrame.IsShown and _G.MerchantFrame:IsShown()) and true or false
+        if liveRedLock and liveRedLock ~= "" and hasStructuredGate and repMet and (not repUncertain) and (not merchantOpenNow) then
+            if self.LiveMerchantRedLock then
+                self.LiveMerchantRedLock[mountID] = nil
+            end
+            liveRedLock = nil
+        end
         if liveRedLock and liveRedLock ~= "" then
             repMet = false
+            if not shortRepBadge then
+                shortRepBadge = L.VENDOR_NEED_REP_BADGE
+            end
             local redLine = "|cffff5555" .. liveRedLock .. "|r"
             table.insert(repDetailLines, redLine)
             if facID == 0 and reqAchID == 0 and reqNote == "" then
@@ -1258,6 +1301,12 @@ function addon:GetVendorMountStatus(mountID)
     end
 
     local canBuyNow = (not isCollected) and hasKnownCost and canAffordAll and repMet and (not repUncertain)
+
+    local routeMapID = block.outMapID or block.mapID
+    local curPlayerMap = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player") or nil
+    if curPlayerMap and curPlayerMap == block.mapID then
+        routeMapID = block.mapID
+    end
 
     return {
         mountID = mountID,
@@ -1269,6 +1318,7 @@ function addon:GetVendorMountStatus(mountID)
         vendorTitle = vendorTitle,
         zoneTitle = zoneTitle,
         mapID = block.mapID,
+        routeMapID = routeMapID,
         x = block.x,
         y = block.y,
         altBlock = altBlock,
@@ -1279,10 +1329,113 @@ function addon:GetVendorMountStatus(mountID)
         hasRepReq = hasRepReq,
         repMet = repMet,
         repUncertain = repUncertain,
+        shortRepBadge = shortRepBadge,
         repSummaryText = repSummaryText,
         repDetailLines = repDetailLines,
         reqAchID = (reqAchID > 0) and reqAchID or nil,
         canBuyNow = canBuyNow,
         entry = vEntry,
     }
+end
+
+-- Снимок уже доступных к покупке маунтов при входе в мир (чтобы уведомлять только о НОВЫХ разблокировках вживую!)
+function addon:SnapshotBuyableVendorMounts()
+    self.KnownBuyableVendorMounts = self.KnownBuyableVendorMounts or {}
+    if type(self.MountVendorsDB) ~= "table" then return end
+    for _, vEntry in ipairs(self.MountVendorsDB) do
+        local mID = vEntry.resolvedMountID or (vEntry.spellID and self.MountBySpell and self.MountBySpell[vEntry.spellID]) or vEntry.mountID
+        if mID then
+            local st = self:GetVendorMountStatus(mID)
+            if st and (st.isCollected or st.canBuyNow) then
+                self.KnownBuyableVendorMounts[mID] = true
+            end
+        end
+    end
+end
+
+-- Живой детектор разблокировки маунтов у торговцев (при повышении ранга/репутации/Известности, ачивке или доборе валюты)
+function addon:CheckVendorMountUnlocks(triggerKind)
+    if not self.VendorUnlockWatchReady then return end
+    if type(self.MountVendorsDB) ~= "table" then return end
+    self.KnownBuyableVendorMounts = self.KnownBuyableVendorMounts or {}
+
+    local currentPlayerMapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player") or nil
+    local currentParentMapID = nil
+    if currentPlayerMapID and C_Map and C_Map.GetMapInfo then
+        local mInfo = C_Map.GetMapInfo(currentPlayerMapID)
+        currentParentMapID = mInfo and mInfo.parentMapID or nil
+    end
+    local allowParentVendorMatch = (currentPlayerMapID ~= 499 and currentPlayerMapID ~= 500 and currentPlayerMapID ~= 503)
+
+    local newlyUnlocked = {}
+    for _, vEntry in ipairs(self.MountVendorsDB) do
+        local mID = vEntry.resolvedMountID or (vEntry.spellID and self.MountBySpell and self.MountBySpell[vEntry.spellID]) or vEntry.mountID
+        if mID then
+            local st = self:GetVendorMountStatus(mID)
+            if st then
+                if st.isCollected then
+                    self.KnownBuyableVendorMounts[mID] = true
+                elseif not st.isOppositeFaction then
+                    if st.canBuyNow then
+                        if not self.KnownBuyableVendorMounts[mID] then
+                            self.KnownBuyableVendorMounts[mID] = true
+
+                            local isInCurrentZone = false
+                            if st.mapID and st.mapID > 0 and currentPlayerMapID then
+                                if st.mapID == currentPlayerMapID then
+                                    isInCurrentZone = true
+                                elseif (currentPlayerMapID == 499 or currentPlayerMapID == 500) and st.mapID == 500 then
+                                    isInCurrentZone = true
+                                elseif allowParentVendorMatch and currentParentMapID and st.mapID == currentParentMapID then
+                                    isInCurrentZone = true
+                                end
+                            end
+
+                            local hasSpecialCost = false
+                            for _, c in ipairs(vEntry.costs or {}) do
+                                if c.kind ~= "GOLD" then
+                                    hasSpecialCost = true
+                                    break
+                                end
+                            end
+
+                            if isInCurrentZone or st.hasRepReq or hasSpecialCost or triggerKind == "REP" then
+                                st.isInCurrentZone = isInCurrentZone
+                                table.insert(newlyUnlocked, st)
+                            end
+                        end
+                    else
+                        -- Если игрок потратил валюту/золото и снова стало не хватать, сбрасываем флаг, чтобы уведомить, когда снова накопит
+                        self.KnownBuyableVendorMounts[mID] = nil
+                    end
+                end
+            end
+        end
+    end
+
+    if #newlyUnlocked == 0 then return end
+
+    table.sort(newlyUnlocked, function(a, b)
+        if a.isInCurrentZone ~= b.isInCurrentZone then
+            return a.isInCurrentZone
+        end
+        return (a.mountID or 0) > (b.mountID or 0)
+    end)
+
+    for _, st in ipairs(newlyUnlocked) do
+        local zDisp = (st.zoneTitle and st.zoneTitle ~= "") and st.zoneTitle or ((st.mapID and self:GetMapName(st.mapID)) or "—")
+        print(string.format(L.CHAT_VENDOR_UNLOCKED, st.name, st.vendorTitle, zDisp, st.shortCostText))
+    end
+
+    local lead = newlyUnlocked[1]
+    if lead and self.TriggerVendorMountReadyAlert then
+        local sameVendorNames = {}
+        for _, st in ipairs(newlyUnlocked) do
+            if st.vendorTitle == lead.vendorTitle and st.mapID == lead.mapID then
+                table.insert(sameVendorNames, st.name)
+            end
+        end
+        local combinedNames = (#sameVendorNames > 1) and table.concat(sameVendorNames, ", ") or lead.name
+        self:TriggerVendorMountReadyAlert(lead.mountID, lead, combinedNames)
+    end
 end
