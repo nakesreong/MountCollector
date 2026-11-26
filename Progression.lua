@@ -1071,14 +1071,17 @@ function addon:GetVendorMountStatus(mountID)
             or "• Purchase token or seasonal cost is listed directly on the vendor.")
     end
 
-    -- 2. Оценка репутации, дружбы и Известности отряда (Warband Major Faction Renown)
+    -- 2. Оценка репутации, дружбы, Известности отряда (Renown), достижений и живого окна торговца
     local facID = block.factionID or 0
     local reqStanding = block.reqStanding or 0
     local reqRenown = block.reqRenown or 0
     local reqNote = (isRU and block.reqNoteRU and block.reqNoteRU ~= "" and block.reqNoteRU) or block.reqNoteEN or ""
     local facName = (isRU and block.factionRU and block.factionRU ~= "" and block.factionRU) or block.factionEN or ""
+    local reqAchID = block.reqAchID or 0
+    local reqAchTitle = (isRU and block.reqAchRU and block.reqAchRU ~= "" and block.reqAchRU) or block.reqAchEN or ""
+    local liveRedLock = self.LiveMerchantRedLock and self.LiveMerchantRedLock[mountID] or nil
 
-    local hasRepReq = (reqStanding > 0) or (reqRenown > 0) or (reqNote ~= "") or (facID > 0)
+    local hasRepReq = (reqStanding > 0) or (reqRenown > 0) or (reqNote ~= "") or (facID > 0) or (reqAchID > 0) or (reqAchTitle ~= "") or (liveRedLock ~= nil)
     local repMet = true
     local repUncertain = false
     local repSummaryText = L.VENDOR_FREE_REP
@@ -1087,6 +1090,7 @@ function addon:GetVendorMountStatus(mountID)
     if hasRepReq then
         local mfData = (facID > 0 and C_MajorFactions and C_MajorFactions.GetMajorFactionData) and C_MajorFactions.GetMajorFactionData(facID) or nil
         local frInfo = (facID > 0 and C_GossipInfo and C_GossipInfo.GetFriendshipReputation) and C_GossipInfo.GetFriendshipReputation(facID) or nil
+        local frRanks = (facID > 0 and C_GossipInfo and C_GossipInfo.GetFriendshipReputationRanks) and C_GossipInfo.GetFriendshipReputationRanks(facID) or nil
         local repData = (facID > 0 and C_Reputation and C_Reputation.GetFactionDataByID) and C_Reputation.GetFactionDataByID(facID) or nil
 
         if facName == "" then
@@ -1097,88 +1101,133 @@ function addon:GetVendorMountStatus(mountID)
             end
         end
 
-        if mfData and SafeNotSecret(mfData.renownLevel) and (reqRenown > 0 or (tonumber(mfData.renownLevel) or 0) > 0) then
-            local curRenown = tonumber(mfData.renownLevel) or 0
-            if reqRenown > 0 then
-                repMet = (curRenown >= reqRenown)
-                local clr = repMet and "|cff33ff88" or "|cffffaa00"
-                repSummaryText = string.format(
-                    isRU and "|cffffffff%s|r — %sИзвестность %d / %d|r" or "|cffffffff%s|r — %sRenown %d / %d|r",
-                    facName, clr, curRenown, reqRenown
-                )
-                table.insert(repDetailLines, repSummaryText)
-            else
-                repSummaryText = string.format(
-                    isRU and "|cffffffff%s|r — |cff00ccffИзвестность %d|r" or "|cffffffff%s|r — |cff00ccffRenown %d|r",
-                    facName, curRenown
-                )
-                table.insert(repDetailLines, repSummaryText)
-            end
-        elseif frInfo and frInfo.friendshipFactionID and frInfo.friendshipFactionID > 0 then
-            local curRank = (SafeNotSecret(frInfo.reaction) and frInfo.reaction) or ""
-            local isMaxFriend = (frInfo.nextThreshold == nil)
-            if reqStanding >= 8 or (reqNote ~= "" and (string.find(string.lower(block.reqNoteEN or ""), "best") or string.find(string.lower(block.reqNoteEN or ""), "tier 6") or string.find(string.lower(block.reqNoteEN or ""), "max") or string.find(string.lower(block.reqNoteEN or ""), "true friend"))) then
-                repMet = isMaxFriend
-            elseif reqNote ~= "" then
-                repMet = isMaxFriend
-                if not isMaxFriend then repUncertain = true end
-            end
-            local clr = repMet and "|cff33ff88" or "|cffffaa00"
-            local reqDisp = (reqNote ~= "" and reqNote) or (reqStanding > 0 and GetStandingLabel(reqStanding, isRU)) or facName
-            repSummaryText = string.format("%s%s|r |cffcccccc(%s: %s)|r", clr, reqDisp, isRU and "сейчас" or "current", curRank ~= "" and curRank or "?")
-            table.insert(repDetailLines, repSummaryText)
-        elseif repData and SafeNotSecret(repData.reaction) then
-            local curReaction = tonumber(repData.reaction) or 0
-            local curLabel = GetStandingLabel(curReaction, isRU)
-            local curVal = (tonumber(repData.currentStanding) or 0) - (tonumber(repData.currentReactionThreshold) or 0)
-            local maxVal = (tonumber(repData.nextReactionThreshold) or 0) - (tonumber(repData.currentReactionThreshold) or 0)
-            local progPart = (curReaction < 8 and maxVal > 0) and string.format(" (%s/%s)", FormatSpacedNumber(math.max(0, curVal)), FormatSpacedNumber(maxVal)) or ""
-            if reqStanding > 0 then
-                repMet = (curReaction >= reqStanding)
-                local reqLabel = GetStandingLabel(reqStanding, isRU)
-                local clr = repMet and "|cff33ff88" or "|cffffaa00"
-                if repMet then
-                    repSummaryText = string.format("|cffffffff%s|r — %s%s|r", facName, clr, curLabel)
+        if facID > 0 or reqStanding > 0 or reqRenown > 0 or reqNote ~= "" then
+            if mfData and SafeNotSecret(mfData.renownLevel) and (reqRenown > 0 or (tonumber(mfData.renownLevel) or 0) > 0) then
+                local curRenown = tonumber(mfData.renownLevel) or 0
+                if reqRenown > 0 then
+                    repMet = (curRenown >= reqRenown)
+                    local clr = repMet and "|cff33ff88" or "|cffffaa00"
+                    repSummaryText = string.format(
+                        isRU and "|cffffffff%s|r — %sИзвестность %d / %d|r" or "|cffffffff%s|r — %sRenown %d / %d|r",
+                        facName, clr, curRenown, reqRenown
+                    )
                 else
                     repSummaryText = string.format(
-                        isRU and "|cffffffff%s|r — требуется %s%s|r |cffcccccc(сейчас: %s%s)|r"
-                            or "|cffffffff%s|r — requires %s%s|r |cffcccccc(now: %s%s)|r",
-                        facName, clr, reqLabel, curLabel, progPart
+                        isRU and "|cffffffff%s|r — |cff00ccffИзвестность %d|r" or "|cffffffff%s|r — |cff00ccffRenown %d|r",
+                        facName, curRenown
                     )
                 end
                 table.insert(repDetailLines, repSummaryText)
-            else
-                if reqNote ~= "" then
-                    repUncertain = true
-                    repMet = false
-                    repSummaryText = "|cffffd100" .. reqNote .. "|r"
+            elseif reqRenown > 0 and frRanks and SafeNotSecret(frRanks.currentLevel) then
+                local curLvl = tonumber(frRanks.currentLevel) or 0
+                repMet = (curLvl >= reqRenown)
+                local clr = repMet and "|cff33ff88" or "|cffffaa00"
+                repSummaryText = string.format(
+                    isRU and "|cffffffff%s|r — %sУровень %d / %d|r" or "|cffffffff%s|r — %sRank %d / %d|r",
+                    facName, clr, curLvl, reqRenown
+                )
+                table.insert(repDetailLines, repSummaryText)
+            elseif frInfo and frInfo.friendshipFactionID and frInfo.friendshipFactionID > 0 then
+                local curRank = (SafeNotSecret(frInfo.reaction) and frInfo.reaction) or ""
+                local isMaxFriend = (frInfo.nextThreshold == nil)
+                    or (frRanks and SafeNotSecret(frRanks.currentLevel) and SafeNotSecret(frRanks.maxLevel) and (tonumber(frRanks.maxLevel) or 0) > 0 and (tonumber(frRanks.currentLevel) or 0) >= (tonumber(frRanks.maxLevel) or 0))
+                if reqStanding >= 8 or (reqNote ~= "" and (string.find(string.lower(block.reqNoteEN or ""), "best") or string.find(string.lower(block.reqNoteEN or ""), "tier 6") or string.find(string.lower(block.reqNoteEN or ""), "max") or string.find(string.lower(block.reqNoteEN or ""), "true friend"))) then
+                    repMet = isMaxFriend
+                elseif reqNote ~= "" then
+                    repMet = isMaxFriend
+                    if not isMaxFriend then repUncertain = true end
+                end
+                local clr = repMet and "|cff33ff88" or "|cffffaa00"
+                local reqDisp = (reqNote ~= "" and reqNote) or (reqStanding > 0 and (facName .. " — " .. GetStandingLabel(reqStanding, isRU))) or facName
+                repSummaryText = string.format("%s%s|r |cffcccccc(%s: %s)|r", clr, reqDisp, isRU and "сейчас" or "current", curRank ~= "" and curRank or "?")
+                table.insert(repDetailLines, repSummaryText)
+            elseif repData and SafeNotSecret(repData.reaction) then
+                local curReaction = tonumber(repData.reaction) or 0
+                local curLabel = GetStandingLabel(curReaction, isRU)
+                local curVal = (tonumber(repData.currentStanding) or 0) - (tonumber(repData.currentReactionThreshold) or 0)
+                local maxVal = (tonumber(repData.nextReactionThreshold) or 0) - (tonumber(repData.currentReactionThreshold) or 0)
+                local progPart = (curReaction < 8 and maxVal > 0) and string.format(" (%s/%s)", FormatSpacedNumber(math.max(0, curVal)), FormatSpacedNumber(maxVal)) or ""
+                if reqStanding > 0 then
+                    repMet = (curReaction >= reqStanding)
+                    local reqLabel = GetStandingLabel(reqStanding, isRU)
+                    local clr = repMet and "|cff33ff88" or "|cffffaa00"
+                    if repMet then
+                        repSummaryText = string.format("|cffffffff%s|r — %s%s|r", facName, clr, curLabel)
+                    else
+                        repSummaryText = string.format(
+                            isRU and "|cffffffff%s|r — требуется %s%s|r |cffcccccc(сейчас: %s%s)|r"
+                                or "|cffffffff%s|r — requires %s%s|r |cffcccccc(now: %s%s)|r",
+                            facName, clr, reqLabel, curLabel, progPart
+                        )
+                    end
                 else
-                    repSummaryText = string.format("|cffffffff%s|r — |cff00ccff%s%s|r", facName, curLabel, progPart)
+                    if reqNote ~= "" then
+                        repUncertain = true
+                        repMet = false
+                        repSummaryText = "|cffffd100" .. reqNote .. "|r"
+                    else
+                        repSummaryText = string.format("|cffffffff%s|r — |cff00ccff%s%s|r", facName, curLabel, progPart)
+                    end
+                end
+                table.insert(repDetailLines, repSummaryText)
+            else
+                if reqRenown > 0 then
+                    repMet = false
+                    repSummaryText = string.format(
+                        isRU and "|cffffffff%s|r — |cffffaa00Уровень / Известность 0 / %d|r" or "|cffffffff%s|r — |cffffaa00Rank / Renown 0 / %d|r",
+                        facName ~= "" and facName or "Faction", reqRenown
+                    )
+                elseif reqStanding > 0 then
+                    repMet = false
+                    repSummaryText = string.format(
+                        isRU and "|cffffffff%s|r — |cffffaa00требуется %s|r" or "|cffffffff%s|r — |cffffaa00requires %s|r",
+                        facName ~= "" and facName or "Faction", GetStandingLabel(reqStanding, isRU)
+                    )
+                elseif reqNote ~= "" then
+                    repMet = false
+                    repUncertain = true
+                    repSummaryText = "|cffffaa00" .. reqNote .. "|r"
+                elseif facName ~= "" then
+                    repSummaryText = "|cffffffff" .. facName .. "|r"
                 end
                 table.insert(repDetailLines, repSummaryText)
             end
-        else
-            -- Фракция ещё не открыта у персонажа или нестандартная заметка
-            if reqRenown > 0 then
-                repMet = false
-                repSummaryText = string.format(
-                    isRU and "|cffffffff%s|r — |cffffaa00Известность 0 / %d|r" or "|cffffffff%s|r — |cffffaa00Renown 0 / %d|r",
-                    facName ~= "" and facName or "Faction", reqRenown
-                )
-            elseif reqStanding > 0 then
-                repMet = false
-                repSummaryText = string.format(
-                    isRU and "|cffffffff%s|r — |cffffaa00требуется %s|r" or "|cffffffff%s|r — |cffffaa00requires %s|r",
-                    facName ~= "" and facName or "Faction", GetStandingLabel(reqStanding, isRU)
-                )
-            elseif reqNote ~= "" then
-                repMet = false
+        end
+
+        -- Проверка требуемого достижения (если у торговца стоит Achievement gate)
+        if reqAchID > 0 or reqAchTitle ~= "" then
+            local achDone = false
+            local liveAchName = nil
+            if reqAchID > 0 and GetAchievementInfo then
+                local okA, _, aName, _, aCompleted = pcall(GetAchievementInfo, reqAchID)
+                if okA then
+                    liveAchName = aName
+                    achDone = (aCompleted == true)
+                end
+            else
                 repUncertain = true
-                repSummaryText = "|cffffaa00" .. reqNote .. "|r"
-            elseif facName ~= "" then
-                repSummaryText = "|cffffffff" .. facName .. "|r"
             end
-            table.insert(repDetailLines, repSummaryText)
+            if not achDone then
+                repMet = false
+            end
+            local dispAch = reqAchTitle ~= "" and reqAchTitle or liveAchName or ("#" .. tostring(reqAchID))
+            local achLine = achDone
+                and string.format(isRU and "|cff33ff88Достижение выполнено:|r |cffffffff«%s»|r" or "|cff33ff88Achievement completed:|r |cffffffff'%s'|r", dispAch)
+                or string.format(isRU and "|cffffaa00Требуется достижение:|r |cffffffff«%s»|r" or "|cffffaa00Requires Achievement:|r |cffffffff'%s'|r", dispAch)
+            table.insert(repDetailLines, achLine)
+            if #repDetailLines == 1 then
+                repSummaryText = achLine
+            end
+        end
+
+        -- Живая проверка красной строки требования прямо из открытого окна торговца (MERCHANT_SHOW)
+        if liveRedLock and liveRedLock ~= "" then
+            repMet = false
+            local redLine = "|cffff5555" .. liveRedLock .. "|r"
+            table.insert(repDetailLines, redLine)
+            if facID == 0 and reqAchID == 0 and reqNote == "" then
+                repSummaryText = redLine
+            end
         end
     end
 
@@ -1206,6 +1255,7 @@ function addon:GetVendorMountStatus(mountID)
         repUncertain = repUncertain,
         repSummaryText = repSummaryText,
         repDetailLines = repDetailLines,
+        reqAchID = (reqAchID > 0) and reqAchID or nil,
         canBuyNow = canBuyNow,
         entry = vEntry,
     }

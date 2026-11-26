@@ -1238,6 +1238,33 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 addon:ClearAddonWaypoints()
             end
         end
+        if GetMerchantNumItems and GetMerchantItemID and C_MountJournal and C_MountJournal.GetMountFromItem and C_TooltipInfo and C_TooltipInfo.GetMerchantItem then
+            addon.LiveMerchantRedLock = addon.LiveMerchantRedLock or {}
+            local numItems = GetMerchantNumItems() or 0
+            for slot = 1, numItems do
+                local okId, itemID = pcall(GetMerchantItemID, slot)
+                if okId and itemID and SafeNotSecret(itemID) then
+                    local mID = C_MountJournal.GetMountFromItem(itemID) or (addon.MountByItem and addon.MountByItem[itemID])
+                    if mID then
+                        local okTip, tipData = pcall(C_TooltipInfo.GetMerchantItem, slot)
+                        local redReason = nil
+                        if okTip and tipData and type(tipData.lines) == "table" then
+                            for _, ln in ipairs(tipData.lines) do
+                                local txt = ln and ln.leftText
+                                local clr = ln and ln.leftColor
+                                if SafeNotSecret(txt) and type(txt) == "string" and txt ~= "" and clr and SafeNotSecret(clr.r) and SafeNotSecret(clr.g) and SafeNotSecret(clr.b) then
+                                    if clr.r > 0.85 and clr.g < 0.25 and clr.b < 0.25 and not string.find(txt, "^===") then
+                                        redReason = txt
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                        addon.LiveMerchantRedLock[mID] = redReason
+                    end
+                end
+            end
+        end
         ScheduleOpenRadarWalletRefresh()
     elseif event == "PLAYER_REGEN_DISABLED" then
         if addon.ClearAutoTargetOverrideBinding then

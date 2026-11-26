@@ -410,8 +410,83 @@ EXPLICIT_FACTION_IDS = {
     "council of dornogal": 2590,
     "the assembly of the deeps": 2594,
     "hallowfall arathi": 2570,
-    "the severed threads": 2600,
-    "the cartels of undermine": 2653,
+    # Midnight (12.x)
+    "amani tribe": 2696,
+    "the singularity": 2699,
+    "hara'ti": 2704,
+    "the hara'ti": 2704,
+    "silvermoon court": 2710,
+    "delves: season 1": 2742,
+    "delver's journey": 2742,
+    "prey: season 1": 2764,
+    "preyhunter's journey": 2808,
+    "brawl'gar arena": 2766,
+    "bizmo's brawlpub": 2767,
+    "slayer's duellum": 2770,
+    "zul'jarra's forces": 2772,
+    "captain tokka": 2773,
+    "ritual sites": 2792,
+    "aqir research enclave": 2838,
+}
+
+# Explicit Reputation / Renown / Journey gates omitted by Blizzard from Mount.db2 SourceText_lang
+MOUNT_REP_OVERRIDES = {
+    # Argent Tournament City Exalted Mounts (ItemSparse MinFactionID)
+    318: {"factionID": 930, "reqStanding": 8},
+    319: {"factionID": 69, "reqStanding": 8},
+    320: {"factionID": 911, "reqStanding": 8},
+    321: {"factionID": 72, "reqStanding": 8},
+    322: {"factionID": 81, "reqStanding": 8},
+    323: {"factionID": 54, "reqStanding": 8},
+    324: {"factionID": 47, "reqStanding": 8},
+    325: {"factionID": 530, "reqStanding": 8},
+    326: {"factionID": 68, "reqStanding": 8},
+    327: {"factionID": 76, "reqStanding": 8},
+    # Guild Vendors
+    401: {"reqAchEN": "Guild Glory of the Cataclysm Raider", "reqAchRU": "Слава рейдеру Cataclysm (гильдия)"},
+    403: {"reqAchEN": "Guild Level 25 / Exalted", "reqAchRU": "Превознесение в гильдии"},
+    # Legion / Shadowlands ItemSparse gates
+    877: {"factionID": 2018, "reqStanding": 8},
+    1420: {"factionID": 2464, "reqStanding": 6},
+    1429: {"factionID": 2463, "reqStanding": 6},
+    # The War Within Renown & Cartel Quartermasters (omitted in Mount.db2)
+    2148: {"factionID": 2590, "reqRenown": 23},
+    2213: {"factionID": 2590, "reqRenown": 18},
+    2162: {"factionID": 2594, "reqRenown": 23},
+    2209: {"factionID": 2594, "reqRenown": 19},
+    2191: {"factionID": 2570, "reqRenown": 23},
+    2193: {"factionID": 2570, "reqRenown": 21},
+    2177: {"factionID": 2600, "reqRenown": 23},
+    2184: {"factionID": 2600, "reqRenown": 22},
+    2277: {"factionID": 2653, "reqRenown": 15},
+    2280: {"factionID": 2653, "reqRenown": 19},
+    2272: {"factionID": 2673, "reqStanding": 8},
+    2286: {"factionID": 2675, "reqStanding": 8},
+    2294: {"factionID": 2677, "reqStanding": 8},
+    2284: {"factionID": 2692, "reqStanding": 8},
+    2287: {"factionID": 2669, "reqStanding": 8},
+    2519: {"factionID": 2688, "reqRenown": 9},
+    # Midnight (12.x) Renown, Enclave, Delver's Journey & Preyhunter's Journey gates
+    2614: {"factionID": 2704, "reqRenown": 16},
+    2710: {"factionID": 2704, "reqRenown": 19},
+    2694: {"factionID": 2696, "reqRenown": 19},
+    2776: {"factionID": 2696, "reqRenown": 17},
+    2753: {"factionID": 2710, "reqRenown": 19},
+    2761: {"factionID": 2710, "reqRenown": 17},
+    2789: {"factionID": 2699, "reqRenown": 17},
+    2828: {"factionID": 2699, "reqRenown": 19},
+    2769: {"factionID": 2808, "reqRenown": 5},
+    2770: {"factionID": 2808, "reqRenown": 5},
+    3032: {"factionID": 2808, "reqRenown": 10},
+    2840: {"factionID": 2742, "reqRenown": 5, "factionEN": "Delver's Journey", "factionRU": "Путь участника вылазки"},
+    2841: {"factionID": 2742, "reqRenown": 10, "factionEN": "Delver's Journey", "factionRU": "Путь участника вылазки"},
+    3043: {"factionID": 2742, "reqRenown": 5, "factionEN": "Delver's Journey", "factionRU": "Путь участника вылазки"},
+    2935: {"factionID": 2792, "reqRenown": 8},
+    3019: {"factionID": 2773, "reqStanding": 8},
+    3020: {"reqNoteEN": "Quest: Vaults of Atal'utek: Certain Doom", "reqNoteRU": "Квест: «Своды Атал'Утека: Верная погибель»"},
+    3054: {"factionID": 2772, "reqRenown": 19},
+    3060: {"factionID": 2772, "reqRenown": 17},
+    3066: {"factionID": 2838, "reqStanding": 8},
 }
 
 
@@ -592,6 +667,17 @@ def main():
     curr_en = {int(r["ID"]): r for r in fetch_csv("https://wago.tools/db2/CurrencyTypes/csv")}
     curr_ru = {int(r["ID"]): r for r in fetch_csv("https://wago.tools/db2/CurrencyTypes/csv?locale=ruRU")}
     maps_en = fetch_csv("https://wago.tools/db2/UiMap/csv")
+    achs_en = fetch_csv("https://wago.tools/db2/Achievement/csv")
+    achs_ru = {int(r["ID"]): r for r in fetch_csv("https://wago.tools/db2/Achievement/csv?locale=ruRU")}
+
+    ach_by_name = {}
+    for a in achs_en:
+        t = (a.get("Title_lang") or "").strip()
+        if t and t.lower() not in ach_by_name:
+            ach_by_name[t.lower()] = int(a["ID"])
+    ach_ru_by_id = {aid: (r.get("Title_lang") or "").strip() for aid, r in achs_ru.items()}
+
+    fac_en_by_id = {int(f["ID"]): (f.get("Name_lang") or "").strip() for f in factions_en}
 
     fac_by_name = {}
     for f in factions_en:
@@ -636,6 +722,50 @@ def main():
             if not primary["reqNoteEN"] and alt["reqNoteEN"]:
                 primary["reqNoteEN"] = alt["reqNoteEN"]
                 primary["reqNoteRU"] = alt["reqNoteRU"]
+            if not primary["factionID"] and alt["factionID"]:
+                primary["factionID"] = alt["factionID"]
+                primary["factionEN"] = alt["factionEN"]
+                primary["factionRU"] = alt["factionRU"]
+                primary["reqStanding"] = alt["reqStanding"]
+                primary["reqRenown"] = alt["reqRenown"]
+
+        # Parse Achievement requirement from full SourceText_lang if present
+        ach_m = re.search(r"Achievement:\s*\|r([^\|\r\n]+)", src_en)
+        ach_ru_m = re.search(r"Достижение:\s*\|r([^\|\r\n]+)", src_ru)
+        if ach_m:
+            ach_en_str = ach_m.group(1).strip()
+            ach_id = ach_by_name.get(ach_en_str.lower(), 0)
+            ach_ru_str = ach_ru_by_id.get(ach_id) or (ach_ru_m.group(1).strip() if ach_ru_m else ach_en_str)
+            primary["reqAchID"] = ach_id
+            primary["reqAchEN"] = ach_en_str
+            primary["reqAchRU"] = ach_ru_str
+            if alt:
+                alt["reqAchID"] = ach_id
+                alt["reqAchEN"] = ach_en_str
+                alt["reqAchRU"] = ach_ru_str
+
+        # Apply verified Reputation / Renown / Achievement gates omitted in Mount.db2
+        rep_ovr = MOUNT_REP_OVERRIDES.get(mid)
+        if rep_ovr:
+            for target_b in ([primary, alt] if alt else [primary]):
+                if "factionID" in rep_ovr:
+                    fid = rep_ovr["factionID"]
+                    target_b["factionID"] = fid
+                    target_b["factionEN"] = rep_ovr.get("factionEN") or fac_en_by_id.get(fid, "")
+                    target_b["factionRU"] = rep_ovr.get("factionRU") or fac_ru_by_id.get(fid, target_b["factionEN"])
+                if "reqStanding" in rep_ovr:
+                    target_b["reqStanding"] = rep_ovr["reqStanding"]
+                if "reqRenown" in rep_ovr:
+                    target_b["reqRenown"] = rep_ovr["reqRenown"]
+                if "reqNoteEN" in rep_ovr:
+                    target_b["reqNoteEN"] = rep_ovr["reqNoteEN"]
+                    target_b["reqNoteRU"] = rep_ovr.get("reqNoteRU", rep_ovr["reqNoteEN"])
+                if "reqAchEN" in rep_ovr:
+                    a_en = rep_ovr["reqAchEN"]
+                    a_id = ach_by_name.get(a_en.lower(), 0)
+                    target_b["reqAchID"] = a_id
+                    target_b["reqAchEN"] = a_en
+                    target_b["reqAchRU"] = rep_ovr.get("reqAchRU") or ach_ru_by_id.get(a_id, a_en)
 
         costs = parse_costs(src_en, src_ru, curr_en, curr_ru)
 
@@ -696,6 +826,11 @@ def main():
         if b["reqNoteEN"]:
             parts.append(f'reqNoteRU="{esc(b["reqNoteRU"])}"')
             parts.append(f'reqNoteEN="{esc(b["reqNoteEN"])}"')
+        if b.get("reqAchEN"):
+            if b.get("reqAchID", 0) > 0:
+                parts.append(f'reqAchID={b["reqAchID"]}')
+            parts.append(f'reqAchRU="{esc(b["reqAchRU"])}"')
+            parts.append(f'reqAchEN="{esc(b["reqAchEN"])}"')
         return "{ " + ", ".join(parts) + " }"
 
     with_coords = 0

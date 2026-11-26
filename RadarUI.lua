@@ -854,15 +854,16 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
             br = (isCollected or vStatus.canAffordAll) and { 0.20, 0.72, 0.44, 0.95 } or { 0.32, 0.65, 0.95, 0.95 },
         })
 
-        -- 3. Карточка требования Репутации / Дружбы / Известности отряда (Renown)
+        -- 3. Карточка требования Репутации / Дружбы / Известности отряда (Renown) / Достижения
         table.insert(stepsToRender, {
             mountID = mountID,
+            achID = vStatus.reqAchID,
             customMapID = vStatus.mapID,
             customX = vStatus.x,
             customY = vStatus.y,
             customNpc = vStatus.vendorTitle,
             badge = (isCollected or (vStatus.repMet and not vStatus.repUncertain)) and L.VENDOR_REP_BADGE_OK or L.VENDOR_REP_BADGE_NEED,
-            coords = "",
+            coords = vStatus.reqAchID and string.format("|cffffd100#%d|r", vStatus.reqAchID) or "",
             title = L.VENDOR_REP_CARD_TITLE,
             npc = "",
             desc = (vStatus.repDetailLines and #vStatus.repDetailLines > 0) and table.concat(vStatus.repDetailLines, "\n") or vStatus.repSummaryText,
