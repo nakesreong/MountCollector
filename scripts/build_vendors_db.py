@@ -210,6 +210,22 @@ MOUNT_OVERRIDES = {
         "primary": {"vendorEN": "Valadar Starsong (Lunar Festival)", "vendorRU": "Валадар Звездная Песня (Лунный фестиваль)", "zoneEN": "Moonglade", "zoneRU": "Лунная поляна", "mapID": 80, "x": 53.6, "y": 35.4},
         "costs": [{"kind": "ITEM", "id": 21100, "amount": 75}],
     },
+    550: {
+        "primary": {"vendorEN": "Quackenbush", "vendorRU": "Квакенбуш", "zoneEN": "Bizmo's Brawlpub", "zoneRU": "Потасовочная \"У Бизмо\"", "mapID": 84, "x": 67.0, "y": 33.6, "side": "ALLIANCE"},
+        "alt": {"vendorEN": "Paul North", "vendorRU": "Пол Норт", "zoneEN": "Brawl'gar Arena", "zoneRU": "Арена \"Морд'Бой\"", "mapID": 85, "x": 70.6, "y": 30.8, "side": "HORDE"},
+    },
+    878: {
+        "primary": {"vendorEN": "Quackenbush", "vendorRU": "Квакенбуш", "zoneEN": "Bizmo's Brawlpub", "zoneRU": "Потасовочная \"У Бизмо\"", "mapID": 84, "x": 67.0, "y": 33.6, "side": "ALLIANCE"},
+        "alt": {"vendorEN": "Paul North", "vendorRU": "Пол Норт", "zoneEN": "Brawl'gar Arena", "zoneRU": "Арена \"Морд'Бой\"", "mapID": 85, "x": 70.6, "y": 30.8, "side": "HORDE"},
+    },
+    2807: {
+        "primary": {"vendorEN": "Quackenbush", "vendorRU": "Квакенбуш", "zoneEN": "Bizmo's Brawlpub", "zoneRU": "Потасовочная \"У Бизмо\"", "mapID": 84, "x": 67.0, "y": 33.6, "side": "ALLIANCE"},
+        "alt": {"vendorEN": "Paul North", "vendorRU": "Пол Норт", "zoneEN": "Brawl'gar Arena", "zoneRU": "Арена \"Морд'Бой\"", "mapID": 85, "x": 70.6, "y": 30.8, "side": "HORDE"},
+    },
+    2808: {
+        "primary": {"vendorEN": "Quackenbush", "vendorRU": "Квакенбуш", "zoneEN": "Bizmo's Brawlpub", "zoneRU": "Потасовочная \"У Бизмо\"", "mapID": 84, "x": 67.0, "y": 33.6, "side": "ALLIANCE"},
+        "alt": {"vendorEN": "Paul North", "vendorRU": "Пол Норт", "zoneEN": "Brawl'gar Arena", "zoneRU": "Арена \"Морд'Бой\"", "mapID": 85, "x": 70.6, "y": 30.8, "side": "HORDE"},
+    },
 }
 
 # Fallback Zone -> (mapID, x, y)
