@@ -27,6 +27,7 @@ addon.DropInfoByMount = {}
 addon.MountQuestsByMountID = {}
 addon.MountDungeonsByMountID = {}
 addon.MountGloryByMountID = {}
+addon.MountVendorsByMountID = {}
 addon.MountsByNpc = {}
 addon.MountsByMap = {}
 addon.RecentAttemptLock = {}
@@ -413,6 +414,8 @@ function addon:BuildMountIndex()
     wipe(self.DropInfoByMount)
     wipe(self.MountQuestsByMountID)
     wipe(self.MountDungeonsByMountID)
+    wipe(self.MountGloryByMountID)
+    wipe(self.MountVendorsByMountID)
     wipe(self.MountsByNpc)
     wipe(self.MountsByMap)
     self.NpcByRareName = self.NpcByRareName or {}
@@ -767,6 +770,59 @@ function addon:BuildMountIndex()
         end
     end
 
+    -- 8. Индексируем покупаемых у торговцев маунтов из MountVendorsDB (без добавления на радар рарников карты мира)
+    if type(self.MountVendorsDB) == "table" then
+        local playerFaction = UnitFactionGroup and UnitFactionGroup("player") or nil
+        for _, vEntry in ipairs(self.MountVendorsDB) do
+            local mID = (vEntry.mountID and C_MountJournal.GetMountInfoByID(vEntry.mountID) and vEntry.mountID)
+                or (vEntry.spellID and self.MountBySpell[vEntry.spellID])
+                or (vEntry.spellID and C_MountJournal.GetMountFromSpell and C_MountJournal.GetMountFromSpell(vEntry.spellID))
+                or vEntry.mountID
+            if mID and C_MountJournal.GetMountInfoByID(mID) then
+                vEntry.resolvedMountID = mID
+                self.MountVendorsByMountID[mID] = vEntry
+
+                local block = vEntry.primary
+                if vEntry.alt and playerFaction then
+                    if playerFaction == "Horde" and (vEntry.alt.side == "HORDE" or (block and block.side == "ALLIANCE")) then
+                        block = vEntry.alt
+                    elseif playerFaction == "Alliance" and (vEntry.alt.side == "ALLIANCE" or (block and block.side == "HORDE")) then
+                        block = vEntry.alt
+                    end
+                end
+
+                local info = self.DropInfoByMount[mID]
+                if not info and block then
+                    local name, spellID = self:GetMountInfoByID(mID)
+                    info = {
+                        mountID = mID,
+                        name = name,
+                        spellID = spellID or vEntry.spellID,
+                        method = "VENDOR",
+                        boss = block.vendorEN or block.vendorRU,
+                        bossRU = block.vendorRU,
+                        bossEN = block.vendorEN,
+                        npcs = {},
+                        stats = {},
+                        quests = {},
+                        maps = {},
+                        coords = {},
+                    }
+                    self.DropInfoByMount[mID] = info
+                    if block.mapID and block.mapID > 0 and block.x and block.y then
+                        AddUniqueToList(info.maps, block.mapID)
+                        table.insert(info.coords, {
+                            m = block.mapID,
+                            x = block.x,
+                            y = block.y,
+                            n = block.vendorRU or block.vendorEN or info.name,
+                        })
+                    end
+                end
+            end
+        end
+    end
+
     if self.KnownNpcNames then
         for nid, kName in pairs(self.KnownNpcNames) do
             if IsValidNpcName(kName) then
@@ -827,6 +883,8 @@ addon.UIState = addon.UIState or {
     previousTab = "ZONE",
     selectedMountID = nil,
     searchText = "",
+    filterGlorySoloOnly = false,
+    filterVendorsReadyOnly = false,
     rowPool = {},
     stepRowPool = {},
     dockStepPool = {},
@@ -937,8 +995,8 @@ addon.CreateFlatButton = CreateFlatButton
 function addon:ValidateModuleIntegrity(silentIfOk)
     local warnings = {}
     local requiredTables = {
-        "L", "MountDropsBySpell", "RareScannerMountItems", "RareScannerNpcToMounts",
-        "MountQuestsDB", "MountDungeonsDB", "MountGloryDB", "MountBySpell", "DropInfoByMount",
+        "L", "EnglishMountDB", "EnglishMapNames", "MountDropsBySpell", "RareScannerMountItems", "RareScannerNpcToMounts",
+        "MountQuestsDB", "MountDungeonsDB", "MountGloryDB", "MountVendorsDB", "MountBySpell", "DropInfoByMount",
     }
     for _, tblName in ipairs(requiredTables) do
         if type(self[tblName]) ~= "table" then
@@ -953,11 +1011,11 @@ function addon:ValidateModuleIntegrity(silentIfOk)
         "GetMountWowheadURL", "NavigateMountQuestStep", "GetBestMountCoords", "SetMountWaypoint",
         "PinAllMountSpawns", "CheckAndCancelTourIfUserOverrode", "StartSpawnTourTicker",
         "AdvanceSpawnTourStep", "SyncActiveTourAfterKillOrAlert", "NavigateMountTarget",
-        -- Lockouts.lua
+        -- Lockouts.lua & Progression.lua
         "GetMountQuestChainStatus", "GetMountSpecialConditions", "BuildMountDebugReport",
         "ScanAllCharacterStatistics", "GetMountAttempts", "SetManualMountAttempts", "RecordAttempt",
         "IsNpcLockedToday", "IsMountRareLockedToday", "GetZoneUncollectedMounts",
-        "ScanCurrentCharacterLockouts", "GetDungeonMountStatus", "GetGloryMountStatus",
+        "ScanCurrentCharacterLockouts", "GetDungeonMountStatus", "GetGloryMountStatus", "GetVendorMountStatus",
         -- RareRadar.lua
         "IsPlayerInInstancedContent", "IsOpenWorldRareOrWorldBossMount", "CheckUnitForMountDrop",
         "CheckVignetteForMountDrop", "ScanAllActiveVignettes", "CheckMonsterChatForMountDrop",
@@ -1028,12 +1086,33 @@ function addon:ValidateModuleIntegrity(silentIfOk)
         for _ in pairs(self.DropInfoByMount or {}) do dropCount = dropCount + 1 end
         local dungeonCount = (self.MountDungeonsDB and #self.MountDungeonsDB) or 0
         local questCount = (self.MountQuestsDB and #self.MountQuestsDB) or 0
+        local gloryCount = (self.MountGloryDB and #self.MountGloryDB) or 0
+        local vendorCount = (self.MountVendorsDB and #self.MountVendorsDB) or 0
         print(string.format(
-            "|cff00ccff[MountCollector]|r |cff33ff88Проверка модулей OK!|r Индекс: %d дроп/рар-маунтов, %d данжей/рейдов/ворлдбоссов, %d квестовых цепочек.",
-            dropCount, dungeonCount, questCount
+            "|cff00ccff[MountCollector]|r |cff33ff88Проверка модулей OK!|r Индекс: %d маунтов, %d данжей/рейдов/ворлдбоссов, %d цепочек, %d ачивок «Славы», %d торговцев.",
+            dropCount, dungeonCount, questCount, gloryCount, vendorCount
         ))
     end
     return true, warnings
+end
+
+local walletRefreshPending = false
+local function ScheduleOpenRadarWalletRefresh()
+    if walletRefreshPending then return end
+    if not (_G.MountCollectorRadarFrame and _G.MountCollectorRadarFrame:IsShown())
+        and not (_G.MountJournal and _G.MountJournal:IsShown()) then
+        return
+    end
+    walletRefreshPending = true
+    C_Timer.After(0.25, function()
+        walletRefreshPending = false
+        if _G.MountCollectorRadarFrame and _G.MountCollectorRadarFrame:IsShown() and addon.RefreshRadarUI then
+            addon:RefreshRadarUI()
+        end
+        if _G.MountJournal and _G.MountJournal:IsShown() and addon.RefreshMountJournalSideColumn then
+            addon:RefreshMountJournalSideColumn()
+        end
+    end)
 end
 
 local eventFrame = CreateFrame("Frame")
@@ -1060,6 +1139,10 @@ eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("ZONE_CHANGED")
 eventFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
 eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+eventFrame:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
+eventFrame:RegisterEvent("PLAYER_MONEY")
+eventFrame:RegisterEvent("UPDATE_FACTION")
+eventFrame:RegisterEvent("MAJOR_FACTION_RENOWN_LEVEL_CHANGED")
 eventFrame:RegisterEvent("ACHIEVEMENT_EARNED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -1146,10 +1229,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if addon.CheckPortalRouteProgress then
             addon:CheckPortalRouteProgress()
         end
-    elseif event == "BAG_UPDATE_DELAYED" then
-        if _G.MountCollectorRadarFrame and _G.MountCollectorRadarFrame:IsShown() and addon.RefreshRadarUI then
-            addon:RefreshRadarUI()
-        end
+    elseif event == "BAG_UPDATE_DELAYED" or event == "CURRENCY_DISPLAY_UPDATE" or event == "PLAYER_MONEY" or event == "UPDATE_FACTION" or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED" then
+        ScheduleOpenRadarWalletRefresh()
     elseif event == "PLAYER_REGEN_DISABLED" then
         if addon.ClearAutoTargetOverrideBinding then
             addon:ClearAutoTargetOverrideBinding()

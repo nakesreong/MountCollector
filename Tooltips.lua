@@ -217,6 +217,26 @@ function addon:AppendMountCollectorLines(tooltip, mountID, includeSourceText, is
                     L.TT_GLORY_LABEL or "|cffddddddGlory Meta-Achievement:|r",
                     string.format("|cffffd100%s|r — |cff00ff96%d/%d (%d%%)|r %s", gStatus.achTitle, gStatus.completedCount, gStatus.totalCount, gStatus.progressPct, modeBadge)
                 )
+            else
+                local vStatus = self.GetVendorMountStatus and self:GetVendorMountStatus(mountID)
+                if vStatus then
+                    local readyTag = vStatus.canBuyNow and (" " .. L.VENDOR_READY_BADGE) or ""
+                    local zPart = (vStatus.zoneTitle and vStatus.zoneTitle ~= "") and (" |cff888888(" .. vStatus.zoneTitle .. ")|r") or ""
+                    tooltip:AddDoubleLine(
+                        L.TT_VENDOR_LABEL,
+                        "|cffffd100" .. vStatus.vendorTitle .. "|r" .. zPart .. readyTag
+                    )
+                    tooltip:AddDoubleLine(
+                        L.TT_VENDOR_COST_LABEL,
+                        vStatus.shortCostText
+                    )
+                    if vStatus.hasRepReq then
+                        tooltip:AddDoubleLine(
+                            L.TT_VENDOR_REP_LABEL,
+                            vStatus.repSummaryText
+                        )
+                    end
+                end
             end
         end
     end
@@ -402,7 +422,7 @@ function addon:HookMountJournal()
                     if not self.mountID then return end
                     if self.isQuestMount and addon.NavigateMountQuestStep then
                         addon:NavigateMountQuestStep(self.mountID, nil, false)
-                    elseif self.isDungeonMount and addon.NavigateMountTarget then
+                    elseif (self.isDungeonMount or self.isVendorMount) and addon.NavigateMountTarget then
                         addon:NavigateMountTarget(self.mountID, false)
                     elseif addon.PinAllMountSpawns then
                         addon:PinAllMountSpawns(self.mountID, false)
@@ -463,10 +483,17 @@ function addon:HookMountJournal()
             end
 
             local qStatus = addon.GetMountQuestChainStatus and addon:GetMountQuestChainStatus(mountID)
+            local vStatus = (not qStatus and addon.GetVendorMountStatus) and addon:GetVendorMountStatus(mountID) or nil
             if qStatus and qStatus.currentStep then
                 table.insert(extraLines, string.format(L.MD_CHAIN_LINE, qStatus.completedSteps, qStatus.totalSteps, qStatus.currentStep.title))
                 if qStatus.currentStep.luaStepDetail and qStatus.currentStep.luaStepDetail ~= "" then
                     table.insert(extraLines, qStatus.currentStep.luaStepDetail)
+                end
+            elseif vStatus then
+                local readyPart = vStatus.canBuyNow and (" " .. L.VENDOR_READY_BADGE) or ""
+                table.insert(extraLines, string.format(L.VENDOR_META_COST_FMT, vStatus.shortCostText .. readyPart))
+                if vStatus.hasRepReq then
+                    table.insert(extraLines, string.format(L.VENDOR_META_REP_FMT, vStatus.repSummaryText))
                 end
             else
                 local specCond = addon.GetMountSpecialConditions and addon:GetMountSpecialConditions(mountID)
@@ -503,6 +530,7 @@ function addon:HookMountJournal()
                 routeBtn.mountID = mountID
                 routeBtn.isQuestMount = true
                 routeBtn.isDungeonMount = false
+                routeBtn.isVendorMount = false
                 routeBtn:SetText(L.MD_BTN_CONTINUE_ROUTE)
                 if routeBtn.label and routeBtn.label.GetStringWidth then
                     routeBtn:SetWidth(math.max(156, math.ceil(routeBtn.label:GetStringWidth() or 140) + 18))
@@ -514,7 +542,20 @@ function addon:HookMountJournal()
                 routeBtn.mountID = mountID
                 routeBtn.isQuestMount = false
                 routeBtn.isDungeonMount = true
+                routeBtn.isVendorMount = false
                 routeBtn:SetText(L.DUNGEON_ENTRANCE_BTN)
+                if routeBtn.label and routeBtn.label.GetStringWidth then
+                    routeBtn:SetWidth(math.max(156, math.ceil(routeBtn.label:GetStringWidth() or 140) + 18))
+                end
+                routeBtn:ClearAllPoints()
+                routeBtn:SetPoint("LEFT", questBtn, "RIGHT", 6, 0)
+                routeBtn:Show()
+            elseif vStatus and vStatus.mapID and vStatus.mapID > 0 then
+                routeBtn.mountID = mountID
+                routeBtn.isQuestMount = false
+                routeBtn.isDungeonMount = false
+                routeBtn.isVendorMount = true
+                routeBtn:SetText(L.VENDOR_NAV_BTN)
                 if routeBtn.label and routeBtn.label.GetStringWidth then
                     routeBtn:SetWidth(math.max(156, math.ceil(routeBtn.label:GetStringWidth() or 140) + 18))
                 end
@@ -525,6 +566,7 @@ function addon:HookMountJournal()
                 routeBtn.mountID = mountID
                 routeBtn.isQuestMount = false
                 routeBtn.isDungeonMount = false
+                routeBtn.isVendorMount = false
                 routeBtn:SetText(L.MD_BTN_PIN_SPAWNS)
                 if routeBtn.label and routeBtn.label.GetStringWidth then
                     routeBtn:SetWidth(math.max(156, math.ceil(routeBtn.label:GetStringWidth() or 140) + 18))

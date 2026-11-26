@@ -2,68 +2,22 @@ local _, addon = ...
 
 -- ============================================================================
 -- MountCollector — Lockouts.lua
--- Модуль учёта попыток (траев), суточных/недельных КД твинков и квестовых цепочек:
---   * Оценка прогресса пошаговых квестовых цепочек и секретов (GetMountQuestChainStatus)
---   * Проверка особых условий получения и генерация Lua-отчёта (GetMountSpecialConditions, BuildMountDebugReport)
+-- Модуль учёта попыток (траев) и суточных/недельных КД рарников и твинков аккаунта:
+--   * Подсчёт предметов в сумках/банке/банке отряда и 3-дневного КД Уникальных яиц
+--     (GetRequirementItemCount, HasUniqueIncubationEggOnChar)
 --   * Сканирование серверной статистики убийств боссов и учёт траев по аккаунту
 --     (ScanAllCharacterStatistics, GetMountAttempts, SetManualMountAttempts, RecordAttempt)
---   * Проверка суточного КД рарников (IsNpcLockedToday, IsMountRareLockedToday, SnapshotPreLockedRares)
---   * Сканирование недельных/суточных КД всех твинков аккаунта по данжам, рейдам и ворлдбоссам
---     (ScanCurrentCharacterLockouts, GetDungeonMountStatus)
+--   * Проверка суточного КД и таймеров респавна рарников
+--     (IsNpcLockedToday, IsMountRareLockedToday, SnapshotPreLockedRares, CheckRecentlyKilledRares)
+--   * Радар несобранных дроп-маунтов текущей локации (GetZoneUncollectedMounts)
+--   * Сохранение актуального уровня, класса и недельных/суточных КД инстансов персонажа
+--     в MountCollectorDB.chars (ScanCurrentCharacterLockouts)
 -- ============================================================================
 
 local L = addon.L
 local SafeNotSecret = addon.SafeNotSecret
-local IsValidNpcName = addon.IsValidNpcName
 
--- Получить локализованное название квеста по его questID (из клиента или QuestNameDB)
-function addon:GetQuestTitleByID(questID)
-    if not questID or questID <= 0 then return nil end
-    local locCode = self:GetActiveLocaleCode()
-    if self.QuestNameDB and self.QuestNameDB[questID] then
-        if locCode == "enUS" and self.QuestNameDB[questID].en and self.QuestNameDB[questID].en ~= "" then
-            return self.QuestNameDB[questID].en
-        elseif locCode == "ruRU" and self.QuestNameDB[questID].ru and self.QuestNameDB[questID].ru ~= "" then
-            return self.QuestNameDB[questID].ru
-        end
-    end
-    if C_QuestLog and C_QuestLog.GetTitleForQuestID then
-        local ok, title = pcall(C_QuestLog.GetTitleForQuestID, questID)
-        if ok and SafeNotSecret(title) and type(title) == "string" and title ~= "" then
-            return title
-        end
-    end
-    if C_TaskQuest and C_TaskQuest.GetQuestInfoByQuestID then
-        local ok, title = pcall(C_TaskQuest.GetQuestInfoByQuestID, questID)
-        if ok and SafeNotSecret(title) and type(title) == "string" and title ~= "" then
-            return title
-        end
-    end
-    if self.QuestNameDB and self.QuestNameDB[questID] then
-        local isRU = (locCode == "ruRU")
-        return (isRU and self.QuestNameDB[questID].ru) or self.QuestNameDB[questID].en
-    end
-    return nil
-end
-
--- Получить прогресс целей активного квеста из журнала (например: "25/50 Люменит")
-function addon:GetQuestObjectivesText(questID)
-    if not questID or not C_QuestLog or not C_QuestLog.GetQuestObjectives then return nil end
-    local ok, objs = pcall(C_QuestLog.GetQuestObjectives, questID)
-    if not ok or type(objs) ~= "table" or #objs == 0 then return nil end
-    local parts = {}
-    for _, obj in ipairs(objs) do
-        if obj and SafeNotSecret(obj.text) and type(obj.text) == "string" and obj.text ~= "" then
-            table.insert(parts, obj.text)
-        end
-    end
-    if #parts > 0 then
-        return table.concat(parts, "; ")
-    end
-    return nil
-end
-
--- Получить количество предмета в сумках/банке/банке отряда или статус игрушки
+-- Получить количество предмета в сумках/банке/банке отряда или статус игрушки (11.x / 12.x C_Item API)
 function addon:GetRequirementItemCount(itemID, charOnly)
     if not itemID or itemID <= 0 then return 0, nil end
     local itemName = (self.GetItemDisplayName and self:GetItemDisplayName(itemID))
@@ -78,8 +32,6 @@ function addon:GetRequirementItemCount(itemID, charOnly)
         if ok and type(c) == "number" then
             count = c
         end
-    elseif GetItemCount then
-        count = GetItemCount(itemID, true) or 0
     end
     return count, itemName
 end
@@ -104,506 +56,6 @@ function addon:HasUniqueIncubationEggOnChar(mountID)
         return true, "INCUBATING", cfg.rawEggID, rawName, cfg
     end
     return false, nil, cfg.rawEggID, rawName, cfg
-end
-
--- Оценка статуса пошаговой квестовой цепочки маунта через Lua API
-function addon:GetMountQuestChainStatus(mountID)
-    local chain = self.MountQuestsByMountID and self.MountQuestsByMountID[mountID]
-    if not chain or type(chain.steps) ~= "table" then return nil end
-
-    local isRU = (self:GetActiveLocaleCode() == "ruRU")
-    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
-    local totalSteps = #chain.steps
-    local stepStates = {}
-
-    local isAltTint = (chain.mountID and mountID ~= chain.mountID) or false
-    local altStep = isAltTint and ((chain.altMountSteps and chain.altMountSteps[mountID]) or chain.altVendorStep) or nil
-    local baseChainDone = false
-    if isAltTint and altStep then
-        local _, _, _, _, _, _, _, _, _, _, primaryCol = self:GetMountInfoByID(chain.mountID)
-        if primaryCol then
-            baseChainDone = true
-        else
-            local lastS = chain.steps[totalSteps]
-            if lastS and lastS.doneQuest and C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
-                if C_QuestLog.IsQuestFlaggedCompleted(lastS.doneQuest)
-                    or (C_QuestLog.IsQuestFlaggedCompletedOnAccount and C_QuestLog.IsQuestFlaggedCompletedOnAccount(lastS.doneQuest)) then
-                    baseChainDone = true
-                end
-            end
-        end
-    end
-
-    for idx, rawS in ipairs(chain.steps) do
-        local s = (idx == totalSteps and altStep and (baseChainDone or isCollected)) and altStep or rawS
-        local isDone = false
-        local isDoneAccountOnly = false
-        local inLog = false
-        local doneSub = 0
-        local totalSub = (type(s.quests) == "table") and #s.quests or 0
-        local activeLogQuestID = nil
-        local activeLogQuestTitle = nil
-        local activeLogObjectives = nil
-        local nextMissingQuestID = nil
-        local nextMissingQuestTitle = nil
-        local itemStatusLine = nil
-
-        if isCollected then
-            isDone = true
-            doneSub = totalSub
-        elseif baseChainDone and altStep then
-            if idx < totalSteps then
-                isDone = true
-                doneSub = totalSub
-            else
-                isDone = false
-            end
-        else
-            if s.doneQuest and C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
-                if C_QuestLog.IsQuestFlaggedCompleted(s.doneQuest) then
-                    isDone = true
-                elseif s.accountShared and C_QuestLog.IsQuestFlaggedCompletedOnAccount and C_QuestLog.IsQuestFlaggedCompletedOnAccount(s.doneQuest) then
-                    isDone = true
-                    isDoneAccountOnly = true
-                end
-            end
-            if not isDone and s.achievementID and GetAchievementInfo then
-                local okAch, _, _, _, completed, _, _, _, _, _, _, _, _, completedByMe = pcall(GetAchievementInfo, s.achievementID)
-                if okAch and completed then
-                    isDone = true
-                    if not completedByMe then
-                        isDoneAccountOnly = true
-                    end
-                end
-            end
-
-            if s.requiredItemID then
-                local haveCount, itemName = self:GetRequirementItemCount(s.requiredItemID)
-                local goalCount = s.requiredItemCount or 1
-                if haveCount >= goalCount and not s.doneQuest and not s.achievementID and totalSub == 0 then
-                    isDone = true
-                end
-                if not isDone then
-                    if s.altItemID and haveCount == 0 then
-                        local altCount, altName = self:GetRequirementItemCount(s.altItemID)
-                        local altGoal = s.altItemGoal or 10
-                        itemStatusLine = string.format(L.LUA_ITEMS_BAGS_ALT_FMT, itemName, haveCount, goalCount, altName, altCount, altGoal)
-                    else
-                        itemStatusLine = string.format(L.LUA_ITEM_BAGS_FMT, itemName, haveCount, goalCount)
-                    end
-                end
-            end
-
-            if type(s.quests) == "table" and C_QuestLog then
-                for _, qid in ipairs(s.quests) do
-                    local qDone = C_QuestLog.IsQuestFlaggedCompleted and C_QuestLog.IsQuestFlaggedCompleted(qid)
-                    local qInLog = C_QuestLog.IsOnQuest and C_QuestLog.IsOnQuest(qid)
-                    if qDone then
-                        doneSub = doneSub + 1
-                    else
-                        if qInLog then
-                            inLog = true
-                            if not activeLogQuestID then
-                                activeLogQuestID = qid
-                                activeLogQuestTitle = self:GetQuestTitleByID(qid)
-                                activeLogObjectives = self:GetQuestObjectivesText(qid)
-                            end
-                        end
-                        if not nextMissingQuestID then
-                            nextMissingQuestID = qid
-                            nextMissingQuestTitle = self:GetQuestTitleByID(qid)
-                        end
-                    end
-                end
-                if not s.doneQuest and not s.achievementID and totalSub > 0 and doneSub >= totalSub then
-                    isDone = true
-                end
-            end
-
-            -- Если сам маунт ещё НЕ собран, то финальный шаг получения маунта не может считаться завершённым
-            if idx == totalSteps then
-                isDone = false
-                isDoneAccountOnly = false
-            end
-        end
-
-        local luaStepDetail = nil
-        if not isDone then
-            local detailParts = {}
-            if activeLogQuestID then
-                local qTitle = activeLogQuestTitle or ("Quest #" .. tostring(activeLogQuestID))
-                local objPart = activeLogObjectives and (" — |cff00ff96" .. activeLogObjectives .. "|r") or ""
-                table.insert(detailParts, string.format(L.LUA_IN_LOG_FMT, qTitle, activeLogQuestID, objPart))
-            elseif nextMissingQuestID then
-                local qTitle = nextMissingQuestTitle or ("Quest #" .. tostring(nextMissingQuestID))
-                local subProg = (totalSub > 1) and string.format(L.LUA_CHAPTER_SUB_FMT, doneSub, totalSub) or ""
-                table.insert(detailParts, string.format(L.LUA_NEXT_QUEST_FMT, qTitle, nextMissingQuestID, subProg))
-            end
-            if itemStatusLine then
-                table.insert(detailParts, itemStatusLine)
-            end
-            if idx == totalSteps and altStep and baseChainDone then
-                local altLine = (isRU and altStep.luaDetailRU) or altStep.luaDetailEN
-                if altLine and altLine ~= "" then
-                    table.insert(detailParts, altLine)
-                end
-            end
-            if #detailParts > 0 then
-                luaStepDetail = table.concat(detailParts, "\n")
-            end
-        end
-
-        local stepZone = (isRU and s.zoneRU) or s.zoneEN or ""
-        local locCode = self:GetActiveLocaleCode()
-        if locCode ~= "ruRU" and locCode ~= "enUS" and locCode ~= "enGB" and s.mapID and C_Map and C_Map.GetMapInfo then
-            local mInfo = C_Map.GetMapInfo(s.mapID)
-            if mInfo and mInfo.name and mInfo.name ~= "" then
-                stepZone = mInfo.name
-            end
-        end
-
-        stepStates[idx] = {
-            index = idx,
-            step = s,
-            isDone = isDone,
-            isDoneAccountOnly = isDoneAccountOnly,
-            accountShared = s.accountShared == true,
-            inLog = inLog,
-            doneSubCount = doneSub,
-            totalSubCount = totalSub,
-            activeLogQuestID = activeLogQuestID,
-            nextMissingQuestID = nextMissingQuestID,
-            luaStepDetail = luaStepDetail,
-            title = (isRU and s.titleRU) or s.titleEN or ("Step " .. idx),
-            desc = (isRU and s.descRU) or s.descEN or "",
-            npc = (isRU and s.npcRU) or s.npcEN or "",
-            zone = stepZone,
-            mapID = s.mapID,
-            x = s.x,
-            y = s.y,
-            doneQuest = activeLogQuestID or nextMissingQuestID or s.doneQuest,
-        }
-    end
-
-    local completedSteps = 0
-    local currentStepIndex = nil
-    local hasStarted = false
-
-    for idx, st in ipairs(stepStates) do
-        if st.isDone then
-            completedSteps = completedSteps + 1
-            if not st.accountShared then
-                hasStarted = true
-            end
-        else
-            if st.inLog or st.doneSubCount > 0 then
-                hasStarted = true
-            end
-            if not currentStepIndex then
-                currentStepIndex = idx
-                st.isCurrent = true
-            end
-        end
-    end
-
-    if not currentStepIndex then
-        currentStepIndex = totalSteps
-    end
-
-    return {
-        mountID = mountID,
-        name = name or "Mount",
-        spellID = spellID,
-        icon = icon,
-        isCollected = isCollected == true,
-        chain = chain,
-        wowheadUrl = chain.wowheadUrl,
-        category = (isRU and chain.categoryRU) or chain.categoryEN or "",
-        summary = (isRU and chain.summaryRU) or chain.summaryEN or "",
-        classRestriction = chain.classRestriction,
-        steps = stepStates,
-        completedSteps = completedSteps,
-        totalSteps = totalSteps,
-        currentStepIndex = currentStepIndex,
-        currentStep = stepStates[currentStepIndex],
-        hasStarted = hasStarted,
-    }
-end
-
-local WOWHEAD_LOCALE_PATH = {
-    ruRU = "ru/",
-    deDE = "de/",
-    frFR = "fr/",
-    esES = "es/",
-    esMX = "es/",
-    itIT = "it/",
-    ptBR = "pt/",
-    koKR = "ko/",
-    zhCN = "cn/",
-    zhTW = "tw/",
-}
-
-
-function addon:GetMountSpecialConditions(mountID)
-    if not mountID then return nil end
-    local isRU = (self:GetActiveLocaleCode() == "ruRU")
-    local lines = {}
-    local lockedToday = self:IsMountRareLockedToday(mountID)
-
-    -- 0. Проверка 3-дневного КД Уникального инкубационного яйца (например, «Древнее яйцо» #94295 на Острове Великанов)
-    local hasEgg, eggState, eggItemID, eggName, eggCfg = self:HasUniqueIncubationEggOnChar(mountID)
-    if eggCfg then
-        if hasEgg and eggState == "INCUBATING" then
-            if isRU then
-                table.insert(lines, string.format(
-                    "|cffff5555Статус КД яйца (Lua): ЗАБЛОКИРОВАНО (%d дн.) — в сумке/банке уже лежит Уникальное «%s» (#%d)!|r\n|cffffaa00Пока это яйцо не вылупится, второе яйцо этому персонажу упасть НЕ МОЖЕТ (счётчик киллов динозавров на паузе).|r",
-                    eggCfg.days or 3, tostring(eggName), eggItemID
-                ))
-            else
-                table.insert(lines, string.format(
-                    "|cffff5555Egg Lockout Status (Lua): LOCKED (%d days) — Unique '%s' (#%d) is already in your bags/bank!|r\n|cffffaa00Another egg CANNOT drop on this character until it hatches (dinosaur kill counter paused).|r",
-                    eggCfg.days or 3, tostring(eggName), eggItemID
-                ))
-            end
-        elseif hasEgg and eggState == "CRACKED" then
-            if isRU then
-                table.insert(lines, string.format(
-                    "|cff00ff96Статус яйца (Lua): «%s» (#%d) СОЗРЕЛО В СУМКЕ! Откройте его прямо сейчас (пока оно в сумке, новое яйцо не упадёт)!|r",
-                    tostring(eggName), eggItemID
-                ))
-            else
-                table.insert(lines, string.format(
-                    "|cff00ff96Egg Status (Lua): '%s' (#%d) has HATCHED in your bags! Open it now (another egg cannot drop while you hold it)!|r",
-                    tostring(eggName), eggItemID
-                ))
-            end
-        else
-            if isRU then
-                table.insert(lines, string.format(
-                    "|cff00ff96Статус яйца (Lua): СВОБОДНО — Уникального «%s» (#%d) в сумке/банке нет, можно выбивать!|r",
-                    tostring(eggName), eggItemID
-                ))
-            else
-                table.insert(lines, string.format(
-                    "|cff00ff96Egg Status (Lua): AVAILABLE — No Unique '%s' (#%d) in bags/bank, ready to farm!|r",
-                    tostring(eggName), eggItemID
-                ))
-            end
-        end
-    end
-
-    -- 1. Запись в SpecialMountConditionsDB
-    local spec = self.SpecialMountConditionsDB and self.SpecialMountConditionsDB[mountID]
-    if spec then
-        local txt = (isRU and spec.condRU) or spec.condEN
-        if txt and txt ~= "" then
-            table.insert(lines, txt)
-        end
-        if spec.requiredItemID then
-            local count, itemName = self:GetRequirementItemCount(spec.requiredItemID)
-            local statusColor = (count > 0) and "|cff00ff96" or "|cffff6666"
-            table.insert(lines, string.format(L.LUA_REQ_ITEM_FMT, statusColor, itemName, count))
-        end
-    end
-
-    -- 2. Предметы-источники из RareScannerMountItems / DropInfoByMount
-    local itemIDs = self.RareScannerMountItems and self.RareScannerMountItems[mountID]
-    local info = self.DropInfoByMount and self.DropInfoByMount[mountID]
-    if not itemIDs and info and type(info.sourceItems) == "table" and #info.sourceItems > 0 then
-        itemIDs = info.sourceItems
-    end
-    if type(itemIDs) == "table" and #itemIDs > 0 then
-        for _, iid in ipairs(itemIDs) do
-            if iid and iid > 0 and (not spec or spec.requiredItemID ~= iid) and (not info or info.itemID ~= iid) then
-                local count, itemName = self:GetRequirementItemCount(iid)
-                if count > 0 or #itemIDs <= 3 then
-                    local clr = (count > 0) and "|cff00ff96" or "|cffcccccc"
-                    table.insert(lines, string.format(L.LUA_SOURCE_ITEM_FMT, iid, clr, itemName, count))
-                end
-            end
-        end
-    end
-
-    -- 3. Проверка дневного / недельного КД рарника по всем локаут-квестам
-    if info and type(info.quests) == "table" and #info.quests > 0 and C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
-        local doneQuests = {}
-        local availQuests = {}
-        local questToNpcName = {}
-        if self.RareScannerNpcToMounts then
-            for nid, rsData in pairs(self.RareScannerNpcToMounts) do
-                if rsData and type(rsData.quests) == "table" then
-                    local nName = self:GetNpcDisplayName(nid, rsData.name)
-                    if nName and nName ~= "" then
-                        for _, rq in ipairs(rsData.quests) do
-                            questToNpcName[rq] = nName
-                        end
-                    end
-                end
-            end
-        end
-        for _, qid in ipairs(info.quests) do
-            local label = questToNpcName[qid] and string.format("%s (#%d)", questToNpcName[qid], qid) or ("#" .. tostring(qid))
-            if C_QuestLog.IsQuestFlaggedCompleted(qid) then
-                table.insert(doneQuests, label)
-            else
-                table.insert(availQuests, label)
-            end
-        end
-        if #info.quests > 1 then
-            table.insert(lines, string.format(L.LUA_LOCKOUT_MULTI_SUMMARY_FMT, #doneQuests, #info.quests, #availQuests))
-        end
-        if #doneQuests > 0 then
-            table.insert(lines, string.format(L.LUA_LOCKOUT_LOCKED_FMT, table.concat(doneQuests, ", ")))
-        end
-        if #availQuests > 0 and (#info.quests == 1 or #doneQuests > 0) then
-            table.insert(lines, string.format(L.LUA_LOCKOUT_AVAIL_FMT, table.concat(availQuests, ", ")))
-        elseif #doneQuests == 0 then
-            table.insert(lines, string.format(L.LUA_LOCKOUT_AVAIL_FMT, table.concat(availQuests, ", ")))
-        end
-    end
-
-    if #lines == 0 then return nil end
-    return {
-        text = table.concat(lines, "\n"),
-        lines = lines,
-        lockedToday = lockedToday,
-    }
-end
-
--- Построить полный диагностический отчёт Lua-Дебаггера по маунту и его квестовой цепочке
-function addon:BuildMountDebugReport(mountID)
-    local isRU = (self:GetActiveLocaleCode() == "ruRU")
-    local out = {}
-    local function add(line)
-        table.insert(out, line or "")
-    end
-
-    local charKey = self:GetCharKey()
-    local classLoc, classToken = UnitClass("player")
-    local factionToken, factionLoc = UnitFactionGroup("player")
-    local level = UnitLevel("player") or 0
-    local pMapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
-    local pMapName = (pMapID and self:GetMapName(pMapID)) or GetRealZoneText() or "?"
-    local px, py = 0, 0
-    if pMapID and C_Map.GetPlayerMapPosition then
-        local okPos, pos = pcall(C_Map.GetPlayerMapPosition, pMapID, "player")
-        if okPos and pos and pos.GetXY then
-            local x, y = pos:GetXY()
-            if SafeNotSecret(x) and SafeNotSecret(y) and x and y then
-                px, py = x * 100.0, y * 100.0
-            end
-        end
-    end
-
-    add("=== MountCollector Lua Quest & Source Debugger (v1.7.0) ===")
-    add(string.format("Character: %s | Class: %s (%s) | Level: %d | Faction: %s", charKey, tostring(classLoc), tostring(classToken), level, tostring(factionLoc or factionToken)))
-    add(string.format("Player Map: %s (mapID = %s) [%.1f, %.1f]", tostring(pMapName), tostring(pMapID), px, py))
-    add("------------------------------------------------------------")
-
-    if not mountID then
-        add("No mount selected.")
-        return table.concat(out, "\n")
-    end
-
-    local name, spellID, icon, isActive, isUsable, sourceType, isFavorite, isFactionSpecific, faction, shouldHideOnChar, isCollected = self:GetMountInfoByID(mountID)
-    local _, description, sourceText = self:GetMountInfoExtraByID(mountID)
-    add(string.format("Mount: %s (mountID = %d | spellID = %s | isCollected = %s | sourceType = %s)", tostring(name), mountID, tostring(spellID), tostring(isCollected), tostring(sourceType)))
-
-    local qStatus = self:GetMountQuestChainStatus(mountID)
-    if qStatus then
-        add(string.format("Quest Chain Category: %s | Class Restriction: %s", tostring(qStatus.category), tostring(qStatus.classRestriction or "None")))
-        add(string.format("Calculated Progress: %d / %d steps done | Current Active Step Index: #%d", qStatus.completedSteps, qStatus.totalSteps, qStatus.currentStepIndex or 1))
-        add(" ")
-        add("=== STEP-BY-STEP QUEST FLAG EVALUATION ===")
-        for _, st in ipairs(qStatus.steps) do
-            local s = st.step
-            local stateStr = st.isDone and (st.isDoneAccountOnly and "DONE (ACCOUNT)" or "DONE (CHAR)") or (st.isCurrent and "CURRENT STEP" or "LOCKED/TODO")
-            add(string.format("\n[Step %d] %s -> [%s]", st.index, st.title, stateStr))
-            if s.doneQuest then
-                local cDone = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted and C_QuestLog.IsQuestFlaggedCompleted(s.doneQuest) or false
-                local aDone = C_QuestLog and C_QuestLog.IsQuestFlaggedCompletedOnAccount and C_QuestLog.IsQuestFlaggedCompletedOnAccount(s.doneQuest) or false
-                add(string.format("  doneQuest = %d | CharCompleted = %s | AccountCompleted = %s", s.doneQuest, tostring(cDone), tostring(aDone)))
-            end
-            if s.achievementID and GetAchievementInfo then
-                local okA, _, aName, _, aComp, _, _, _, _, _, _, _, _, aByMe = pcall(GetAchievementInfo, s.achievementID)
-                if okA then
-                    add(string.format("  achievementID = %d (%s) | AccountCompleted = %s | CompletedByThisChar = %s", s.achievementID, tostring(aName), tostring(aComp), tostring(aByMe)))
-                end
-            end
-            if s.requiredItemID then
-                local cnt, iName = self:GetRequirementItemCount(s.requiredItemID)
-                add(string.format("  requiredItemID = %d (%s) | Owned = %d / %d", s.requiredItemID, tostring(iName), cnt, s.requiredItemCount or 1))
-            end
-            if type(s.quests) == "table" and #s.quests > 0 then
-                add(string.format("  Step Quests (%d total, %d completed on char):", #s.quests, st.doneSubCount or 0))
-                for qIdx, qid in ipairs(s.quests) do
-                    local cDone = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted and C_QuestLog.IsQuestFlaggedCompleted(qid) or false
-                    local aDone = C_QuestLog and C_QuestLog.IsQuestFlaggedCompletedOnAccount and C_QuestLog.IsQuestFlaggedCompletedOnAccount(qid) or false
-                    local onQ = C_QuestLog and C_QuestLog.IsOnQuest and C_QuestLog.IsOnQuest(qid) or false
-                    local qTitle = self:GetQuestTitleByID(qid) or "?"
-                    local objStr = onQ and self:GetQuestObjectivesText(qid) or nil
-                    local mark = cDone and "[DONE]" or (onQ and "[IN LOG]" or (aDone and "[ACCT]" or "[MISSING]"))
-                    add(string.format("    %2d. %-9s #%d — %s%s", qIdx, mark, qid, qTitle, objStr and (" (" .. objStr .. ")") or ""))
-                end
-            end
-        end
-    end
-
-    local dropInfo = self.DropInfoByMount and self.DropInfoByMount[mountID]
-    if dropInfo then
-        add(" ")
-        add("=== RARE / BOSS DROP & LOCKOUT DATA ===")
-        local attempts = self:GetMountAttempts(mountID)
-        add(string.format("Boss/Rare: %s | Method: %s | Chance: 1/%s | Account Attempts: %d", tostring(dropInfo.boss or "NPC"), tostring(dropInfo.method), tostring(dropInfo.chance or "?"), attempts))
-        if type(dropInfo.quests) == "table" and #dropInfo.quests > 0 then
-            local qParts = {}
-            for _, qid in ipairs(dropInfo.quests) do
-                local done = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted and C_QuestLog.IsQuestFlaggedCompleted(qid) or false
-                table.insert(qParts, string.format("#%d=%s", qid, tostring(done)))
-            end
-            add("Lockout Quests Today: " .. table.concat(qParts, ", "))
-        end
-        if type(dropInfo.coords) == "table" and #dropInfo.coords > 0 then
-            add(string.format("Spawn Coordinates (%d points):", #dropInfo.coords))
-            for i, c in ipairs(dropInfo.coords) do
-                local mName = (c.m and self:GetMapName(c.m)) or ("Map " .. tostring(c.m))
-                local npcLock, qid = false, nil
-                if c.npcID then
-                    npcLock, qid = self:IsNpcLockedToday(c.npcID)
-                end
-                local lockTag = c.npcID and (npcLock and string.format(" [KILLED TODAY q#%s]", tostring(qid or "?")) or string.format(" [AVAILABLE q#%s]", tostring(qid or "?"))) or ""
-                local dispNpc = self:GetNpcDisplayName(c.npcID, c.n) or ""
-                add(string.format("  %d. %s (mapID=%s) [%.1f, %.1f] — %s (npcID=%s)%s", i, mName, tostring(c.m), c.x or 0, c.y or 0, tostring(dispNpc), tostring(c.npcID or "?"), lockTag))
-            end
-        end
-    end
-
-    -- Выводим все текущие активные квесты в журнале игрока (чтобы легко найти любой неучтённый квест!)
-    add(" ")
-    add("=== ACTIVE QUESTS IN PLAYER'S QUEST LOG RIGHT NOW ===")
-    if C_QuestLog and C_QuestLog.GetNumQuestLogEntries and C_QuestLog.GetInfo then
-        local numEntries = C_QuestLog.GetNumQuestLogEntries() or 0
-        local currentHeader = "General"
-        local printedAny = false
-        for i = 1, numEntries do
-            local info = C_QuestLog.GetInfo(i)
-            if info then
-                if info.isHeader then
-                    currentHeader = SafeNotSecret(info.title) and info.title or "Category"
-                elseif not info.isHidden and SafeNotSecret(info.questID) and info.questID and info.questID > 0 then
-                    printedAny = true
-                    local qTitle = SafeNotSecret(info.title) and info.title or ("Quest #" .. tostring(info.questID))
-                    local objTxt = self:GetQuestObjectivesText(info.questID)
-                    add(string.format("  [%s] #%d — %s%s", currentHeader, info.questID, qTitle, objTxt and (" | Objectives: " .. objTxt) or ""))
-                end
-            end
-        end
-        if not printedAny then
-            add("  (Quest log is empty)")
-        end
-    end
-
-    return table.concat(out, "\n")
 end
 
 local function ParseStatisticValue(val)
@@ -680,7 +132,6 @@ function addon:ScanAllCharacterStatistics()
     if not self.db or not self.DropInfoByMount then return end
     local charKey = self:GetCharKey()
 
-    -- 1. Собираем таблицу accountWideStatistics из RarityDB (если загружен) + наш предсохранённый слепок
     local externalCharStats = {}
     for cKey, stMap in pairs(SeededRarityCharStats) do
         externalCharStats[cKey] = stMap
@@ -696,12 +147,10 @@ function addon:ScanAllCharacterStatistics()
         end
     end
 
-    -- 2. Проходим по всем маунтам с боссами/статистикой
     for mountID, info in pairs(self.DropInfoByMount) do
         local record = self.db.attempts[mountID]
         local hasStats = info.stats and #info.stats > 0
 
-        -- Проверяем базовый счётчик из Rarity
         local rarityTotal = (info.rarityKey and SeededRarityMountTotals[info.rarityKey]) or 0
         if rProfile and rProfile.groups and rProfile.groups.mounts and info.rarityKey then
             local rEntry = rProfile.groups.mounts[info.rarityKey]
@@ -711,7 +160,6 @@ function addon:ScanAllCharacterStatistics()
         end
 
         if hasStats then
-            -- Сначала подтягиваем сохранённую статистику других персонажей из externalCharStats
             for extCharKey, statTable in pairs(externalCharStats) do
                 local extSum = 0
                 for _, statID in ipairs(info.stats) do
@@ -729,7 +177,6 @@ function addon:ScanAllCharacterStatistics()
                 end
             end
 
-            -- Теперь сканируем живую статистику ТЕКУЩЕГО персонажа через GetStatistic(statID)
             if GetStatistic then
                 local currentCharStatSum = 0
                 for _, statID in ipairs(info.stats) do
@@ -747,8 +194,6 @@ function addon:ScanAllCharacterStatistics()
                 end
             end
         elseif info.method == "COLLECTION" and type(info.sourceItems) == "table" and #info.sourceItems == 1 then
-            -- Для маунтов за сбор валюты/предметов (например, 9 999 Исполинских костей динозавра #94288 для Ящера цвета кости #537)
-            -- синхронизируем счётчик прогресса с реальным количеством собранных предметов в сумках/банке/банке отряда
             local colCount = self:GetRequirementItemCount(info.sourceItems[1])
             if colCount > 0 then
                 record = record or { total = 0, byChar = {} }
@@ -759,7 +204,6 @@ function addon:ScanAllCharacterStatistics()
                 end
             end
         elseif info.quests and #info.quests > 0 and C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then
-            -- Если это рарник(и) с суточными квестами КД, проверяем, сколько из них уже закрыто СЕГОДНЯ на текущем персонаже
             local doneTodayOnChar = 0
             for _, qid in ipairs(info.quests) do
                 if C_QuestLog.IsQuestFlaggedCompleted(qid) then
@@ -918,7 +362,6 @@ function addon:RecordAttempt(mountID, sourceName, allowRapidMultiKill)
     if isCollected then return end
 
     local info = self.DropInfoByMount[mountID]
-    -- Для маунтов за сбор предметов (например, 9 999 костей динозавра) прогресс равен числу предметов, а не киллов
     if info and info.method == "COLLECTION" and type(info.sourceItems) == "table" and #info.sourceItems == 1 then
         self:GetMountAttempts(mountID)
         if self.UpdateLDBText then self:UpdateLDBText() end
@@ -926,7 +369,6 @@ function addon:RecordAttempt(mountID, sourceName, allowRapidMultiKill)
         return
     end
 
-    -- Если у персонажа уже лежит Уникальное инкубационное яйцо (например, «Древнее яйцо» #94295), новое яйцо упасть не может!
     if self:HasUniqueIncubationEggOnChar(mountID) then
         return
     end
@@ -965,6 +407,7 @@ function addon:RecordAttempt(mountID, sourceName, allowRapidMultiKill)
     local chance = (info and info.chance and info.chance > 0) and info.chance or 100
     local luckPct = (1 - math.pow(1 - (1 / chance), record.total)) * 100
 
+    local rEntry = info and info.rarityEntry
     local rarityAlreadyAnnounces = (_G.Rarity and rEntry and _G.Rarity.db and _G.Rarity.db.profile and _G.Rarity.db.profile.enableAnnouncements ~= false)
     self.LastAttemptChatAt = self.LastAttemptChatAt or {}
     if self.db.settings.announceAttempts and not rarityAlreadyAnnounces and (not self.LastAttemptChatAt[mountID] or (now - self.LastAttemptChatAt[mountID]) > 2.5) then
@@ -1022,13 +465,11 @@ function addon:RecordRareKillTimestamp(npcID)
     end
 end
 
--- Получить текстовый обратный отсчёт для рарников без суточного КД: «Убит X мин. назад (респавн ~30–60 мин.)»
 function addon:GetRareRespawnTimerText(npcID)
     if not npcID then return nil end
     local rs = self.RareScannerNpcToMounts and self.RareScannerNpcToMounts[npcID]
     local primaryQid = (rs and type(rs.quests) == "table" and rs.quests[1]) or nil
     local cfg = RareRespawnWindowByNpc[npcID]
-    -- Если у рарника есть суточный квест КД и он не входит в список многоразовых рарников — у него суточный лок, а не 30–60 мин таймер
     if primaryQid and not (cfg and cfg.noDailyLock) then
         return nil
     end
@@ -1084,7 +525,6 @@ function addon:GetMountRespawnTimerText(mountID)
     return bestText
 end
 
--- Проверить, убит ли уже сегодня конкретный рарник (по его индивидуальному скрытому daily questID или сессионному киллу)
 function addon:IsNpcLockedToday(npcID)
     if not npcID then
         return false, nil
@@ -1103,7 +543,6 @@ function addon:IsNpcLockedToday(npcID)
 
     local isRepeatableTimerRare = (RareRespawnWindowByNpc[npcID] and RareRespawnWindowByNpc[npcID].noDailyLock) or (not primaryQid and npcID < 110000)
 
-    -- Проверяем сохранённый таймер последнего убийства для рарников без суточного КД (скрываем метку на 15 минут = 900 сек)
     if isRepeatableTimerRare and self.db and self.db.lastRareKills and self.db.lastRareKills[npcID] then
         local elapsedEpoch = time() - self.db.lastRareKills[npcID]
         if elapsedEpoch >= 0 and elapsedEpoch < 900 then
@@ -1156,7 +595,6 @@ function addon:IsNpcLockedToday(npcID)
     return false, nil
 end
 
--- Проверить, закрыты ли на сегодня рарники для маунта (возвращает: allLocked, doneCount, totalCount)
 function addon:IsMountRareLockedToday(mountID)
     if self:HasUniqueIncubationEggOnChar(mountID) then
         return true, 1, 1
@@ -1166,8 +604,6 @@ function addon:IsMountRareLockedToday(mountID)
         return false, 0, 0
     end
 
-    -- Если у маунта есть привязанные рарники в RareScannerNpcToMounts, считаем прогресс по уникальным рарникам
-    -- (объединяя дублирующиеся ID одного босса с общим квестом и корректно учитывая двуфракционные квесты Арати/Тёмных берегов)
     if info.npcs and self.RareScannerNpcToMounts then
         local groups = {}
         local groupOrder = {}
@@ -1226,9 +662,6 @@ function addon:IsMountRareLockedToday(mountID)
     return (doneCount >= totalCount and totalCount > 0), doneCount, totalCount
 end
 
-
--- чтобы при первом килле рарника (когда сервер мгновенно ставит флаг квеста при смерти моба до открытия окна лута)
--- аддон точно знал, что до этого боя квест ещё НЕ был выполнен!
 function addon:SnapshotPreLockedRares()
     if not C_QuestLog or not C_QuestLog.IsQuestFlaggedCompleted then return end
     self.CompletedRareQuestsSnapshot = self.CompletedRareQuestsSnapshot or {}
@@ -1264,8 +697,6 @@ function addon:SnapshotPreLockedRares()
     end
 end
 
--- Проверить после выхода из боя рарников, которых мы видели живыми и открытыми:
--- если их суточный квест только что переключился в true (например, Волнуш убежал к подсолнуху или пуш-лут без трупа), засчитываем трай!
 function addon:CheckRecentlyKilledRares()
     if not self.RecentlySpottedUnlockedRares then return end
     local now = GetTime()
@@ -1301,9 +732,6 @@ function addon:CheckRecentlyKilledRares()
     end
 end
 
--- Проверить, находится ли игрок внутри инстанса (подземелье, рейд, сценарий, БГ, арена).
-
-
 function addon:GetZoneUncollectedMounts(targetMapID)
     local results = {}
     if not C_Map then return results end
@@ -1323,7 +751,7 @@ function addon:GetZoneUncollectedMounts(targetMapID)
                     local globalRarity = self:GetGlobalRarity(mountID)
                     local bestCoord = self:GetBestMountCoords(mountID, mid)
                     local locked, lockedCount, totalLockoutCount = self:IsMountRareLockedToday(mountID)
-                    local dStatus = self:GetDungeonMountStatus(mountID)
+                    local dStatus = self.GetDungeonMountStatus and self:GetDungeonMountStatus(mountID) or nil
                     local isWorldBoss = (dStatus and dStatus.sourceKind == "WORLD_BOSS") or false
                     if isWorldBoss and dStatus then
                         locked = dStatus.isLockedOnCurrentChar
@@ -1393,7 +821,6 @@ function addon:ScanCurrentCharacterLockouts()
     cData.savedLfg = cData.savedLfg or {}
     cData.savedQuests = cData.savedQuests or {}
 
-    -- Очищаем истекшие КД
     for k, exp in pairs(cData.savedInstances) do
         if type(exp) ~= "number" or exp <= now then
             cData.savedInstances[k] = nil
@@ -1424,7 +851,6 @@ function addon:ScanCurrentCharacterLockouts()
         weeklyResetSec = 604800
     end
 
-    -- 1. Сохранённые рейды и эпохальные подземелья (GetNumSavedInstances)
     if GetNumSavedInstances and GetSavedInstanceInfo then
         local numSaved = GetNumSavedInstances() or 0
         for i = 1, numSaved do
@@ -1442,7 +868,6 @@ function addon:ScanCurrentCharacterLockouts()
         end
     end
 
-    -- 2. Праздничные боссы в поиске подземелий (Всадник без головы 285, Корен Худовар 287, Королевская химическая компания 288)
     if GetLFGDungeonRewards then
         for _, lfgID in ipairs({ 285, 287, 288 }) do
             local ok, doneToday = pcall(GetLFGDungeonRewards, lfgID)
@@ -1452,7 +877,6 @@ function addon:ScanCurrentCharacterLockouts()
         end
     end
 
-    -- 3. Мировые боссы и праздничные квесты из MountDungeonsDB (Ша Злости, Галеон, Налак, Ундаста, Рухмар, Краулок, Беледар, Судьболом)
     if C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted and type(self.MountDungeonsDB) == "table" then
         for _, dEntry in ipairs(self.MountDungeonsDB) do
             if type(dEntry.questIDs) == "table" and #dEntry.questIDs > 0 then
@@ -1469,346 +893,6 @@ function addon:ScanCurrentCharacterLockouts()
     end
 
     self.db.chars[charKey] = cData
-end
-
-local function FormatClassColoredChar(name, classFile, level)
-    local shortName = tostring(name or "Character"):gsub("%s*%-.+$", "")
-    if addon.LocalizeCharName then
-        shortName = addon:LocalizeCharName(shortName)
-    end
-    local colorPrefix = "|cffffffff"
-    if classFile and _G.RAID_CLASS_COLORS and _G.RAID_CLASS_COLORS[classFile] and _G.RAID_CLASS_COLORS[classFile].colorStr then
-        colorPrefix = "|c" .. _G.RAID_CLASS_COLORS[classFile].colorStr
-    end
-    if level and level > 0 then
-        return string.format("%s%s|r |cffaaaaaa(%d)|r", colorPrefix, shortName, level)
-    end
-    return string.format("%s%s|r", colorPrefix, shortName)
-end
-
-local function IsCharLockedForDungeonEntry(cData, dEntry, now)
-    if not cData or not dEntry then return false end
-    if dEntry.lockoutType == "UNLIMITED" then
-        return false
-    end
-    if dEntry.lfgDungeonID and cData.savedLfg and cData.savedLfg[dEntry.lfgDungeonID] and cData.savedLfg[dEntry.lfgDungeonID] > now then
-        return true
-    end
-    if type(dEntry.questIDs) == "table" and cData.savedQuests then
-        for _, qid in ipairs(dEntry.questIDs) do
-            if cData.savedQuests[qid] and cData.savedQuests[qid] > now then
-                return true
-            end
-        end
-    end
-    if dEntry.instanceMapID and cData.savedInstances and cData.savedInstances[dEntry.instanceMapID] and cData.savedInstances[dEntry.instanceMapID] > now then
-        return true
-    end
-    if cData.savedInstanceNames then
-        local ruLower = dEntry.instanceRU and string.lower(dEntry.instanceRU) or nil
-        local enLower = dEntry.instanceEN and string.lower(dEntry.instanceEN) or nil
-        for savedName, exp in pairs(cData.savedInstanceNames) do
-            if exp and exp > now then
-                if (ruLower and (savedName == ruLower or string.find(ruLower, savedName, 1, true) or string.find(savedName, ruLower, 1, true)))
-                    or (enLower and (savedName == enLower or string.find(enLower, savedName, 1, true) or string.find(savedName, enLower, 1, true))) then
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-
--- Получить полную сводку по данж/рейд/ивент-маунту + матрицу твинков аккаунта с учётом минимального уровня (minLevel)
-function addon:GetDungeonMountStatus(mountID)
-    local dEntry = self.MountDungeonsByMountID and self.MountDungeonsByMountID[mountID]
-    if not dEntry then return nil end
-
-    self:ScanCurrentCharacterLockouts()
-
-    local isRU = (self:GetActiveLocaleCode() == "ruRU")
-    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
-    local now = time()
-    local minLevel = dEntry.minLevel or 10
-    local chance = dEntry.chance or 100
-    local chancePct = (chance > 0) and (100.0 / chance) or 1.0
-
-    local lockoutTitle = L.LOCKOUT_WEEKLY
-    if dEntry.lockoutType == "DAILY" then
-        lockoutTitle = L.LOCKOUT_DAILY
-    elseif dEntry.lockoutType == "UNLIMITED" then
-        lockoutTitle = L.LOCKOUT_UNLIMITED
-    end
-
-    local eventTitle = nil
-    if dEntry.sourceKind == "EVENT" or dEntry.eventRU or dEntry.eventEN then
-        eventTitle = (isRU and dEntry.eventRU) or dEntry.eventEN or dEntry.eventRU
-    end
-
-    local instanceTitle = (isRU and dEntry.instanceRU) or dEntry.instanceEN or dEntry.instanceRU or "Instance"
-    local bossTitle = (isRU and dEntry.bossRU) or dEntry.bossEN or dEntry.bossRU or "Boss"
-    local difficultyTitle = (isRU and dEntry.difficultyRU) or dEntry.difficultyEN or dEntry.difficultyRU or "Normal"
-    local zoneTitle = (isRU and dEntry.zoneRU) or dEntry.zoneEN or dEntry.zoneRU or instanceTitle
-    local howToGet = (isRU and dEntry.howToGetRU) or dEntry.howToGetEN or dEntry.howToGetRU or ""
-
-    if dEntry.spellID == 448941 then
-        local srvTime = (GetServerTime and GetServerTime()) or time()
-        local cycleOffset = (srvTime - 3600) % 10800
-        local timerLine
-        if cycleOffset < 1800 then
-            local remMin = math.max(1, math.ceil((1800 - cycleOffset) / 60))
-            timerLine = isRU
-                and string.format("\n|cff33ff88★ ТЁМНАЯ ФАЗА БЕЛЕДАРА АКТИВНА СЕЙЧАС! (осталось ~%d мин.)|r", remMin)
-                or string.format("\n|cff33ff88★ BELEDAR VOID PHASE IS ACTIVE RIGHT NOW! (~%d min remaining)|r", remMin)
-        else
-            local waitSec = 10800 - cycleOffset
-            local wHours = math.floor(waitSec / 3600)
-            local wMins = math.ceil((waitSec % 3600) / 60)
-            if wHours > 0 then
-                timerLine = isRU
-                    and string.format("\n|cff00ccff⏱ До следующей Тёмной фазы Беледара (спавна босса): %d ч. %d мин.|r", wHours, wMins)
-                    or string.format("\n|cff00ccff⏱ Next Beledar Void Shift (boss spawn) in: %dh %dm|r", wHours, wMins)
-            else
-                timerLine = isRU
-                    and string.format("\n|cffffd100⏱ До следующей Тёмной фазы Беледара (спавна босса): %d мин.!|r", wMins)
-                    or string.format("\n|cffffd100⏱ Next Beledar Void Shift (boss spawn) in: %d min!|r", wMins)
-            end
-        end
-        howToGet = howToGet .. timerLine
-    end
-
-    local currentCharKey = self:GetCharKey()
-    local eligibleChars = {}
-    local underleveledChars = {}
-    local readyCount = 0
-    local isLockedOnCurrentChar = false
-
-    if self.db and type(self.db.chars) == "table" then
-        for charKey, cData in pairs(self.db.chars) do
-            if type(cData) == "table" then
-                local lvl = tonumber(cData.level) or 1
-                local isLocked = IsCharLockedForDungeonEntry(cData, dEntry, now)
-                if charKey == currentCharKey then
-                    isLockedOnCurrentChar = isLocked
-                end
-                local entry = {
-                    charKey = charKey,
-                    name = cData.name or charKey,
-                    realm = cData.realm or "",
-                    class = cData.class,
-                    level = lvl,
-                    isCurrent = (charKey == currentCharKey),
-                    isLocked = isLocked,
-                    coloredName = FormatClassColoredChar(cData.name or charKey, cData.class, lvl),
-                }
-                if lvl >= minLevel then
-                    table.insert(eligibleChars, entry)
-                    if not isLocked then
-                        readyCount = readyCount + 1
-                    end
-                else
-                    table.insert(underleveledChars, entry)
-                end
-            end
-        end
-    end
-
-    table.sort(eligibleChars, function(a, b)
-        if a.isCurrent ~= b.isCurrent then
-            return a.isCurrent
-        end
-        if a.isLocked ~= b.isLocked then
-            return not a.isLocked
-        end
-        if a.level ~= b.level then
-            return a.level > b.level
-        end
-        return tostring(a.name) < tostring(b.name)
-    end)
-
-    table.sort(underleveledChars, function(a, b)
-        if a.level ~= b.level then
-            return a.level > b.level
-        end
-        return tostring(a.name) < tostring(b.name)
-    end)
-
-    return {
-        mountID = mountID,
-        name = name or dEntry.nameRU or dEntry.nameEN or ("Mount #" .. tostring(mountID)),
-        spellID = spellID or dEntry.spellID,
-        icon = icon,
-        isCollected = isCollected,
-        sourceKind = dEntry.sourceKind or "RAID",
-        eventTitle = eventTitle,
-        instanceTitle = instanceTitle,
-        bossTitle = bossTitle,
-        difficultyTitle = difficultyTitle,
-        zoneTitle = zoneTitle,
-        howToGet = howToGet,
-        chance = chance,
-        chancePct = chancePct,
-        lockoutType = dEntry.lockoutType or "WEEKLY",
-        lockoutTitle = lockoutTitle,
-        minLevel = minLevel,
-        mapID = dEntry.mapID,
-        x = dEntry.x,
-        y = dEntry.y,
-        isLockedOnCurrentChar = isLockedOnCurrentChar,
-        eligibleChars = eligibleChars,
-        underleveledChars = underleveledChars,
-        readyCount = readyCount,
-        totalEligible = #eligibleChars,
-        entry = dEntry,
-    }
-end
-
-
-function addon:IsRussianLocale()
-    return self.GetActiveLocaleCode and (self:GetActiveLocaleCode() == "ruRU") or false
-end
-
-function addon:GetGloryMountStatus(mountID)
-    if not mountID or not self.MountGloryByMountID then return nil end
-    local gEntry = self.MountGloryByMountID[mountID]
-    if not gEntry then return nil end
-
-    local name, spellID, icon, _, _, _, _, _, _, _, isCollected = self:GetMountInfoByID(mountID)
-    local isRU = (self:GetActiveLocaleCode() == "ruRU")
-    local achID = gEntry.achievementID or 0
-
-    local liveAchName, achCompleted = nil, false
-    if achID > 0 and GetAchievementInfo then
-        local ok, _, aName, _, aDone = pcall(GetAchievementInfo, achID)
-        if ok then
-            liveAchName = aName
-            achCompleted = (aDone == true)
-        end
-    end
-
-    local achTitle = (isRU and gEntry.titleRU) or gEntry.titleEN or liveAchName or ("Achievement #" .. tostring(achID))
-    local expansionTitle = (isRU and gEntry.expansionRU) or gEntry.expansionEN or "WoW"
-    local instanceTitle = (isRU and gEntry.instanceRU) or gEntry.instanceEN or achTitle
-    local zoneTitle = (isRU and gEntry.zoneRU) or gEntry.zoneEN or instanceTitle
-    local soloNote = (isRU and gEntry.soloNoteRU) or gEntry.soloNoteEN or ""
-
-    local critDoneByAsset = {}
-    local critDoneByIdx = {}
-    if achID > 0 and GetAchievementNumCriteria and GetAchievementCriteriaInfo then
-        local okNum, numCrit = pcall(GetAchievementNumCriteria, achID)
-        if okNum and type(numCrit) == "number" and numCrit > 0 then
-            for i = 1, numCrit do
-                local okC, _, _, cDone, _, _, _, _, assetID = pcall(GetAchievementCriteriaInfo, achID, i)
-                if okC then
-                    if cDone then
-                        critDoneByIdx[i] = true
-                        if type(assetID) == "number" and assetID > 0 then
-                            critDoneByAsset[assetID] = true
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    local subList = {}
-    local completedCount = 0
-    local rawSubs = gEntry.subAchievements or {}
-    local totalCount = #rawSubs
-
-    for idx, sub in ipairs(rawSubs) do
-        local subID = sub.achID or 0
-        local subLiveName, subLiveDesc, subDone = nil, nil, false
-        if subID > 0 and GetAchievementInfo then
-            local okS, _, sName, _, sComp, _, _, _, sDesc = pcall(GetAchievementInfo, subID)
-            if okS then
-                subLiveName = sName
-                subLiveDesc = sDesc
-                subDone = (sComp == true)
-            end
-        end
-
-        local isSubDone = isCollected or achCompleted or subDone or critDoneByAsset[subID] or critDoneByIdx[idx] or false
-        if isSubDone then
-            completedCount = completedCount + 1
-        end
-
-        local sTitle = (isRU and sub.titleRU) or sub.titleEN or subLiveName or ("#" .. tostring(subID))
-        local sDesc = (isRU and sub.descRU) or sub.descEN or subLiveDesc or ""
-
-        table.insert(subList, {
-            index = idx,
-            achID = subID,
-            title = sTitle,
-            desc = sDesc,
-            isDone = isSubDone,
-        })
-    end
-
-    local progressPct = (totalCount > 0) and math.floor((completedCount / totalCount) * 100 + 0.5) or (isCollected and 100 or 0)
-
-    return {
-        mountID = mountID,
-        name = name or ("Mount #" .. tostring(mountID)),
-        spellID = spellID or gEntry.spellID,
-        icon = icon,
-        isCollected = isCollected,
-        achievementID = achID,
-        achTitle = achTitle,
-        expansionTitle = expansionTitle,
-        instanceTitle = instanceTitle,
-        zoneTitle = zoneTitle,
-        soloable = (gEntry.soloable == true),
-        minPlayers = gEntry.minPlayers or 1,
-        soloNote = soloNote,
-        mapID = gEntry.mapID,
-        x = gEntry.x,
-        y = gEntry.y,
-        completedCount = completedCount,
-        totalCount = totalCount,
-        progressPct = progressPct,
-        hasStarted = (completedCount > 0),
-        subAchievements = subList,
-        entry = gEntry,
-    }
-end
-
-function addon:GetInstanceGloryCrosslink(mapID, instanceEN)
-    if not self.MountGloryDB or not mapID then return nil end
-    for _, gEntry in ipairs(self.MountGloryDB) do
-        if gEntry.mapID == mapID and gEntry.minPlayers and gEntry.minPlayers < 8 then
-            local mID = gEntry.resolvedMountID or gEntry.mountID
-            local st = mID and self:GetGloryMountStatus(mID)
-            if st and not st.isCollected then
-                if not instanceEN or not gEntry.instanceEN or string.find(gEntry.instanceEN, instanceEN, 1, true) or string.find(instanceEN, gEntry.instanceEN, 1, true) then
-                    return st
-                end
-            end
-        end
-    end
-    return nil
-end
-
-
-function addon:CheckActiveQuestChainProgress()
-    if addon.RefreshRadarUI then
-        addon:RefreshRadarUI()
-    end
-    if not addon.activeQuestGuideMountID then return end
-    local status = addon:GetMountQuestChainStatus(addon.activeQuestGuideMountID)
-    if not status or status.isCollected then
-        addon.activeQuestGuideMountID = nil
-        addon.activeQuestGuideStepIndex = nil
-        return
-    end
-    if status.currentStepIndex and addon.activeQuestGuideStepIndex and status.currentStepIndex ~= addon.activeQuestGuideStepIndex then
-        addon.activeQuestGuideStepIndex = status.currentStepIndex
-        local st = status.currentStep
-        if st then
-            print(string.format(L.CHAT_QUEST_STEP_ADVANCED, status.name, st.title))
-            addon:NavigateMountQuestStep(addon.activeQuestGuideMountID, status.currentStepIndex, true)
-        end
-    end
 end
 
 -- Хук на открытие сумок/сундуков/тыкв с маунтами (Заполненная добычей тыква, Коробка в виде сердца, Сундуки идеала и т.д.)

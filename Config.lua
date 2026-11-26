@@ -254,8 +254,6 @@ if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOn
     local category = Settings.RegisterCanvasLayoutCategory(blizzPanel, "MountCollector")
     Settings.RegisterAddOnCategory(category)
     addon.settingsCategoryID = category:GetID()
-elseif InterfaceOptions_AddCategory then
-    InterfaceOptions_AddCategory(blizzPanel)
 end
 
 function addon:RefreshAllLocalizedUI()

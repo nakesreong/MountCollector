@@ -17,6 +17,19 @@ local L = addon.L
 local SafeNotSecret = addon.SafeNotSecret
 local IsValidNpcName = addon.IsValidNpcName
 
+local WOWHEAD_LOCALE_PATH = {
+    ruRU = "ru/",
+    deDE = "de/",
+    frFR = "fr/",
+    esES = "es/",
+    esMX = "es/",
+    itIT = "it/",
+    ptBR = "pt/",
+    koKR = "ko/",
+    zhCN = "cn/",
+    zhTW = "tw/",
+}
+
 function addon:GetMountWowheadURL(mountID, questID, achievementID)
     local locCode = self:GetActiveLocaleCode()
     local subPath = WOWHEAD_LOCALE_PATH[locCode] or ""
@@ -683,11 +696,11 @@ function addon:ActivateCurrentRouteStep(silent)
                 mountID = route.mountID,
                 npcID = route.npcID,
             }
-            local superTrackAPI = _G.C_SuperTrack or _G.C_SuperTracked
+            local superTrackAPI = _G.C_SuperTrack
             if superTrackAPI and superTrackAPI.SetSuperTrackedUserWaypoint then
                 pcall(superTrackAPI.SetSuperTrackedUserWaypoint, true)
                 C_Timer.After(0.08, function()
-                    local stAPI = _G.C_SuperTrack or _G.C_SuperTracked
+                    local stAPI = _G.C_SuperTrack
                     if stAPI and stAPI.SetSuperTrackedUserWaypoint and C_Map and C_Map.HasUserWaypoint and C_Map.HasUserWaypoint() then
                         pcall(stAPI.SetSuperTrackedUserWaypoint, true)
                     end
@@ -756,7 +769,7 @@ function addon:CheckPortalRouteProgress()
                     self.activePortalRoute = nil
                     return
                 else
-                    local stAPI = _G.C_SuperTrack or _G.C_SuperTracked
+                    local stAPI = _G.C_SuperTrack
                     if stAPI and stAPI.IsSuperTrackingUserWaypoint and not stAPI.IsSuperTrackingUserWaypoint() then
                         pcall(stAPI.SetSuperTrackedUserWaypoint, true)
                     end
@@ -943,11 +956,11 @@ function addon:SetMountWaypoint(mountID, preferredMapID, liveX, liveY, customLab
                 mountID = mountID,
                 npcID = resolvedNpcID,
             }
-            local superTrackAPI = _G.C_SuperTrack or _G.C_SuperTracked
+            local superTrackAPI = _G.C_SuperTrack
             if superTrackAPI and superTrackAPI.SetSuperTrackedUserWaypoint then
                 superTrackAPI.SetSuperTrackedUserWaypoint(true)
                 C_Timer.After(0.05, function()
-                    local stAPI = _G.C_SuperTrack or _G.C_SuperTracked
+                    local stAPI = _G.C_SuperTrack
                     if stAPI and stAPI.SetSuperTrackedUserWaypoint and C_Map and C_Map.HasUserWaypoint and C_Map.HasUserWaypoint() then
                         pcall(stAPI.SetSuperTrackedUserWaypoint, true)
                     end
@@ -1203,7 +1216,7 @@ function addon:CheckAndCancelTourIfUserOverrode()
     end
 
     -- 3. Игрок кликнул по квесту в трекере заданий (или снял SuperTrack с метки): выходим из тура и убираем нашу старую метку
-    local stAPI = _G.C_SuperTrack or _G.C_SuperTracked
+    local stAPI = _G.C_SuperTrack
     if stAPI and stAPI.IsSuperTrackingUserWaypoint and not stAPI.IsSuperTrackingUserWaypoint() then
         self.activeSpawnTour = nil
         self.activePortalRoute = nil
@@ -1575,6 +1588,11 @@ function addon:NavigateMountTarget(mountID, forceFirstStep)
         else
             self:SetMountWaypoint(mountID, dStatus.mapID, dStatus.x, dStatus.y, dStatus.instanceTitle .. " (" .. dStatus.bossTitle .. ")", false)
         end
+        return
+    end
+    local vStatus = self.GetVendorMountStatus and self:GetVendorMountStatus(mountID) or nil
+    if vStatus and vStatus.mapID and vStatus.mapID > 0 and vStatus.x and vStatus.y then
+        self:SetMountWaypoint(mountID, vStatus.mapID, vStatus.x, vStatus.y, vStatus.vendorTitle, false)
         return
     end
     local info = self.DropInfoByMount and self.DropInfoByMount[mountID]

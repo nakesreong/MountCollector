@@ -18,8 +18,12 @@ local CreateFlatButton = addon.CreateFlatButton
 
 function addon:OpenMountInJournal(mountID)
     if not mountID then return end
-    if not C_AddOns.IsAddOnLoaded("Blizzard_Collections") then
-        UIParentLoadAddOn("Blizzard_Collections")
+    if C_AddOns and C_AddOns.IsAddOnLoaded and not C_AddOns.IsAddOnLoaded("Blizzard_Collections") then
+        if C_AddOns.LoadAddOn then
+            pcall(C_AddOns.LoadAddOn, "Blizzard_Collections")
+        elseif UIParentLoadAddOn then
+            pcall(UIParentLoadAddOn, "Blizzard_Collections")
+        end
     end
     if ToggleCollectionsJournal then
         if not CollectionsJournal or not CollectionsJournal:IsShown() then
@@ -436,10 +440,11 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
     local qStatus = addon:GetMountQuestChainStatus(mountID)
     local dStatus = (not qStatus) and addon:GetDungeonMountStatus(mountID) or nil
     local gStatus = (not qStatus and not dStatus and addon.GetGloryMountStatus) and addon:GetGloryMountStatus(mountID) or nil
+    local vStatus = (not qStatus and not dStatus and not gStatus and addon.GetVendorMountStatus) and addon:GetVendorMountStatus(mountID) or nil
     local bestCoord = addon:GetBestMountCoords(mountID)
 
     if panel.btnSetAttempts then
-        if qStatus or gStatus then
+        if qStatus or gStatus or vStatus then
             panel.btnSetAttempts:Hide()
             if panel.secLabel and panel.btnDebug then
                 panel.secLabel:ClearAllPoints()
@@ -465,6 +470,19 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         if panel.btnBar then panel.btnBar:SetHeight(24) end
         if panel.scrollFrame then
             panel.scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 38)
+        end
+    elseif vStatus then
+        if panel.btnNavNow then
+            panel.btnNavNow:SetWidth(fullW)
+            panel.btnNavNow:SetText(L.VENDOR_NAV_BTN)
+            panel.btnNavNow:Show()
+        end
+        if panel.btnNavStart then
+            panel.btnNavStart:Hide()
+        end
+        if panel.btnBar then panel.btnBar:SetHeight(54) end
+        if panel.scrollFrame then
+            panel.scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 68)
         end
     elseif gStatus then
         if panel.btnNavNow then
@@ -542,6 +560,14 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         table.insert(metaLines, string.format(L.GLORY_META_LINE1_FMT, gStatus.achTitle, gStatus.achievementID))
         table.insert(metaLines, string.format(L.GLORY_META_LINE2_FMT, gStatus.instanceTitle .. " (" .. gStatus.expansionTitle .. ")", modeTag))
         table.insert(metaLines, string.format(L.GLORY_META_PROGRESS_FMT, gStatus.completedCount, gStatus.totalCount, gStatus.progressPct))
+    elseif vStatus then
+        local zDisp = (vStatus.mapID and vStatus.mapID > 0 and vStatus.x and vStatus.y)
+            and string.format("%s [%.1f, %.1f]", vStatus.zoneTitle ~= "" and vStatus.zoneTitle or addon:GetMapName(vStatus.mapID), vStatus.x, vStatus.y)
+            or (vStatus.zoneTitle ~= "" and vStatus.zoneTitle or "—")
+        local buyBadge = vStatus.canBuyNow and ("  " .. L.VENDOR_READY_BADGE) or ""
+        table.insert(metaLines, string.format(L.VENDOR_META_LINE1_FMT, vStatus.vendorTitle, zDisp))
+        table.insert(metaLines, string.format(L.VENDOR_META_COST_FMT, vStatus.shortCostText .. buyBadge))
+        table.insert(metaLines, string.format(L.VENDOR_META_REP_FMT, vStatus.repSummaryText))
     elseif dStatus then
         if dStatus.eventTitle then
             table.insert(metaLines, string.format(L.REQUIRES_EVENT_FMT, dStatus.eventTitle))
@@ -775,6 +801,74 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
                 br = subBr,
             })
         end
+    elseif vStatus then
+        -- 1. Карточка торговца и 3D-маршрута (с поддержкой межконтинентальных порталов)
+        local vBadge = isCollected and L.QUEST_STEP_DONE or (vStatus.canBuyNow and L.VENDOR_CARD_BADGE_READY or L.VENDOR_CARD_BADGE_FARM)
+        local vCoordText = (vStatus.mapID and vStatus.mapID > 0 and vStatus.x and vStatus.y)
+            and string.format("|cff00ccff%s [%.1f, %.1f]|r", vStatus.zoneTitle ~= "" and vStatus.zoneTitle or addon:GetMapName(vStatus.mapID), vStatus.x, vStatus.y)
+            or ("|cff00ccff" .. (vStatus.zoneTitle or "") .. "|r")
+
+        local vDescLines = {}
+        if description and description ~= "" then
+            table.insert(vDescLines, "|cffffd100" .. description .. "|r")
+        end
+        if vStatus.altBlock and vStatus.altBlock.vendorEN and vStatus.altBlock.vendorEN ~= "" then
+            local isRU = (addon:GetActiveLocaleCode() == "ruRU")
+            local altV = (isRU and vStatus.altBlock.vendorRU and vStatus.altBlock.vendorRU ~= "" and vStatus.altBlock.vendorRU) or vStatus.altBlock.vendorEN
+            local altZ = (isRU and vStatus.altBlock.zoneRU and vStatus.altBlock.zoneRU ~= "" and vStatus.altBlock.zoneRU) or vStatus.altBlock.zoneEN or ""
+            table.insert(vDescLines, string.format(
+                isRU and "|cffaaaaaaВторой торговец (другая фракция/хаб): %s (%s)|r" or "|cffaaaaaaAlternate Vendor: %s (%s)|r",
+                altV, altZ
+            ))
+        end
+        table.insert(vDescLines, L.QUEST_STEP_CLICK_HINT)
+
+        table.insert(stepsToRender, {
+            mountID = mountID,
+            customMapID = vStatus.mapID,
+            customX = vStatus.x,
+            customY = vStatus.y,
+            customNpc = vStatus.vendorTitle,
+            badge = vBadge,
+            coords = vCoordText,
+            title = string.format(L.VENDOR_CARD_TITLE_FMT, vStatus.vendorTitle),
+            npc = "",
+            desc = table.concat(vDescLines, "\n"),
+            bg = isCollected and { 0.06, 0.12, 0.08, 0.92 } or (vStatus.canBuyNow and { 0.06, 0.13, 0.09, 0.95 } or { 0.12, 0.11, 0.06, 0.94 }),
+            br = isCollected and { 0.18, 0.58, 0.30, 0.95 } or (vStatus.canBuyNow and { 0.22, 0.85, 0.48, 0.98 } or { 0.85, 0.68, 0.15, 0.98 }),
+        })
+
+        -- 2. Карточка стоимости и живого баланса золота / валют / предметов в сумках и банке отряда
+        table.insert(stepsToRender, {
+            mountID = mountID,
+            customMapID = vStatus.mapID,
+            customX = vStatus.x,
+            customY = vStatus.y,
+            customNpc = vStatus.vendorTitle,
+            badge = (isCollected or vStatus.canAffordAll) and L.VENDOR_WALLET_BADGE_OK or L.VENDOR_WALLET_BADGE_MISSING,
+            coords = "|cffffd100Wallet API|r",
+            title = L.VENDOR_WALLET_TITLE,
+            npc = "",
+            desc = table.concat(vStatus.walletLines or {}, "\n"),
+            bg = (isCollected or vStatus.canAffordAll) and { 0.06, 0.11, 0.09, 0.94 } or { 0.08, 0.09, 0.13, 0.94 },
+            br = (isCollected or vStatus.canAffordAll) and { 0.20, 0.72, 0.44, 0.95 } or { 0.32, 0.65, 0.95, 0.95 },
+        })
+
+        -- 3. Карточка требования Репутации / Дружбы / Известности отряда (Renown)
+        table.insert(stepsToRender, {
+            mountID = mountID,
+            customMapID = vStatus.mapID,
+            customX = vStatus.x,
+            customY = vStatus.y,
+            customNpc = vStatus.vendorTitle,
+            badge = (isCollected or (vStatus.repMet and not vStatus.repUncertain)) and L.VENDOR_REP_BADGE_OK or L.VENDOR_REP_BADGE_NEED,
+            coords = "|cffffd100Faction API|r",
+            title = L.VENDOR_REP_CARD_TITLE,
+            npc = "",
+            desc = (vStatus.repDetailLines and #vStatus.repDetailLines > 0) and table.concat(vStatus.repDetailLines, "\n") or vStatus.repSummaryText,
+            bg = (isCollected or (vStatus.repMet and not vStatus.repUncertain)) and { 0.06, 0.11, 0.08, 0.94 } or { 0.13, 0.09, 0.05, 0.94 },
+            br = (isCollected or (vStatus.repMet and not vStatus.repUncertain)) and { 0.20, 0.68, 0.38, 0.95 } or { 0.95, 0.62, 0.18, 0.95 },
+        })
     else
         -- 1. Основная карточка источника дропа / торговца / достижения
         local lockedToday = addon:IsMountRareLockedToday(mountID)
@@ -1061,7 +1155,7 @@ end
 -- а окно автоматически масштабируется, если разрешение экрана меньше базового!
 -- ============================================================================
 local radarFrame = CreateFrame("Frame", "MountCollectorRadarFrame", UIParent, "BackdropTemplate")
-radarFrame:SetSize(880, 550)
+radarFrame:SetSize(940, 560)
 radarFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
 radarFrame:SetFrameStrata("DIALOG")
 ApplyFlatBackdrop(radarFrame, 0.05, 0.05, 0.06, 0.96, 0.18, 0.18, 0.20, 1.0)
@@ -1073,8 +1167,8 @@ radarFrame:SetScript("OnDragStop", radarFrame.StopMovingOrSizing)
 radarFrame:SetScript("OnShow", function(self)
     local uiW = UIParent and UIParent:GetWidth() or 1920
     local uiH = UIParent and UIParent:GetHeight() or 1080
-    local scaleW = (uiW > 0 and uiW < 920) and ((uiW - 24) / 880) or 1.0
-    local scaleH = (uiH > 0 and uiH < 600) and ((uiH - 36) / 550) or 1.0
+    local scaleW = (uiW > 0 and uiW < 970) and ((uiW - 24) / 940) or 1.0
+    local scaleH = (uiH > 0 and uiH < 610) and ((uiH - 36) / 560) or 1.0
     local targetScale = math.max(0.72, math.min(1.0, scaleW, scaleH))
     self:SetScale(targetScale)
 end)
@@ -1084,7 +1178,7 @@ if type(UISpecialFrames) == "table" then
     table.insert(UISpecialFrames, "MountCollectorRadarFrame")
 end
 
--- Верхняя полоса заголовка (как в «Транспорт»)
+-- Верхняя полоса заголовка (как в «Транспорт») + быстрая кнопка смены языка [RU] / [EN]
 local topBar = CreateFrame("Frame", nil, radarFrame, "BackdropTemplate")
 topBar:SetPoint("TOPLEFT", radarFrame, "TOPLEFT", 1, -1)
 topBar:SetPoint("TOPRIGHT", radarFrame, "TOPRIGHT", -1, -1)
@@ -1099,8 +1193,27 @@ local radarClose = CreateFlatButton(topBar, 22, 22, "X", false)
 radarClose:SetPoint("RIGHT", topBar, "RIGHT", -4, 0)
 radarClose:SetScript("OnClick", function() radarFrame:Hide() end)
 
+local btnLangToggle = CreateFlatButton(topBar, 36, 22, "RU", true)
+btnLangToggle:SetPoint("RIGHT", radarClose, "LEFT", -4, 0)
+btnLangToggle:SetScript("OnClick", function()
+    if not addon.db or not addon.db.settings then return end
+    local cur = addon:GetActiveLocaleCode()
+    addon.db.settings.language = (cur == "ruRU") and "enUS" or "ruRU"
+    if addon.RefreshAllLocalizedUI then
+        addon:RefreshAllLocalizedUI()
+    end
+end)
+btnLangToggle:HookScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+    GameTooltip:SetText(L.BTN_LANG_TOGGLE_TT, 1, 0.82, 0)
+    GameTooltip:Show()
+end)
+btnLangToggle:HookScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
 -- Панель вкладок и счётчика «Всего: X»
--- Порядок вкладок: 1. В текущей зоне -> 2. Ворлдбоссы -> 3. Данж-лут -> 4. Цепочки и Квесты -> 5. Слава и Ачивки -> 6. Все траи аккаунта | Настройки
+-- Порядок вкладок: 1. В текущей зоне -> 2. Ворлдбоссы -> 3. Данж-лут -> 4. Цепочки и Квесты -> 5. Слава и Ачивки -> 6. Торговцы -> 7. Все траи | Настройки
 local totalBox = CreateFrame("Frame", nil, radarFrame, "BackdropTemplate")
 totalBox:SetSize(96, 24)
 totalBox:SetPoint("TOPLEFT", radarFrame, "TOPLEFT", 12, -36)
@@ -1110,23 +1223,26 @@ local totalFS = totalBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 totalFS:SetPoint("CENTER", totalBox, "CENTER", 0, 0)
 totalFS:SetTextColor(1.0, 0.82, 0.0, 1.0)
 
-local tabZoneBtn = CreateFlatButton(radarFrame, 110, 24, "", false)
+local tabZoneBtn = CreateFlatButton(radarFrame, 108, 24, "", false)
 tabZoneBtn:SetPoint("LEFT", totalBox, "RIGHT", 4, 0)
 
-local tabWorldBossBtn = CreateFlatButton(radarFrame, 96, 24, "", false)
+local tabWorldBossBtn = CreateFlatButton(radarFrame, 94, 24, "", false)
 tabWorldBossBtn:SetPoint("LEFT", tabZoneBtn, "RIGHT", 4, 0)
 
-local tabDungeonsBtn = CreateFlatButton(radarFrame, 96, 24, "", false)
+local tabDungeonsBtn = CreateFlatButton(radarFrame, 92, 24, "", false)
 tabDungeonsBtn:SetPoint("LEFT", tabWorldBossBtn, "RIGHT", 4, 0)
 
-local tabQuestsBtn = CreateFlatButton(radarFrame, 114, 24, "", false)
+local tabQuestsBtn = CreateFlatButton(radarFrame, 112, 24, "", false)
 tabQuestsBtn:SetPoint("LEFT", tabDungeonsBtn, "RIGHT", 4, 0)
 
-local tabGloryBtn = CreateFlatButton(radarFrame, 114, 24, "", false)
+local tabGloryBtn = CreateFlatButton(radarFrame, 110, 24, "", false)
 tabGloryBtn:SetPoint("LEFT", tabQuestsBtn, "RIGHT", 4, 0)
 
-local tabAllBtn = CreateFlatButton(radarFrame, 114, 24, "", false)
-tabAllBtn:SetPoint("LEFT", tabGloryBtn, "RIGHT", 4, 0)
+local tabVendorsBtn = CreateFlatButton(radarFrame, 90, 24, "", false)
+tabVendorsBtn:SetPoint("LEFT", tabGloryBtn, "RIGHT", 4, 0)
+
+local tabAllBtn = CreateFlatButton(radarFrame, 110, 24, "", false)
+tabAllBtn:SetPoint("LEFT", tabVendorsBtn, "RIGHT", 4, 0)
 
 local btnSettings = CreateFlatButton(radarFrame, 86, 24, "", false)
 btnSettings:SetPoint("TOPRIGHT", radarFrame, "TOPRIGHT", -12, -36)
@@ -1140,7 +1256,7 @@ btnSettings:SetScript("OnClick", function()
     addon:RefreshRadarUI()
 end)
 
-local topTabButtons = { tabZoneBtn, tabWorldBossBtn, tabDungeonsBtn, tabQuestsBtn, tabGloryBtn, tabAllBtn }
+local topTabButtons = { tabZoneBtn, tabWorldBossBtn, tabDungeonsBtn, tabQuestsBtn, tabGloryBtn, tabVendorsBtn, tabAllBtn }
 
 -- Динамический расчёт ширины всех кнопок верхней панели для любого языка клиента (без наездов!)
 local function LayoutTopTabBar()
@@ -1149,20 +1265,20 @@ local function LayoutTopTabBar()
     totalBox:SetWidth(totalBoxW)
 
     local settingsW = btnSettings:AutoSizeWidth(74, 128, 14)
-    local availForTabs = (radarFrame:GetWidth() or 880) - 24 - totalBoxW - settingsW - (#topTabButtons * 4) - 8
+    local availForTabs = (radarFrame:GetWidth() or 940) - 24 - totalBoxW - settingsW - (#topTabButtons * 4) - 8
 
     local rawTabWidths = {}
     local sumRaw = 0
     for i, btn in ipairs(topTabButtons) do
         local w = math.ceil((btn.label and btn.label:GetStringWidth()) or 76) + 12
-        w = math.max(66, w)
+        w = math.max(62, w)
         rawTabWidths[i] = w
         sumRaw = sumRaw + w
     end
 
     local scale = (sumRaw > availForTabs and sumRaw > 0) and (availForTabs / sumRaw) or 1.0
     for i, btn in ipairs(topTabButtons) do
-        btn:SetWidth(math.max(62, math.floor(rawTabWidths[i] * scale)))
+        btn:SetWidth(math.max(58, math.floor(rawTabWidths[i] * scale)))
     end
 end
 
@@ -1221,15 +1337,23 @@ end)
 searchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
 
--- Кнопка «Отметить всех на карте» (расположена в левой колонке под поиском на вкладке «В текущей зоне», не открывает карту!)
+-- Контекстная кнопка под поиском: «Отметить всех на карте» (Зона) / фильтр «[100% Соло]» (Слава) / фильтр «Можно купить сейчас!» (Торговцы)
 local btnPinZone = CreateFlatButton(leftCol, 298, 22, "", true)
 btnPinZone:SetPoint("TOPLEFT", searchBoxFrame, "BOTTOMLEFT", 0, -4)
 btnPinZone:SetPoint("TOPRIGHT", searchBoxFrame, "BOTTOMRIGHT", 0, -4)
 btnPinZone:SetScript("OnClick", function()
-    local zoneMounts = addon:GetZoneUncollectedMounts()
-    if zoneMounts and zoneMounts[1] then
-        local targetID = ui.selectedMountID or zoneMounts[1].mountID
-        addon:PinAllMountSpawns(targetID, false)
+    if ui.currentTab == "GLORY" then
+        ui.filterGlorySoloOnly = not ui.filterGlorySoloOnly
+        addon:RefreshRadarUI()
+    elseif ui.currentTab == "VENDORS" then
+        ui.filterVendorsReadyOnly = not ui.filterVendorsReadyOnly
+        addon:RefreshRadarUI()
+    else
+        local zoneMounts = addon:GetZoneUncollectedMounts()
+        if zoneMounts and zoneMounts[1] then
+            local targetID = ui.selectedMountID or zoneMounts[1].mountID
+            addon:PinAllMountSpawns(targetID, false)
+        end
     end
 end)
 
@@ -1242,7 +1366,7 @@ listContent:SetSize(276, 1)
 listScroll:SetScrollChild(listContent)
 
 -- ПРАВАЯ КОЛОНКА (Досье выбранного маунта + Чек-лист шагов + Кнопки навигации)
-local rightInspector = CreateMountInspectorWidget(radarFrame, "MountCollectorStepScroll", 504, false)
+local rightInspector = CreateMountInspectorWidget(radarFrame, "MountCollectorStepScroll", 564, false)
 rightInspector:SetPoint("TOPLEFT", leftCol, "TOPRIGHT", 8, 0)
 rightInspector:SetPoint("BOTTOMRIGHT", radarFrame, "BOTTOMRIGHT", -12, 12)
 ui.rightInspector = rightInspector
@@ -1331,6 +1455,8 @@ function addon:InspectMountInCollector(mountID)
         ui.currentTab = "WORLDBOSS"
     elseif dStatus then
         ui.currentTab = "DUNGEONS"
+    elseif self.GetVendorMountStatus and self:GetVendorMountStatus(mountID) then
+        ui.currentTab = "VENDORS"
     elseif ui.currentTab == "SETTINGS" then
         ui.currentTab = "ZONE"
     end
@@ -1350,13 +1476,14 @@ end
 
 function addon:RefreshRadarUI()
     radarTitle:SetText(L.RADAR_WINDOW_TITLE)
+    btnLangToggle:SetText((self:GetActiveLocaleCode() == "ruRU") and "RU" or "EN")
     tabZoneBtn:SetText(L.TAB_CURRENT_ZONE)
     tabWorldBossBtn:SetText(L.TAB_WORLD_BOSSES or "Ворлдбоссы")
     tabDungeonsBtn:SetText(L.TAB_DUNGEON_LOOT)
     tabQuestsBtn:SetText(L.TAB_QUEST_CHAINS)
     tabGloryBtn:SetText(L.TAB_GLORY or "Слава и Ачивки")
+    tabVendorsBtn:SetText(L.TAB_VENDORS or "Торговцы")
     tabAllBtn:SetText(L.TAB_ALL_ATTEMPTS)
-    btnPinZone:SetText(L.BTN_PIN_ALL_ZONE)
     btnSettings:SetText(L.BTN_SETTINGS)
     searchPlaceholder:SetText(L.SEARCH_PLACEHOLDER)
 
@@ -1375,10 +1502,23 @@ function addon:RefreshRadarUI()
     tabDungeonsBtn:SetActiveTab(ui.currentTab == "DUNGEONS")
     tabQuestsBtn:SetActiveTab(ui.currentTab == "QUESTS")
     tabGloryBtn:SetActiveTab(ui.currentTab == "GLORY")
+    tabVendorsBtn:SetActiveTab(ui.currentTab == "VENDORS")
     tabAllBtn:SetActiveTab(ui.currentTab == "ALL")
     btnSettings:SetActiveTab(ui.currentTab == "SETTINGS")
 
     if ui.currentTab == "ZONE" then
+        btnPinZone:SetText(L.BTN_PIN_ALL_ZONE)
+        btnPinZone:SetActiveTab(false)
+        btnPinZone:Show()
+        listScroll:SetPoint("TOPLEFT", leftCol, "TOPLEFT", 6, -62)
+    elseif ui.currentTab == "GLORY" then
+        btnPinZone:SetText(ui.filterGlorySoloOnly and L.BTN_FILTER_SOLO_ON or L.BTN_FILTER_SOLO_OFF)
+        btnPinZone:SetActiveTab(ui.filterGlorySoloOnly)
+        btnPinZone:Show()
+        listScroll:SetPoint("TOPLEFT", leftCol, "TOPLEFT", 6, -62)
+    elseif ui.currentTab == "VENDORS" then
+        btnPinZone:SetText(ui.filterVendorsReadyOnly and L.BTN_FILTER_BUY_ON or L.BTN_FILTER_BUY_OFF)
+        btnPinZone:SetActiveTab(ui.filterVendorsReadyOnly)
         btnPinZone:Show()
         listScroll:SetPoint("TOPLEFT", leftCol, "TOPLEFT", 6, -62)
     else
@@ -1473,7 +1613,7 @@ function addon:RefreshRadarUI()
             for dbIdx, gEntry in ipairs(self.MountGloryDB) do
                 local mID = gEntry.resolvedMountID or (gEntry.spellID and self.MountBySpell[gEntry.spellID]) or gEntry.mountID
                 local st = mID and self.GetGloryMountStatus and self:GetGloryMountStatus(mID) or nil
-                if st and (not st.isCollected or ui.pinnedInspectMountID == mID) then
+                if st and (not st.isCollected or ui.pinnedInspectMountID == mID) and (not ui.filterGlorySoloOnly or st.soloable or ui.pinnedInspectMountID == mID) then
                     local sTxt = ui.searchText or ""
                     local matchSearch = (sTxt == "")
                         or string.find(string.lower(st.name or ""), sTxt, 1, true)
@@ -1513,6 +1653,72 @@ function addon:RefreshRadarUI()
                 return a.soloable
             end
             return (a.dbOrder or 0) < (b.dbOrder or 0)
+        end)
+    elseif ui.currentTab == "VENDORS" then
+        if type(self.MountVendorsDB) == "table" then
+            for dbIdx, vEntry in ipairs(self.MountVendorsDB) do
+                local mID = vEntry.resolvedMountID or (vEntry.spellID and self.MountBySpell[vEntry.spellID]) or vEntry.mountID
+                local st = mID and self.GetVendorMountStatus and self:GetVendorMountStatus(mID) or nil
+                if st
+                    and (not st.isCollected or ui.pinnedInspectMountID == mID)
+                    and (not st.isOppositeFaction or ui.pinnedInspectMountID == mID)
+                    and (not ui.filterVendorsReadyOnly or st.canBuyNow or ui.pinnedInspectMountID == mID)
+                then
+                    local sTxt = ui.searchText or ""
+                    local plainCost = string.lower((st.shortCostText or ""):gsub("|T[^|]+|t%s*", ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+                    local plainRep = string.lower((st.repSummaryText or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+                    local matchSearch = (sTxt == "")
+                        or string.find(string.lower(st.name or ""), sTxt, 1, true)
+                        or string.find(string.lower(st.vendorTitle or ""), sTxt, 1, true)
+                        or string.find(string.lower(st.zoneTitle or ""), sTxt, 1, true)
+                        or string.find(plainCost, sTxt, 1, true)
+                        or string.find(plainRep, sTxt, 1, true)
+                    if matchSearch then
+                        local isInCurrentZone = (st.mapID and st.mapID > 0 and (st.mapID == currentPlayerMapID or st.mapID == currentParentMapID)) and true or false
+                        local statusTag = ""
+                        if st.isCollected then
+                            statusTag = L.TAG_COLLECTED .. " "
+                        elseif st.canBuyNow then
+                            statusTag = L.VENDOR_READY_BADGE .. " "
+                        elseif st.hasKnownCost and st.canAffordAll and st.hasRepReq and not st.repMet then
+                            statusTag = L.VENDOR_NEED_REP_BADGE .. " "
+                        end
+                        local zonePrefix = isInCurrentZone and ("|cff00ccff[" .. L.TAB_CURRENT_ZONE .. "]|r ") or ""
+                        local subLine = string.format("%s%s%s |cff888888• %s|r", zonePrefix, statusTag, st.shortCostText, st.zoneTitle ~= "" and st.zoneTitle or st.vendorTitle)
+                        table.insert(listEntries, {
+                            mountID = st.mountID,
+                            name = st.name,
+                            icon = st.icon,
+                            isCollected = st.isCollected,
+                            canBuyNow = st.canBuyNow,
+                            isInCurrentZone = isInCurrentZone,
+                            canAffordAll = st.canAffordAll,
+                            repMet = st.repMet,
+                            dbOrder = dbIdx,
+                            subLine = subLine,
+                        })
+                    end
+                end
+            end
+        end
+
+        table.sort(listEntries, function(a, b)
+            if a.isCollected ~= b.isCollected then
+                return not a.isCollected
+            end
+            if a.canBuyNow ~= b.canBuyNow then
+                return a.canBuyNow
+            end
+            if a.isInCurrentZone ~= b.isInCurrentZone then
+                return a.isInCurrentZone
+            end
+            if a.canAffordAll ~= b.canAffordAll then
+                return a.canAffordAll
+            end
+            if a.repMet ~= b.repMet then
+                return a.repMet
+            end
+            return (a.mountID or 0) > (b.mountID or 0)
         end)
     elseif ui.currentTab == "WORLDBOSS" or ui.currentTab == "DUNGEONS" then
         local wantWorldBoss = (ui.currentTab == "WORLDBOSS")
@@ -1677,7 +1883,7 @@ function addon:RefreshRadarUI()
     end
 
     listContent:SetHeight(math.max(1, #listEntries * 49))
-    PopulateMountInspectorPanel(rightInspector, ui.selectedMountID, ui.stepRowPool, 504)
+    PopulateMountInspectorPanel(rightInspector, ui.selectedMountID, ui.stepRowPool, 564)
 end
 
 function addon:ToggleRadarWindow()
@@ -1727,6 +1933,11 @@ end)
 
 tabGloryBtn:SetScript("OnClick", function()
     ui.currentTab = "GLORY"
+    addon:RefreshRadarUI()
+end)
+
+tabVendorsBtn:SetScript("OnClick", function()
+    ui.currentTab = "VENDORS"
     addon:RefreshRadarUI()
 end)
 
