@@ -1097,11 +1097,29 @@ function addon:ValidateModuleIntegrity(silentIfOk)
     return true, warnings
 end
 
+local CYRILLIC_UPPER_TO_LOWER = {
+    ["А"]="а",["Б"]="б",["В"]="в",["Г"]="г",["Д"]="д",["Е"]="е",["Ё"]="ё",["Ж"]="ж",["З"]="з",["И"]="и",["Й"]="й",
+    ["К"]="к",["Л"]="л",["М"]="м",["Н"]="н",["О"]="о",["П"]="п",["Р"]="р",["С"]="с",["Т"]="т",["У"]="у",["Ф"]="ф",
+    ["Х"]="х",["Ц"]="ц",["Ч"]="ч",["Ш"]="ш",["Щ"]="щ",["Ъ"]="ъ",["Ы"]="ы",["Ь"]="ь",["Э"]="э",["Ю"]="ю",["Я"]="я",
+}
+local function NormalizeLowerUTF8(s)
+    if type(s) ~= "string" then return "" end
+    local low = string.lower(s)
+    return (low:gsub("[\208\209][\128-\191]", function(ch)
+        return CYRILLIC_UPPER_TO_LOWER[ch] or ch
+    end))
+end
+
 local walletRefreshPending = false
 local pendingVendorTriggerKind = nil
 local function ScheduleOpenRadarWalletRefresh(triggerKind, invalidateRedLock)
-    if invalidateRedLock and addon.LiveMerchantRedLock then
-        wipe(addon.LiveMerchantRedLock)
+    if invalidateRedLock then
+        if addon.LiveMerchantRedLock then
+            wipe(addon.LiveMerchantRedLock)
+        end
+        if addon.LiveMerchantMissingSlot then
+            wipe(addon.LiveMerchantMissingSlot)
+        end
     end
     if triggerKind == "REP" or not pendingVendorTriggerKind then
         pendingVendorTriggerKind = triggerKind or "WALLET"
@@ -1270,6 +1288,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end
         if GetMerchantNumItems and GetMerchantItemID and C_MountJournal and C_MountJournal.GetMountFromItem and C_TooltipInfo and C_TooltipInfo.GetMerchantItem then
             addon.LiveMerchantRedLock = addon.LiveMerchantRedLock or {}
+            addon.LiveMerchantMissingSlot = addon.LiveMerchantMissingSlot or {}
             local seenVendorMounts = {}
             local numItems = GetMerchantNumItems() or 0
             for slot = 1, numItems do
@@ -1278,6 +1297,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                     local mID = C_MountJournal.GetMountFromItem(itemID) or (addon.MountByItem and addon.MountByItem[itemID])
                     if mID then
                         seenVendorMounts[mID] = true
+                        addon.LiveMerchantMissingSlot[mID] = nil
                         local okTip, tipData = pcall(C_TooltipInfo.GetMerchantItem, slot)
                         local redReason = nil
                         if okTip and tipData and type(tipData.lines) == "table" then
@@ -1296,23 +1316,22 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                     end
                 end
             end
-            -- Если торговец скрывает маунтов из ассортимента до достижения ранга/квеста (например, Улаани в Бойцовской гильдии),
-            -- фиксируем, что у открытого NPC этого маунта в лавке сейчас нет!
+            -- Если в открытом окне этого NPC маунта вообще нет в слотах продажи (скрыт до ранга/квеста или снят в текущем сезоне),
+            -- фиксируем это в LiveMerchantMissingSlot, чтобы он не светился как [Можно купить!]!
             local npcName = UnitName and UnitName("npc") or nil
-            local isAllFilter = (not GetMerchantFilter) or (not _G.LE_LOOT_FILTER_ALL) or (GetMerchantFilter() == _G.LE_LOOT_FILTER_ALL)
-            if isAllFilter and SafeNotSecret(npcName) and type(npcName) == "string" and npcName ~= "" and addon.MountVendorsDB then
-                local lowNpc = string.lower(npcName)
+            if numItems > 0 and SafeNotSecret(npcName) and type(npcName) == "string" and npcName ~= "" and addon.MountVendorsDB then
+                local lowNpc = NormalizeLowerUTF8(npcName)
                 local isRU = (addon:GetActiveLocaleCode() == "ruRU")
                 for _, vEntry in ipairs(addon.MountVendorsDB) do
                     local mID = vEntry.resolvedMountID or vEntry.mountID
                     if mID and not seenVendorMounts[mID] then
                         for _, blk in ipairs({ vEntry.primary, vEntry.alt }) do
-                            if blk and ((blk.vendorRU and string.lower(blk.vendorRU) == lowNpc) or (blk.vendorEN and string.lower(blk.vendorEN) == lowNpc)) then
+                            if blk and ((blk.vendorRU and NormalizeLowerUTF8(blk.vendorRU) == lowNpc) or (blk.vendorEN and NormalizeLowerUTF8(blk.vendorEN) == lowNpc)) then
                                 local _, _, _, _, _, _, _, _, _, _, isCol = addon:GetMountInfoByID(mID)
-                                if not isCol and not addon.LiveMerchantRedLock[mID] then
-                                    addon.LiveMerchantRedLock[mID] = isRU
-                                        and "Маунт скрыт у торговца (ещё не открыт нужный ранг / условие)"
-                                        or "Mount is hidden on this vendor (rank / unlock requirement not met yet)"
+                                if not isCol then
+                                    addon.LiveMerchantMissingSlot[mID] = isRU
+                                        and "Сейчас отсутствует в ассортименте этого торговца (скрыт условием или не продаётся в текущем сезоне)"
+                                        or "Not currently in this vendor's inventory (hidden by unlock condition or seasonal rotation)"
                                 end
                                 break
                             end

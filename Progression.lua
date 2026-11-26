@@ -1090,8 +1090,9 @@ function addon:GetVendorMountStatus(mountID)
     local reqCovID = block.reqCovID or 0
     local reqCovTitle = (isRU and block.reqCovRU and block.reqCovRU ~= "" and block.reqCovRU) or block.reqCovEN or ""
     local liveRedLock = self.LiveMerchantRedLock and self.LiveMerchantRedLock[mountID] or nil
+    local liveMissingSlot = self.LiveMerchantMissingSlot and self.LiveMerchantMissingSlot[mountID] or nil
 
-    local hasRepReq = (reqStanding > 0) or (reqRenown > 0) or (reqNote ~= "") or (facID > 0) or (reqAchID > 0) or (reqAchTitle ~= "") or (reqCovID > 0) or (liveRedLock ~= nil)
+    local hasRepReq = (reqStanding > 0) or (reqRenown > 0) or (reqNote ~= "") or (facID > 0) or (reqAchID > 0) or (reqAchTitle ~= "") or (reqCovID > 0) or (liveRedLock ~= nil) or (liveMissingSlot ~= nil)
     local repMet = true
     local repUncertain = false
     local repSummaryText = L.VENDOR_FREE_REP
@@ -1296,6 +1297,16 @@ function addon:GetVendorMountStatus(mountID)
             table.insert(repDetailLines, redLine)
             if facID == 0 and reqAchID == 0 and reqNote == "" then
                 repSummaryText = redLine
+            end
+        elseif liveMissingSlot and liveMissingSlot ~= "" then
+            repMet = false
+            if not shortRepBadge then
+                shortRepBadge = isRU and "|cffffaa00[Скрыт в лавке]|r" or "|cffffaa00[Not on Vendor]|r"
+            end
+            local missLine = "|cffff5555" .. liveMissingSlot .. "|r"
+            table.insert(repDetailLines, missLine)
+            if facID == 0 and reqAchID == 0 and reqNote == "" then
+                repSummaryText = missLine
             end
         end
     end

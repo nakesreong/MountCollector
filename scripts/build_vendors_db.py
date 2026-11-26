@@ -189,6 +189,14 @@ VENDOR_DEFAULT_ZONES = {
 }
 
 # Explicit per-mount overrides when Mount.db2 omits Zone or Cost
+# Retired / BMAH-only / TCG / [DND] mounts where Blizzard omitted the Legacy tag in Mount.db2:
+RETIRED_VENDOR_MOUNT_IDS = {
+    550,   # Brawler's Burly Mushan Beast (MoP/WoD Brawler's Guild Season 1-2 — retired, BMAH only)
+    878,   # Brawler's Burly Basilisk (Legion Brawler's Guild Season 3 — retired, BMAH only)
+    1039,  # Mighty Caravan Brutosaur (retired from Talutu after BfA — BMAH only)
+    1578,  # [DND] Test Mount JZB (internal Blizzard test entry)
+}
+
 MOUNT_OVERRIDES = {
     310: {
         "primary": {"vendorEN": "Ogunaro Wolfrunner", "vendorRU": "Огунаро Волкопас", "zoneEN": "Orgrimmar", "zoneRU": "Оргриммар", "mapID": 85, "x": 61.6, "y": 35.6, "side": "HORDE"},
@@ -821,6 +829,8 @@ def main():
         if "Vendor:" not in src_en and "Vendor :" not in src_en:
             continue
         if "|cFFFFD200Legacy" in src_en:
+            continue
+        if mid in RETIRED_VENDOR_MOUNT_IDS or "landro longshot" in src_en.lower():
             continue
 
         r_ru = mounts_ru.get(mid, {})
