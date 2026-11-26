@@ -1240,12 +1240,14 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end
         if GetMerchantNumItems and GetMerchantItemID and C_MountJournal and C_MountJournal.GetMountFromItem and C_TooltipInfo and C_TooltipInfo.GetMerchantItem then
             addon.LiveMerchantRedLock = addon.LiveMerchantRedLock or {}
+            local seenVendorMounts = {}
             local numItems = GetMerchantNumItems() or 0
             for slot = 1, numItems do
                 local okId, itemID = pcall(GetMerchantItemID, slot)
                 if okId and itemID and SafeNotSecret(itemID) then
                     local mID = C_MountJournal.GetMountFromItem(itemID) or (addon.MountByItem and addon.MountByItem[itemID])
                     if mID then
+                        seenVendorMounts[mID] = true
                         local okTip, tipData = pcall(C_TooltipInfo.GetMerchantItem, slot)
                         local redReason = nil
                         if okTip and tipData and type(tipData.lines) == "table" then
@@ -1261,6 +1263,30 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                             end
                         end
                         addon.LiveMerchantRedLock[mID] = redReason
+                    end
+                end
+            end
+            -- Если торговец скрывает маунтов из ассортимента до достижения ранга/квеста (например, Улаани в Бойцовской гильдии),
+            -- фиксируем, что у открытого NPC этого маунта в лавке сейчас нет!
+            local npcName = UnitName and UnitName("npc") or nil
+            local isAllFilter = (not GetMerchantFilter) or (not _G.LE_LOOT_FILTER_ALL) or (GetMerchantFilter() == _G.LE_LOOT_FILTER_ALL)
+            if isAllFilter and SafeNotSecret(npcName) and type(npcName) == "string" and npcName ~= "" and addon.MountVendorsDB then
+                local lowNpc = string.lower(npcName)
+                local isRU = (addon:GetActiveLocaleCode() == "ruRU")
+                for _, vEntry in ipairs(addon.MountVendorsDB) do
+                    local mID = vEntry.resolvedMountID or vEntry.mountID
+                    if mID and not seenVendorMounts[mID] then
+                        for _, blk in ipairs({ vEntry.primary, vEntry.alt }) do
+                            if blk and ((blk.vendorRU and string.lower(blk.vendorRU) == lowNpc) or (blk.vendorEN and string.lower(blk.vendorEN) == lowNpc)) then
+                                local _, _, _, _, _, _, _, _, _, _, isCol = addon:GetMountInfoByID(mID)
+                                if not isCol and not addon.LiveMerchantRedLock[mID] then
+                                    addon.LiveMerchantRedLock[mID] = isRU
+                                        and "Маунт скрыт у торговца (ещё не открыт нужный ранг / условие)"
+                                        or "Mount is hidden on this vendor (rank / unlock requirement not met yet)"
+                                end
+                                break
+                            end
+                        end
                     end
                 end
             end

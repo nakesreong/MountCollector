@@ -1071,17 +1071,22 @@ function addon:GetVendorMountStatus(mountID)
             or "• Purchase token or seasonal cost is listed directly on the vendor.")
     end
 
-    -- 2. Оценка репутации, дружбы, Известности отряда (Renown), достижений и живого окна торговца
-    local facID = block.factionID or 0
-    local reqStanding = block.reqStanding or 0
-    local reqRenown = block.reqRenown or 0
+    -- 2. Оценка репутации, расовых интендантов, ковенантов, дружбы, Известности (Renown), достижений и живого окна торговца
+    local _, playerRaceFile = UnitRace("player")
+    local isFreeForPlayerRace = (block.freeRace and playerRaceFile and block.freeRace == playerRaceFile) or false
+
+    local facID = (not isFreeForPlayerRace) and (block.factionID or 0) or 0
+    local reqStanding = (not isFreeForPlayerRace) and (block.reqStanding or 0) or 0
+    local reqRenown = (not isFreeForPlayerRace) and (block.reqRenown or 0) or 0
     local reqNote = (isRU and block.reqNoteRU and block.reqNoteRU ~= "" and block.reqNoteRU) or block.reqNoteEN or ""
-    local facName = (isRU and block.factionRU and block.factionRU ~= "" and block.factionRU) or block.factionEN or ""
+    local facName = (not isFreeForPlayerRace) and ((isRU and block.factionRU and block.factionRU ~= "" and block.factionRU) or block.factionEN or "") or ""
     local reqAchID = block.reqAchID or 0
     local reqAchTitle = (isRU and block.reqAchRU and block.reqAchRU ~= "" and block.reqAchRU) or block.reqAchEN or ""
+    local reqCovID = block.reqCovID or 0
+    local reqCovTitle = (isRU and block.reqCovRU and block.reqCovRU ~= "" and block.reqCovRU) or block.reqCovEN or ""
     local liveRedLock = self.LiveMerchantRedLock and self.LiveMerchantRedLock[mountID] or nil
 
-    local hasRepReq = (reqStanding > 0) or (reqRenown > 0) or (reqNote ~= "") or (facID > 0) or (reqAchID > 0) or (reqAchTitle ~= "") or (liveRedLock ~= nil)
+    local hasRepReq = (reqStanding > 0) or (reqRenown > 0) or (reqNote ~= "") or (facID > 0) or (reqAchID > 0) or (reqAchTitle ~= "") or (reqCovID > 0) or (liveRedLock ~= nil)
     local repMet = true
     local repUncertain = false
     local repSummaryText = L.VENDOR_FREE_REP
@@ -1191,6 +1196,27 @@ function addon:GetVendorMountStatus(mountID)
                     repSummaryText = "|cffffffff" .. facName .. "|r"
                 end
                 table.insert(repDetailLines, repSummaryText)
+            end
+            if reqNote ~= "" and (facID > 0 and (reqStanding > 0 or reqRenown > 0)) then
+                repUncertain = true
+                repMet = false
+                table.insert(repDetailLines, "|cffffaa00• " .. reqNote .. "|r")
+            end
+        end
+
+        -- Проверка активного Ковенанта Shadowlands (если торговец святилища требует активный ковенант)
+        if reqCovID > 0 then
+            local activeCov = (C_Covenants and C_Covenants.GetActiveCovenantID and C_Covenants.GetActiveCovenantID()) or 0
+            local covOk = (activeCov == reqCovID)
+            if not covOk then
+                repMet = false
+            end
+            local covLine = covOk
+                and string.format(isRU and "|cff33ff88Активный ковенант:|r |cffffffff%s|r" or "|cff33ff88Active Covenant:|r |cffffffff%s|r", reqCovTitle)
+                or string.format(isRU and "|cffffaa00Требуется активный ковенант для покупки:|r |cffffffff%s|r" or "|cffffaa00Requires active Covenant to buy:|r |cffffffff%s|r", reqCovTitle)
+            table.insert(repDetailLines, covLine)
+            if #repDetailLines == 1 then
+                repSummaryText = covLine
             end
         end
 

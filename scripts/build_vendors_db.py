@@ -42,6 +42,14 @@ VENDOR_COORDS = {
     "tannec stonebeak": (84, 71.0, 72.4),
     "lieutenant karter": (84, 76.6, 65.8),
     "captain dirgehammer": (84, 76.6, 65.8),
+    "old whitenose": (84, 67.8, 18.6),
+    "turtlemaster odai": (85, 69.8, 41.0),
+    "astrid langstrump": (84, 52.4, 13.4),
+    "kall worthaton": (85, 36.6, 86.8),
+    "ulaani": (84, 67.0, 33.6),
+    "paul north": (84, 67.0, 33.6),
+    "quackenbush": (84, 67.0, 33.6),
+    "tiana nevermorn": (85, 70.6, 30.8),
     # Classic Horde
     "ogunaro wolfrunner": (85, 61.6, 35.6),
     "zjolnir": (1, 55.2, 75.6),
@@ -327,8 +335,35 @@ ZONE_COORDS = {
     "vaults of atal'utek": (2437, 51.0, 62.6),
 }
 
-ALLIANCE_FACTIONS = {978, 1094, 1177, 1376, 1387, 1682, 1710, 1731, 1847, 2160, 2161, 2162, 2400}
-HORDE_FACTIONS = {941, 1124, 1178, 1375, 1388, 1445, 1681, 1708, 1848, 2103, 2156, 2158, 2373}
+ALLIANCE_FACTIONS = {47, 54, 69, 72, 930, 978, 1094, 1134, 1177, 1353, 1376, 1387, 1682, 1710, 1731, 1847, 2160, 2161, 2162, 2400, 2767}
+HORDE_FACTIONS = {68, 76, 81, 530, 911, 941, 1124, 1133, 1178, 1352, 1375, 1388, 1445, 1681, 1708, 1848, 2103, 2156, 2158, 2373, 2766}
+
+# Classic / TBC / Cata / MoP Racial City Mount Vendors:
+# Free of reputation ONLY if player is of `freeRace`, otherwise requires Exalted (8) with that city faction!
+RACIAL_VENDOR_GATES = {
+    "katie stokx": (72, "Human"),
+    "unger statforth": (72, "Human"),
+    "veron amberstill": (47, "Dwarf"),
+    "milli featherwhistle": (54, "Gnome"),
+    "lelanai": (69, "NightElf"),
+    "torallius the pack handler": (930, "Draenei"),
+    "astrid langstrump": (1134, "Worgen"),
+    "old whitenose": (1353, "Pandaren"),
+    "ogunaro wolfrunner": (76, "Orc"),
+    "zjolnir": (530, "Troll"),
+    "harb clawhoof": (81, "Tauren"),
+    "zachariah post": (68, "Scourge"),
+    "winaestra": (911, "BloodElf"),
+    "kall worthaton": (1133, "Goblin"),
+    "turtlemaster odai": (1352, "Pandaren"),
+}
+
+COVENANT_MAP = {
+    "kyrian": (1, "Kyrian Covenant", "Ковенант Кирий"),
+    "venthyr": (2, "Venthyr Covenant", "Ковенант Вентиров"),
+    "night fae": (3, "Night Fae Covenant", "Ковенант Ночного народца"),
+    "necrolord": (4, "Necrolord Covenant", "Ковенант Некролордов"),
+}
 ALLIANCE_ZONES = {"stormwind city", "stormwind, old town", "dun morogh", "darnassus", "the exodar", "wetlands", "stormshield", "bizmo's brawlpub", "boralus", "boralus harbor", "tiragarde sound", "drustvar", "stormsong valley", "garrison trading post", "shadowmoon valley"}
 HORDE_ZONES = {"orgrimmar", "durotar", "mulgore", "tirisfal glades", "warspear", "brawl'gar arena", "dazar'alor", "zuldazar", "nazmir", "vol'dun", "horde garrison trading post", "frostfire ridge"}
 
@@ -431,7 +466,18 @@ EXPLICIT_FACTION_IDS = {
 
 # Explicit Reputation / Renown / Journey gates omitted by Blizzard from Mount.db2 SourceText_lang
 MOUNT_REP_OVERRIDES = {
-    # Argent Tournament City Exalted Mounts (ItemSparse MinFactionID)
+    # Argent Tournament Champion Quartermasters & Exalted City Mounts
+    294: {"factionID": 72, "reqStanding": 8, "reqNoteEN": "Champion of Stormwind", "reqNoteRU": "Чемпион Штормграда (Серебряный турнир)"},
+    295: {"factionID": 530, "reqStanding": 8, "reqNoteEN": "Champion of Sen'jin", "reqNoteRU": "Чемпион Сен'джина (Серебряный турнир)"},
+    296: {"factionID": 47, "reqStanding": 8, "reqNoteEN": "Champion of Ironforge", "reqNoteRU": "Чемпион Стальгорна (Серебряный турнир)"},
+    297: {"factionID": 69, "reqStanding": 8, "reqNoteEN": "Champion of Darnassus", "reqNoteRU": "Чемпион Дарнаса (Серебряный турнир)"},
+    298: {"factionID": 54, "reqStanding": 8, "reqNoteEN": "Champion of Gnomeregan", "reqNoteRU": "Чемпион Гномрегана (Серебряный турнир)"},
+    299: {"factionID": 930, "reqStanding": 8, "reqNoteEN": "Champion of the Exodar", "reqNoteRU": "Чемпион Экзодара (Серебряный турнир)"},
+    300: {"factionID": 76, "reqStanding": 8, "reqNoteEN": "Champion of Orgrimmar", "reqNoteRU": "Чемпион Оргриммара (Серебряный турнир)"},
+    301: {"factionID": 81, "reqStanding": 8, "reqNoteEN": "Champion of Thunder Bluff", "reqNoteRU": "Чемпион Громового Утеса (Серебряный турнир)"},
+    302: {"factionID": 911, "reqStanding": 8, "reqNoteEN": "Champion of Silvermoon", "reqNoteRU": "Чемпион Луносвета (Серебряный турнир)"},
+    303: {"factionID": 68, "reqStanding": 8, "reqNoteEN": "Champion of the Undercity", "reqNoteRU": "Чемпион Подгорода (Серебряный турнир)"},
+    305: {"factionID": 1106, "reqStanding": 8},
     318: {"factionID": 930, "reqStanding": 8},
     319: {"factionID": 69, "reqStanding": 8},
     320: {"factionID": 911, "reqStanding": 8},
@@ -442,13 +488,35 @@ MOUNT_REP_OVERRIDES = {
     325: {"factionID": 530, "reqStanding": 8},
     326: {"factionID": 68, "reqStanding": 8},
     327: {"factionID": 76, "reqStanding": 8},
-    # Guild Vendors
+    338: {"factionID": 1106, "reqStanding": 8, "reqNoteEN": "Crusader Title (Paladin)", "reqNoteRU": "Звание «Крестоносец» (Паладин)"},
+    341: {"factionID": 1106, "reqStanding": 8, "reqNoteEN": "Exalted Champion of the Argent Crusade", "reqNoteRU": "Превозносимый чемпион Серебряного Авангарда"},
+    # Guild Vendors & Brawler's Guild
     401: {"reqAchEN": "Guild Glory of the Cataclysm Raider", "reqAchRU": "Слава рейдеру Cataclysm (гильдия)"},
     403: {"reqAchEN": "Guild Level 25 / Exalted", "reqAchRU": "Превознесение в гильдии"},
-    # Legion / Shadowlands ItemSparse gates
+    409: {"reqAchEN": "Guild Level 25 / Exalted", "reqAchRU": "Превознесение в гильдии"},
+    466: {"reqAchEN": "Guild Glory of the Pandaria Raider", "reqAchRU": "Слава рейдеру Пандарии (гильдия)"},
+    550: {"brawlersRank": 8},
+    878: {"brawlersRank": 8},
+    2807: {"brawlersRank": 6},
+    2808: {"brawlersRank": 8},
+    # Legion / Shadowlands / Dragonflight / K'aresh hidden gates
     877: {"factionID": 2018, "reqStanding": 8},
     1420: {"factionID": 2464, "reqStanding": 6},
     1429: {"factionID": 2463, "reqStanding": 6},
+    1612: {"factionID": 2517, "reqStanding": 8, "reqNoteEN": "True Friend with Wrathion & Sabellian", "reqNoteRU": "Настоящий друг Гневиона и Сабеллиана"},
+    1738: {"factionID": 2564, "reqRenown": 18},
+    1809: {"factionID": 2574, "reqRenown": 17},
+    1811: {"factionID": 2574, "reqRenown": 17},
+    1837: {"factionID": 2574, "reqRenown": 5},
+    1838: {"factionID": 2574, "reqRenown": 5},
+    1839: {"factionID": 2574, "reqRenown": 5},
+    1938: {"factionID": 2574, "reqRenown": 5},
+    1939: {"factionID": 2574, "reqRenown": 5},
+    1940: {"factionID": 2574, "reqRenown": 5},
+    2510: {"factionID": 2658, "reqRenown": 19},
+    2552: {"factionID": 2658, "reqRenown": 15},
+    2556: {"factionID": 2658, "reqRenown": 19},
+    2557: {"factionID": 2658, "reqRenown": 15},
     # The War Within Renown & Cartel Quartermasters (omitted in Mount.db2)
     2148: {"factionID": 2590, "reqRenown": 23},
     2213: {"factionID": 2590, "reqRenown": 18},
@@ -633,6 +701,26 @@ def parse_block(block_en: str, block_ru: str, fac_by_name: dict, fac_ru_by_id: d
                 fac_id = EXPLICIT_FACTION_IDS.get(fac_en.lower(), fac_by_name.get(fac_en.lower(), 0))
                 fac_ru = fac_ru_by_id.get(fac_id, re.sub(r"\s*\d+.*", "", raw_r_ru).strip())
 
+    free_race = ""
+    if fac_id == 0 and v_low in RACIAL_VENDOR_GATES:
+        fac_id, free_race = RACIAL_VENDOR_GATES[v_low]
+        req_standing = 8
+        fac_en = next((k for k, v in fac_by_name.items() if v == fac_id), "")
+        fac_ru = fac_ru_by_id.get(fac_id, fac_en)
+
+    cov_id = 0
+    cov_en = ""
+    cov_ru = ""
+    c_m = re.search(r"Covenant:\s*\|r([^\|\r\n]+)", block_en)
+    if c_m:
+        c_key = c_m.group(1).strip().lower()
+        if c_key in COVENANT_MAP:
+            cov_id, cov_en, cov_ru = COVENANT_MAP[c_key]
+
+    if v_low == "landro longshot" and not req_note_en:
+        req_note_en = "TCG Loot Card Code"
+        req_note_ru = "Промо-код карты TCG"
+
     side = ""
     if fac_id in ALLIANCE_FACTIONS or z_low in ALLIANCE_ZONES:
         side = "ALLIANCE"
@@ -654,6 +742,10 @@ def parse_block(block_en: str, block_ru: str, fac_by_name: dict, fac_ru_by_id: d
         "reqRenown": req_renown,
         "reqNoteEN": req_note_en,
         "reqNoteRU": req_note_ru,
+        "freeRace": free_race,
+        "reqCovID": cov_id,
+        "reqCovEN": cov_en,
+        "reqCovRU": cov_ru,
         "side": side,
     }
 
@@ -728,6 +820,23 @@ def main():
                 primary["reqStanding"] = alt["reqStanding"]
                 primary["reqRenown"] = alt["reqRenown"]
 
+        # Fallback: check full src_en for trailing Faction/Reputation/Renown/Covenant paragraphs outside Vendor blocks
+        full_meta = parse_block(src_en, src_ru, fac_by_name, fac_ru_by_id, map_by_name)
+        for target_b in ([primary, alt] if alt else [primary]):
+            if not target_b["factionID"] and full_meta["factionID"]:
+                target_b["factionID"] = full_meta["factionID"]
+                target_b["factionEN"] = full_meta["factionEN"]
+                target_b["factionRU"] = full_meta["factionRU"]
+                target_b["reqStanding"] = full_meta["reqStanding"]
+                target_b["reqRenown"] = full_meta["reqRenown"]
+            if not target_b["reqNoteEN"] and full_meta["reqNoteEN"]:
+                target_b["reqNoteEN"] = full_meta["reqNoteEN"]
+                target_b["reqNoteRU"] = full_meta["reqNoteRU"]
+            if not target_b["reqCovID"] and full_meta["reqCovID"]:
+                target_b["reqCovID"] = full_meta["reqCovID"]
+                target_b["reqCovEN"] = full_meta["reqCovEN"]
+                target_b["reqCovRU"] = full_meta["reqCovRU"]
+
         # Parse Achievement requirement from full SourceText_lang if present
         ach_m = re.search(r"Achievement:\s*\|r([^\|\r\n]+)", src_en)
         ach_ru_m = re.search(r"Достижение:\s*\|r([^\|\r\n]+)", src_ru)
@@ -746,6 +855,17 @@ def main():
         # Apply verified Reputation / Renown / Achievement gates omitted in Mount.db2
         rep_ovr = MOUNT_REP_OVERRIDES.get(mid)
         if rep_ovr:
+            if "brawlersRank" in rep_ovr:
+                rnk = rep_ovr["brawlersRank"]
+                for target_b in ([primary, alt] if alt else [primary]):
+                    is_horde = (target_b.get("side") == "HORDE") or ("brawl'gar" in target_b["zoneEN"].lower())
+                    bfid = 2766 if is_horde else 2767
+                    target_b["factionID"] = bfid
+                    target_b["factionEN"] = fac_en_by_id.get(bfid, "Brawler's Guild")
+                    target_b["factionRU"] = fac_ru_by_id.get(bfid, "Бойцовская гильдия")
+                    target_b["reqRenown"] = rnk
+                    target_b["reqNoteEN"] = ""
+                    target_b["reqNoteRU"] = ""
             for target_b in ([primary, alt] if alt else [primary]):
                 if "factionID" in rep_ovr:
                     fid = rep_ovr["factionID"]
@@ -814,7 +934,15 @@ def main():
         ]
         if b.get("side"):
             parts.append(f'side="{b["side"]}"')
+        if b.get("freeRace"):
+            parts.append(f'freeRace="{b["freeRace"]}"')
+        if b.get("reqCovID", 0) > 0:
+            parts.append(f'reqCovID={b["reqCovID"]}')
+            parts.append(f'reqCovRU="{esc(b["reqCovRU"])}"')
+            parts.append(f'reqCovEN="{esc(b["reqCovEN"])}"')
         if b["factionID"] > 0:
+            if not b["factionEN"] and b["factionID"] in fac_en_by_id:
+                b["factionEN"] = fac_en_by_id[b["factionID"]]
             parts.append(f'factionID={b["factionID"]}')
             parts.append(f'factionRU="{esc(b["factionRU"])}"')
             parts.append(f'factionEN="{esc(b["factionEN"])}"')
