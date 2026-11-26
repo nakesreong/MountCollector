@@ -1143,6 +1143,7 @@ eventFrame:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
 eventFrame:RegisterEvent("PLAYER_MONEY")
 eventFrame:RegisterEvent("UPDATE_FACTION")
 eventFrame:RegisterEvent("MAJOR_FACTION_RENOWN_LEVEL_CHANGED")
+eventFrame:RegisterEvent("MERCHANT_SHOW")
 eventFrame:RegisterEvent("ACHIEVEMENT_EARNED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -1230,6 +1231,13 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             addon:CheckPortalRouteProgress()
         end
     elseif event == "BAG_UPDATE_DELAYED" or event == "CURRENCY_DISPLAY_UPDATE" or event == "PLAYER_MONEY" or event == "UPDATE_FACTION" or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED" then
+        ScheduleOpenRadarWalletRefresh()
+    elseif event == "MERCHANT_SHOW" then
+        if addon.lastAddonWaypoint and addon.lastAddonWaypoint.mountID and addon.MountVendorsByMountID and addon.MountVendorsByMountID[addon.lastAddonWaypoint.mountID] then
+            if addon.ClearAddonWaypoints then
+                addon:ClearAddonWaypoints()
+            end
+        end
         ScheduleOpenRadarWalletRefresh()
     elseif event == "PLAYER_REGEN_DISABLED" then
         if addon.ClearAutoTargetOverrideBinding then

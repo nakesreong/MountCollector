@@ -1269,17 +1269,21 @@ function addon:StartSpawnTourTicker()
             if (now - (lastWP.setAt or 0)) <= 1.2 then
                 return
             end
+            local isVendorPin = (lastWP.mountID and self.MountVendorsByMountID and self.MountVendorsByMountID[lastWP.mountID] ~= nil) or false
             local touchedSingle = false
             if lastWP.npcID and self:IsNpcLockedToday(lastWP.npcID) then
                 touchedSingle = true
             end
             if not touchedSingle and _G.C_Navigation and _G.C_Navigation.GetDistance then
                 local okDist, navDist = pcall(_G.C_Navigation.GetDistance)
-                if okDist and SafeNotSecret(navDist) and type(navDist) == "number" and navDist > 0 and navDist <= 48 then
+                local touchYards = isVendorPin and 8 or 48
+                if okDist and SafeNotSecret(navDist) and type(navDist) == "number" and navDist > 0 and navDist <= touchYards then
                     touchedSingle = true
                 end
             end
-            if not touchedSingle and C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
+            -- Для торговцев в плотных городах (Луносвет, Дорногал, Штормград) НЕ сбрасываем метку по грубому 4.2% кругу карты,
+            -- чтобы 3D-ромбик висел над головой NPC вплоть до подхода вплотную (<= 8 ярдов) или открытия окна торговли!
+            if not touchedSingle and not isVendorPin and C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
                 local pMap = C_Map.GetBestMapForUnit("player")
                 local checkMap = lastWP.rawMapID or lastWP.mapID or pMap
                 if checkMap then

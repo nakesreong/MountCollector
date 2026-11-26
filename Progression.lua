@@ -1033,7 +1033,16 @@ function addon:GetVendorMountStatus(mountID)
             end
         elseif c.kind == "ITEM" then
             local reqAmt = tonumber(c.amount) or 1
-            local haveAmt, iName = self:GetRequirementItemCount(c.id, false)
+            if c.id and C_Item and C_Item.RequestLoadItemDataByID then
+                pcall(C_Item.RequestLoadItemDataByID, c.id)
+            end
+            local haveAmt, rawItemName = self:GetRequirementItemCount(c.id, false)
+            local iName = (isRU and c.nameRU and c.nameRU ~= "" and c.nameRU)
+                or (not isRU and c.nameEN and c.nameEN ~= "" and c.nameEN)
+                or ((rawItemName and not string.find(rawItemName, "^Item #")) and rawItemName)
+                or c.nameEN
+                or rawItemName
+                or ("Item #" .. tostring(c.id))
             local rawIcon = C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(c.id)
             local iIcon = rawIcon and string.format("|T%s:13:13:0:0|t", tostring(rawIcon)) or ""
             local okItem = (haveAmt >= reqAmt)

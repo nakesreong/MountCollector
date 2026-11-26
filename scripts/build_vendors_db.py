@@ -111,26 +111,57 @@ VENDOR_COORDS = {
     "cataloger jakes": (2022, 47.2, 82.6),
     "tatto": (2024, 13.8, 49.2),
     "quartermaster huseng": (2023, 60.4, 37.6),
+    "provisioner aristta": (2025, 38.6, 46.0),
+    "sorotis": (2025, 51.1, 56.6),
+    "falara nightsong": (2025, 51.1, 56.6),
+    "gill the drill": (2025, 51.1, 56.6),
+    "baron silver": (2025, 51.1, 56.6),
+    "warden krizzik": (2025, 51.1, 56.6),
     "unner": (2112, 58.0, 35.8),
     "brendormi": (2112, 35.4, 79.2),
     "mythressa": (2112, 38.0, 36.8),
     "nalksaa": (2133, 56.2, 56.8),
     "moonpriestess lasara": (2200, 50.2, 61.6),
+    "moon priestess lasara": (2200, 50.2, 61.6),
+    "elianna": (2200, 50.2, 61.8),
+    "talisa whisperbloom": (2200, 49.8, 62.2),
     # The War Within
     "auditor balwurz": (2339, 39.2, 24.4),
+    "sir finley mrrgglton": (2339, 47.6, 43.6),
+    "torie": (2339, 34.3, 69.5),
+    "cendvin": (2248, 74.4, 45.2),
     "waxmonger squick": (2214, 47.4, 32.8),
     "auralia steelstrike": (2215, 41.2, 53.0),
+    "lars bronsmaelt": (2215, 28.4, 56.2),
     "lady vinazian": (2255, 56.6, 41.2),
-    "sir finley mrrgglton": (2339, 47.6, 43.6),
-    # Midnight (12.x) & Global Event Vendors
-    "sergeant vornin": (2393, 55.0, 50.0),
-    "construct v'anore": (2393, 58.2, 46.8),
-    "telemancer astrandis": (2393, 54.0, 48.0),
-    "estelia archtender": (2393, 62.0, 52.0),
-    "chel the chip": (2393, 52.4, 54.2),
-    "lindormi": (2393, 53.8, 48.4),
-    "kifaan": (2405, 50.0, 50.0),
-    "jan'sari the watchful": (2512, 50.0, 50.0),
+    "y'tekhi": (2255, 55.3, 41.2),
+    "soweezi": (2369, 70.0, 48.5),
+    "boatswain hardee": (2346, 63.4, 16.8),
+    "rocco razzboom": (2346, 42.8, 52.0),
+    "shredz the scrapper": (2346, 53.3, 72.7),
+    "sitch lowdown": (2346, 30.6, 38.8),
+    "smaks topskimmer": (2346, 43.8, 50.8),
+    "lab assistant laszly": (2346, 27.1, 72.5),
+    "skedgit cinderbangs": (2346, 53.0, 72.6),
+    "shad'anis": (2371, 50.4, 36.4),
+    "om'sirik": (2371, 50.4, 36.4),
+    # Midnight (12.x) — Verified neutral/accessible coordinates!
+    "sergeant vornin": (2393, 48.6, 50.6),
+    "construct v'anore": (2393, 55.8, 65.8),
+    "construct e'nui": (2393, 55.8, 65.8),
+    "telemancer astrandis": (2393, 52.5, 78.9),
+    "estelia archtender": (2393, 39.3, 80.3),
+    "lindormi": (2393, 52.6, 78.0),
+    "caeris fairdawn": (2395, 43.4, 47.4),
+    "magovu": (2437, 45.9, 65.9),
+    "chel the chip": (2437, 31.6, 26.2),
+    "skull of er'inye": (2437, 51.0, 62.6),
+    "naynar": (2413, 51.0, 50.8),
+    "showena": (2576, 61.8, 67.7),
+    "void researcher anomander": (2405, 52.6, 72.8),
+    "kifaan": (2599, 59.3, 19.5),
+    "jan'sari the watchful": (2512, 58.8, 46.0),
+    "second mate sluggs": (2512, 51.6, 49.8),
     "any timewalking vendor": (125, 50.2, 46.2),
     "lunar festival": (80, 53.6, 35.4),
     "guild vendors": (84, 64.8, 76.6),
@@ -141,7 +172,7 @@ VENDOR_DEFAULT_ZONES = {
     "the mad merchant": ("Dalaran (Broken Isles)", "Даларан (Расколотые острова)"),
     "brendormi": ("Valdrakken", "Вальдраккен"),
     "mythressa": ("Valdrakken", "Вальдраккен"),
-    "chel the chip": ("Silvermoon City (Abundance)", "Луносвет (Изобилие)"),
+    "chel the chip": ("Zul'Aman (Abundance)", "Зул'Аман (Изобилие)"),
     "lindormi": ("Silvermoon City", "Луносвет"),
     "any timewalking vendor": ("Timewalking Hub (Dalaran / Shattrath / Timeless Isle)", "Столица Путешествий во времени (Даларан / Шаттрат)"),
     "lunar festival": ("Moonglade (Lunar Festival)", "Лунная поляна (Лунный фестиваль)"),
@@ -283,17 +314,17 @@ ZONE_COORDS = {
     "undermine": (2346, 43.4, 51.0),
     "liberation of undermine": (2346, 50.0, 50.0),
     "k'aresh": (2371, 50.0, 50.0),
-    "silvermoon city": (2393, 55.0, 50.0),
-    "eversong woods": (2395, 48.0, 46.0),
-    "zul'aman": (2437, 46.0, 50.0),
-    "harandar": (2413, 52.0, 50.0),
-    "the den": (2576, 50.0, 50.0),
-    "voidstorm": (2405, 50.0, 50.0),
-    "val": (2599, 50.0, 50.0),
-    "naigtal": (2600, 50.0, 50.0),
-    "val and naigtal": (2405, 50.0, 50.0),
-    "the coiled isle": (2512, 50.0, 50.0),
-    "vaults of atal'utek": (2437, 50.0, 50.0),
+    "silvermoon city": (2393, 48.6, 65.0),
+    "eversong woods": (2395, 43.4, 47.4),
+    "zul'aman": (2437, 45.9, 65.9),
+    "harandar": (2413, 51.0, 50.8),
+    "the den": (2576, 61.8, 67.7),
+    "voidstorm": (2405, 52.6, 72.8),
+    "val": (2599, 59.3, 19.5),
+    "naigtal": (2600, 47.8, 81.2),
+    "val and naigtal": (2599, 59.3, 19.5),
+    "the coiled isle": (2512, 58.8, 46.0),
+    "vaults of atal'utek": (2437, 51.0, 62.6),
 }
 
 ALLIANCE_FACTIONS = {978, 1094, 1177, 1376, 1387, 1682, 1710, 1731, 1847, 2160, 2161, 2162, 2400}
@@ -384,7 +415,44 @@ EXPLICIT_FACTION_IDS = {
 }
 
 
-def parse_costs(src_en: str, curr_en: dict, curr_ru: dict) -> list[dict]:
+ITEM_NAMES_FALLBACK = {
+    21100: ("Coin of Ancestry", "Монета предков"),
+    26044: ("Halaa Research Token", "Исследовательский жетон Халаа"),
+    26045: ("Halaa Battle Token", "Боевой жетон Халаа"),
+    49927: ("Love Token", "Знак любви"),
+    90045: ("Ancestral Phoenix Egg", "Древнее яйцо феникса"),
+    103533: ("Vicious Saddle", "Седло ярости"),
+    117397: ("Nat's Lucky Coin", "Счастливая монета Ната"),
+    124099: ("Blackfang Claw", "Коготь Черного Клыка"),
+    137642: ("Mark of Honor", "Почетный знак"),
+    138777: ("Drowned Mana", "Утопленная мана"),
+    168802: ("Nazjatar Battle Commendation", "Боевой почетный знак Назжатара"),
+    169780: ("Prismatic Manapearl", "Радужная манажемчужина"),
+    169783: ("Prismatic Manapearl", "Радужная манажемчужина"),
+    170100: ("Rubbery Flank", "Жилистая вырезка"),
+    174230: ("Memento of Epoch Challenges", "Памятный знак испытаний эпох"),
+    193053: ("Dream Infusion", "Настой Сна"),
+    193633: ("Wildseed Root Grain", "Зерно корня дикого семени"),
+    193696: ("Thunderous Downburst", "Грозовой шквал"),
+    193708: ("Swoglet", "Маленький рогоплав"),
+    195496: ("Charred Elemental Remains", "Обугленные останки элементаля"),
+    195502: ("Terrible Talon", "Жуткий коготь"),
+    201400: ("Tattered Wildercloth", "Изорванная дикая ткань"),
+    201401: ("Iridescent Plume", "Переливчатое перо"),
+    201403: ("Mastodon Tusk", "Бивень мастодонта"),
+    202039: ("Storm Sigil", "Печать бури"),
+    202173: ("Magmote", "Частица магмы"),
+    204727: ("Coveted Bauble", "Желанная безделушка"),
+    205188: ("Barter Brick", "Обменный кирпич"),
+    207026: ("Dreamsurge Coalescence", "Сгусток Прилива Снов"),
+    211376: ("Seedbloom", "Семяцвет"),
+    211409: ("Dream Infusion", "Настой Сна"),
+    225557: ("Sizzling Cinderpollen", "Шипящая пепельная пыльца"),
+    234741: ("Miscellaneous Mechanica", "Разнородная механика"),
+}
+
+
+def parse_costs(src_en: str, src_ru: str, curr_en: dict, curr_ru: dict) -> list[dict]:
     costs = []
     cost_match = re.search(r"Cost:\s*(?:\|r)?([^\r\n]+?)(?:\|n|$)", src_en)
     if not cost_match:
@@ -406,7 +474,8 @@ def parse_costs(src_en: str, curr_en: dict, curr_ru: dict) -> list[dict]:
     for im in re.finditer(r"(\d[\d,\s]*)\s*\|Hitem:(\d+)\|h", cost_seg, flags=re.I):
         amt = int(re.sub(r"[^\d]", "", im.group(1)) or "0")
         iid = int(im.group(2))
-        costs.append({"kind": "ITEM", "id": iid, "amount": amt})
+        fb_en, fb_ru = ITEM_NAMES_FALLBACK.get(iid, ("", ""))
+        costs.append({"kind": "ITEM", "id": iid, "amount": amt, "nameEN": fb_en, "nameRU": fb_ru})
 
     return costs
 
@@ -428,7 +497,9 @@ def parse_block(block_en: str, block_ru: str, fac_by_name: dict, fac_ru_by_id: d
 
     map_id, x, y = 0, 50.0, 50.0
     z_low = zone_en.lower()
-    if v_low in VENDOR_COORDS:
+    if v_low == "kifaan" and z_low in ZONE_COORDS:
+        map_id, x, y = ZONE_COORDS[z_low]
+    elif v_low in VENDOR_COORDS:
         map_id, x, y = VENDOR_COORDS[v_low]
     elif z_low in ZONE_COORDS:
         map_id, x, y = ZONE_COORDS[z_low]
@@ -566,7 +637,7 @@ def main():
                 primary["reqNoteEN"] = alt["reqNoteEN"]
                 primary["reqNoteRU"] = alt["reqNoteRU"]
 
-        costs = parse_costs(src_en, curr_en, curr_ru)
+        costs = parse_costs(src_en, src_ru, curr_en, curr_ru)
 
         ovr = MOUNT_OVERRIDES.get(mid)
         if ovr:
@@ -577,7 +648,12 @@ def main():
                     alt = dict(primary)
                 alt.update(ovr["alt"])
             if "costs" in ovr:
-                costs = ovr["costs"]
+                costs = []
+                for oc in ovr["costs"]:
+                    if oc["kind"] == "ITEM":
+                        fb_en, fb_ru = ITEM_NAMES_FALLBACK.get(oc["id"], ("", ""))
+                        oc = dict(oc, nameEN=fb_en, nameRU=fb_ru)
+                    costs.append(oc)
 
         entries.append((mid, spell_id, primary, alt, costs))
 
@@ -635,7 +711,8 @@ def main():
                     f'{{ kind="CURRENCY", id={c["id"]}, amount={c["amount"]}, nameRU="{esc(c["nameRU"])}", nameEN="{esc(c["nameEN"])}" }}'
                 )
             elif c["kind"] == "ITEM":
-                cost_parts.append(f'{{ kind="ITEM", id={c["id"]}, amount={c["amount"]} }}')
+                n_extra = f', nameRU="{esc(c.get("nameRU",""))}", nameEN="{esc(c.get("nameEN",""))}"' if c.get("nameEN") else ""
+                cost_parts.append(f'{{ kind="ITEM", id={c["id"]}, amount={c["amount"]}{n_extra} }}')
         costs_lua = "{ " + ", ".join(cost_parts) + " }"
         alt_lua = f", alt={fmt_block(alt)}" if alt else ""
         out.append(f"    {{ mountID={mid}, spellID={sp}, primary={fmt_block(prim)}{alt_lua}, costs={costs_lua} }},")
