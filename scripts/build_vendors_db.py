@@ -266,6 +266,7 @@ MOUNT_OVERRIDES = {
     1321: {
         "primary": {"vendorEN": "Wrathion", "vendorRU": "Гневион", "zoneEN": "Chamber of Heart (Silithus)", "zoneRU": "Зал Сердца (Силитус)", "mapID": 1473, "outMapID": 81, "x": 42.2, "y": 44.2},
     },
+    1374: {"primary": {"mapID": 1670, "x": 52.8, "y": 71.2}},
     1664: {
         "primary": {"vendorEN": "Tethalash", "vendorRU": "Теталаш", "zoneEN": "Valdrakken", "zoneRU": "Вальдраккен", "mapID": 2112, "x": 25.6, "y": 33.6},
         "alt": {"vendorEN": "Treysh", "vendorRU": "Трейш", "zoneEN": "The Forbidden Reach", "zoneRU": "Запретный край", "mapID": 2151, "x": 36.0, "y": 66.8},
@@ -300,6 +301,7 @@ MOUNT_OVERRIDES = {
     },
     2224: {
         "primary": {"vendorEN": "Bobadormu", "vendorRU": "Бобадорму", "zoneEN": "Tanaris (Caverns of Time)", "zoneRU": "Танарис (Пещеры Времени)", "mapID": 71, "x": 63.0, "y": 57.2},
+        "alt": {"vendorEN": "Grannadormu", "vendorRU": "Граннадорму", "zoneEN": "Tanaris (Caverns of Time)", "zoneRU": "Танарис (Пещеры Времени)", "mapID": 71, "x": 63.0, "y": 57.2},
     },
     2276: {
         "primary": {"vendorEN": "Ando the Gat", "vendorRU": "Андо Пуля", "zoneEN": "Liberation of Undermine (Incontinental)", "zoneRU": "«Освобождение Нижней Шахты» (отель)", "mapID": 2346, "x": 41.8, "y": 48.8},
