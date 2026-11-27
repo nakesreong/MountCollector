@@ -1173,6 +1173,7 @@ eventFrame:RegisterEvent("PLAYER_MONEY")
 eventFrame:RegisterEvent("UPDATE_FACTION")
 eventFrame:RegisterEvent("MAJOR_FACTION_RENOWN_LEVEL_CHANGED")
 eventFrame:RegisterEvent("MERCHANT_SHOW")
+eventFrame:RegisterEvent("MERCHANT_UPDATE")
 eventFrame:RegisterEvent("ACHIEVEMENT_EARNED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -1282,37 +1283,72 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 ScheduleOpenRadarWalletRefresh("REP", true)
             end)
         end
-    elseif event == "MERCHANT_SHOW" then
-        if addon.lastAddonWaypoint and addon.lastAddonWaypoint.mountID and addon.MountVendorsByMountID and addon.MountVendorsByMountID[addon.lastAddonWaypoint.mountID] then
+    elseif event == "MERCHANT_SHOW" or event == "MERCHANT_UPDATE" then
+        if event == "MERCHANT_SHOW" and addon.lastAddonWaypoint and addon.lastAddonWaypoint.mountID and addon.MountVendorsByMountID and addon.MountVendorsByMountID[addon.lastAddonWaypoint.mountID] then
             if addon.ClearAddonWaypoints then
                 addon:ClearAddonWaypoints()
             end
         end
-        if GetMerchantNumItems and GetMerchantItemID and C_MountJournal and C_MountJournal.GetMountFromItem and C_TooltipInfo and C_TooltipInfo.GetMerchantItem then
+        local getNum = (C_MerchantFrame and C_MerchantFrame.GetNumItems) or _G.GetMerchantNumItems
+        if getNum and C_MountJournal and C_MountJournal.GetMountFromItem then
             addon.LiveMerchantRedLock = addon.LiveMerchantRedLock or {}
             addon.LiveMerchantMissingSlot = addon.LiveMerchantMissingSlot or {}
             local seenVendorMounts = {}
-            local numItems = GetMerchantNumItems() or 0
+            local okNum, rawNum = pcall(getNum)
+            local numItems = (okNum and SafeNotSecret(rawNum) and tonumber(rawNum)) or 0
+            local isRU = (addon:GetActiveLocaleCode() == "ruRU")
             for slot = 1, numItems do
-                local okId, itemID = pcall(GetMerchantItemID, slot)
-                if okId and itemID and SafeNotSecret(itemID) then
+                local itemID = nil
+                local mInfo = nil
+                if C_MerchantFrame and C_MerchantFrame.GetItemInfo then
+                    local okInfo, inf = pcall(C_MerchantFrame.GetItemInfo, slot)
+                    if okInfo and type(inf) == "table" then
+                        mInfo = inf
+                    end
+                end
+                if _G.GetMerchantItemID then
+                    local okId, idVal = pcall(_G.GetMerchantItemID, slot)
+                    if okId and idVal and SafeNotSecret(idVal) then
+                        itemID = tonumber(idVal)
+                    end
+                end
+                if (not itemID or itemID <= 0) and _G.GetMerchantItemLink then
+                    local okLnk, lnk = pcall(_G.GetMerchantItemLink, slot)
+                    if okLnk and SafeNotSecret(lnk) and type(lnk) == "string" then
+                        itemID = tonumber(lnk:match("item:(%d+)"))
+                    end
+                end
+                if itemID and itemID > 0 then
                     local mID = C_MountJournal.GetMountFromItem(itemID) or (addon.MountByItem and addon.MountByItem[itemID])
                     if mID then
                         seenVendorMounts[mID] = true
                         addon.LiveMerchantMissingSlot[mID] = nil
-                        local okTip, tipData = pcall(C_TooltipInfo.GetMerchantItem, slot)
                         local redReason = nil
-                        if okTip and tipData and type(tipData.lines) == "table" then
-                            for _, ln in ipairs(tipData.lines) do
-                                local txt = ln and ln.leftText
-                                local clr = ln and ln.leftColor
-                                if SafeNotSecret(txt) and type(txt) == "string" and txt ~= "" and clr and SafeNotSecret(clr.r) and SafeNotSecret(clr.g) and SafeNotSecret(clr.b) then
-                                    if clr.r > 0.85 and clr.g < 0.25 and clr.b < 0.25 and not string.find(txt, "^===") then
-                                        redReason = txt
-                                        break
+                        if C_TooltipInfo and C_TooltipInfo.GetMerchantItem then
+                            local okTip, tipData = pcall(C_TooltipInfo.GetMerchantItem, slot)
+                            if okTip and tipData and type(tipData.lines) == "table" then
+                                for _, ln in ipairs(tipData.lines) do
+                                    local txt = ln and ln.leftText
+                                    local clr = ln and ln.leftColor
+                                    if SafeNotSecret(txt) and type(txt) == "string" and txt ~= "" and not string.find(txt, "^===") then
+                                        local isRedColor = clr and SafeNotSecret(clr.r) and SafeNotSecret(clr.g) and SafeNotSecret(clr.b)
+                                            and (clr.r > 0.80 and clr.g < 0.30 and clr.b < 0.30)
+                                        local inlineRed = txt:match("|c[fF][fF][fF][fF][0-3]%x[0-3]%x([^|]+)")
+                                        if isRedColor then
+                                            redReason = txt:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+                                            break
+                                        elseif inlineRed and inlineRed ~= "" then
+                                            redReason = inlineRed
+                                            break
+                                        end
                                     end
                                 end
                             end
+                        end
+                        if not redReason and mInfo and SafeNotSecret(mInfo.isPurchasable) and mInfo.isPurchasable == false then
+                            redReason = isRU
+                                and "Заблокировано у торговца (не выполнено условие репутации / известности)"
+                                or "Locked on vendor (reputation / renown requirement not met)"
                         end
                         addon.LiveMerchantRedLock[mID] = redReason
                     end
@@ -1323,7 +1359,6 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             local npcName = UnitName and UnitName("npc") or nil
             if numItems > 0 and SafeNotSecret(npcName) and type(npcName) == "string" and npcName ~= "" and addon.MountVendorsDB then
                 local lowNpc = NormalizeLowerUTF8(npcName)
-                local isRU = (addon:GetActiveLocaleCode() == "ruRU")
                 for _, vEntry in ipairs(addon.MountVendorsDB) do
                     local mID = vEntry.resolvedMountID or vEntry.mountID
                     if mID and not seenVendorMounts[mID] then
