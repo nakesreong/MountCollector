@@ -1123,10 +1123,11 @@ function addon:GetVendorMountStatus(mountID)
     local reqAchTitle = (isRU and block.reqAchRU and block.reqAchRU ~= "" and block.reqAchRU) or block.reqAchEN or ""
     local reqCovID = block.reqCovID or 0
     local reqCovTitle = (isRU and block.reqCovRU and block.reqCovRU ~= "" and block.reqCovRU) or block.reqCovEN or ""
+    local reqCovRenown = block.reqCovRenown or 0
     local liveRedLock = self.LiveMerchantRedLock and self.LiveMerchantRedLock[mountID] or nil
     local liveMissingSlot = self.LiveMerchantMissingSlot and self.LiveMerchantMissingSlot[mountID] or nil
 
-    local hasRepReq = (reqStanding > 0) or (reqRenown > 0) or (reqNote ~= "") or (facID > 0) or (reqAchID > 0) or (reqAchTitle ~= "") or (reqCovID > 0) or (liveRedLock ~= nil) or (liveMissingSlot ~= nil)
+    local hasRepReq = (reqStanding > 0) or (reqRenown > 0) or (reqNote ~= "") or (facID > 0) or (reqAchID > 0) or (reqAchTitle ~= "") or (reqCovID > 0) or (reqCovRenown > 0) or (liveRedLock ~= nil) or (liveMissingSlot ~= nil)
     local repMet = true
     local repUncertain = false
     local repSummaryText = L.VENDOR_FREE_REP
@@ -1263,19 +1264,40 @@ function addon:GetVendorMountStatus(mountID)
             end
         end
 
-        -- Проверка активного Ковенанта Shadowlands (если торговец святилища требует активный ковенант)
+        -- Проверка активного Ковенанта Shadowlands (и уровня Известности святилища при необходимости)
         if reqCovID > 0 then
             local activeCov = (C_Covenants and C_Covenants.GetActiveCovenantID and C_Covenants.GetActiveCovenantID()) or 0
             local covOk = (activeCov == reqCovID)
-            if not covOk then
+            local curCovRenown = (covOk and C_CovenantSanctumUI and C_CovenantSanctumUI.GetRenownLevel and tonumber(C_CovenantSanctumUI.GetRenownLevel())) or 0
+            local covRenownOk = (reqCovRenown <= 0) or (covOk and curCovRenown >= reqCovRenown)
+            if not covOk or not covRenownOk then
                 repMet = false
                 if not shortRepBadge then
-                    shortRepBadge = "|cffffaa00[" .. reqCovTitle .. "]|r"
+                    if covOk and reqCovRenown > 0 then
+                        shortRepBadge = string.format(isRU and "|cffffaa00[Ков. %d/%d]|r" or "|cffffaa00[Cov. %d/%d]|r", curCovRenown, reqCovRenown)
+                    else
+                        shortRepBadge = "|cffffaa00[" .. reqCovTitle .. "]|r"
+                    end
                 end
             end
-            local covLine = covOk
-                and string.format(isRU and "|cff33ff88Активный ковенант:|r |cffffffff%s|r" or "|cff33ff88Active Covenant:|r |cffffffff%s|r", reqCovTitle)
-                or string.format(isRU and "|cffffaa00Требуется активный ковенант для покупки:|r |cffffffff%s|r" or "|cffffaa00Requires active Covenant to buy:|r |cffffffff%s|r", reqCovTitle)
+            local covLine
+            if covOk and reqCovRenown > 0 then
+                local rClr = covRenownOk and "|cff33ff88" or "|cffffaa00"
+                covLine = string.format(
+                    isRU and "|cffffffff%s|r — %sИзвестность ковенанта %d / %d|r" or "|cffffffff%s|r — %sCovenant Renown %d / %d|r",
+                    reqCovTitle, rClr, curCovRenown, reqCovRenown
+                )
+            elseif covOk then
+                covLine = string.format(isRU and "|cff33ff88Активный ковенант:|r |cffffffff%s|r" or "|cff33ff88Active Covenant:|r |cffffffff%s|r", reqCovTitle)
+            elseif reqCovRenown > 0 then
+                covLine = string.format(
+                    isRU and "|cffffaa00Требуется активный ковенант:|r |cffffffff%s|r |cffcccccc(Известность %d)|r"
+                        or "|cffffaa00Requires active Covenant:|r |cffffffff%s|r |cffcccccc(Renown %d)|r",
+                    reqCovTitle, reqCovRenown
+                )
+            else
+                covLine = string.format(isRU and "|cffffaa00Требуется активный ковенант для покупки:|r |cffffffff%s|r" or "|cffffaa00Requires active Covenant to buy:|r |cffffffff%s|r", reqCovTitle)
+            end
             table.insert(repDetailLines, covLine)
             if #repDetailLines == 1 then
                 repSummaryText = covLine
