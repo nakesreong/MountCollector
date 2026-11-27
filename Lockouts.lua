@@ -132,17 +132,20 @@ function addon:ScanAllCharacterStatistics()
     if not self.db or not self.DropInfoByMount then return end
     local charKey = self:GetCharKey()
 
+    local mergedMap = (self.db.settings and type(self.db.settings.mergedChars) == "table") and self.db.settings.mergedChars or nil
     local externalCharStats = {}
     for cKey, stMap in pairs(SeededRarityCharStats) do
-        externalCharStats[cKey] = stMap
+        local resolvedKey = (mergedMap and mergedMap[cKey]) or cKey
+        externalCharStats[resolvedKey] = stMap
     end
     local rProfile = (_G.Rarity and _G.Rarity.db and _G.Rarity.db.profile)
         or (_G.RarityDB and _G.RarityDB.profiles and _G.RarityDB.profiles.Default)
     if rProfile and type(rProfile.accountWideStatistics) == "table" then
         for _, pData in pairs(rProfile.accountWideStatistics) do
             if type(pData) == "table" and pData.playerName and pData.server and type(pData.statistics) == "table" then
-                local cKey = pData.playerName .. " - " .. pData.server
-                externalCharStats[cKey] = pData.statistics
+                local rawKey = pData.playerName .. " - " .. pData.server
+                local resolvedKey = (mergedMap and mergedMap[rawKey]) or rawKey
+                externalCharStats[resolvedKey] = pData.statistics
             end
         end
     end
@@ -798,7 +801,121 @@ function addon:GetZoneUncollectedMounts(targetMapID)
     return results, mapID
 end
 
--- Сканирование уровня, класса и активных КД инстансов/праздничных данжей текущего персонажа
+-- Слить запись старого ника / прошлого сервера (oldCharKey) в текущего персонажа без задвоения траев
+function addon:MergeCharacterIntoCurrent(oldCharKey, silent)
+    if not self.db or not oldCharKey then return false end
+    local currentKey = self:GetCharKey()
+    if not currentKey or oldCharKey == currentKey then return false end
+
+    self.db.chars = self.db.chars or {}
+    local curData = self.db.chars[currentKey]
+    local oldData = self.db.chars[oldCharKey]
+    local now = time()
+
+    if type(curData) == "table" and type(oldData) == "table" then
+        for _, tblKey in ipairs({ "savedInstances", "savedInstanceNames", "savedLfg", "savedQuests" }) do
+            if type(oldData[tblKey]) == "table" then
+                curData[tblKey] = curData[tblKey] or {}
+                for k, exp in pairs(oldData[tblKey]) do
+                    if type(exp) == "number" and exp > now then
+                        curData[tblKey][k] = math.max(curData[tblKey][k] or 0, exp)
+                    end
+                end
+            end
+        end
+    end
+
+    if type(self.db.attempts) == "table" then
+        for _, rec in pairs(self.db.attempts) do
+            if type(rec) == "table" and type(rec.byChar) == "table" and rec.byChar[oldCharKey] ~= nil then
+                local oldVal = tonumber(rec.byChar[oldCharKey]) or 0
+                local curVal = tonumber(rec.byChar[currentKey]) or 0
+                rec.byChar[currentKey] = math.max(curVal, oldVal)
+                rec.byChar[oldCharKey] = nil
+                if not rec.manualTotal then
+                    local newSum = 0
+                    for _, c in pairs(rec.byChar) do
+                        newSum = newSum + (tonumber(c) or 0)
+                    end
+                    rec.total = math.max(newSum, rec.manualTotal or 0)
+                end
+            end
+        end
+    end
+
+    if self.db.settings then
+        self.db.settings.mergedChars = self.db.settings.mergedChars or {}
+        self.db.settings.mergedChars[oldCharKey] = currentKey
+        for k, dst in pairs(self.db.settings.mergedChars) do
+            if dst == oldCharKey then
+                self.db.settings.mergedChars[k] = currentKey
+            end
+        end
+    end
+
+    self.db.chars[oldCharKey] = nil
+
+    if not silent then
+        print(string.format(L.CHAT_ALT_MERGED_FMT, tostring(oldCharKey), tostring(currentKey)))
+        if self.RefreshRadarUI then self:RefreshRadarUI() end
+        if self.RefreshMountJournalSideColumn then self:RefreshMountJournalSideColumn() end
+        if self.RefreshAltManagerWindow then self:RefreshAltManagerWindow() end
+    end
+    return true
+end
+
+-- Убрать удалённого / ненужного твинка из ростера КД (общий счётчик траев аккаунта сохраняется!)
+function addon:RemoveTrackedAlt(targetCharKey)
+    if not self.db or not self.db.chars or not targetCharKey then return false end
+    local currentKey = self:GetCharKey()
+    if targetCharKey == currentKey then return false end
+    if not self.db.chars[targetCharKey] then return false end
+
+    self.db.chars[targetCharKey] = nil
+    print(string.format(L.CHAT_ALT_REMOVED_FMT, tostring(targetCharKey)))
+
+    if self.RefreshRadarUI then self:RefreshRadarUI() end
+    if self.RefreshMountJournalSideColumn then self:RefreshMountJournalSideColumn() end
+    if self.RefreshAltManagerWindow then self:RefreshAltManagerWindow() end
+    if self.radarSettingsPanel and self.radarSettingsPanel.controls and self.radarSettingsPanel.controls.Refresh then
+        self.radarSettingsPanel.controls:Refresh()
+    end
+    return true
+end
+
+-- Очистить всех твинков, на которых не заходили дольше daysThreshold дней (не трогая текущего чара и траи аккаунта)
+function addon:PruneInactiveAlts(daysThreshold)
+    if not self.db or not self.db.chars then return 0 end
+    local days = math.max(1, tonumber(daysThreshold) or 30)
+    local maxAgeSec = days * 86400
+    local now = time()
+    local currentKey = self:GetCharKey()
+    local toRemove = {}
+
+    for cKey, cData in pairs(self.db.chars) do
+        if cKey ~= currentKey then
+            local lastSeen = (type(cData) == "table") and tonumber(cData.lastSeen) or nil
+            if not lastSeen or (now - lastSeen) > maxAgeSec then
+                table.insert(toRemove, cKey)
+            end
+        end
+    end
+
+    for _, cKey in ipairs(toRemove) do
+        self.db.chars[cKey] = nil
+    end
+
+    print(string.format(L.CHAT_ALT_PRUNED_FMT, days, #toRemove))
+    if self.RefreshRadarUI then self:RefreshRadarUI() end
+    if self.RefreshMountJournalSideColumn then self:RefreshMountJournalSideColumn() end
+    if self.RefreshAltManagerWindow then self:RefreshAltManagerWindow() end
+    if self.radarSettingsPanel and self.radarSettingsPanel.controls and self.radarSettingsPanel.controls.Refresh then
+        self.radarSettingsPanel.controls:Refresh()
+    end
+    return #toRemove
+end
+
+-- Сканирование уровня, класса, GUID и активных КД инстансов/праздничных данжей текущего персонажа
 function addon:ScanCurrentCharacterLockouts()
     if not self.db then return end
     self.db.chars = self.db.chars or {}
@@ -808,6 +925,8 @@ function addon:ScanCurrentCharacterLockouts()
     local realm = GetRealmName() or "Realm"
     local _, classFile = UnitClass("player")
     local level = UnitLevel("player") or 1
+    local rawGUID = UnitGUID and UnitGUID("player") or nil
+    local playerGUID = (SafeNotSecret(rawGUID) and type(rawGUID) == "string" and string.find(rawGUID, "^Player%-")) and rawGUID or nil
     local now = time()
 
     local cData = self.db.chars[charKey] or {}
@@ -815,7 +934,23 @@ function addon:ScanCurrentCharacterLockouts()
     cData.realm = realm
     cData.class = classFile or cData.class or "PRIEST"
     cData.level = (level and level > 0) and level or (cData.level or 1)
+    cData.guid = playerGUID or cData.guid
+    cData.hidden = nil
     cData.lastSeen = now
+    self.db.chars[charKey] = cData
+
+    -- Авто-склейка ренеймов на том же сервере по совпадению постоянного GUID игрока
+    if playerGUID then
+        local duplicateKeys = {}
+        for otherKey, otherData in pairs(self.db.chars) do
+            if otherKey ~= charKey and type(otherData) == "table" and otherData.guid == playerGUID then
+                table.insert(duplicateKeys, otherKey)
+            end
+        end
+        for _, oldKey in ipairs(duplicateKeys) do
+            self:MergeCharacterIntoCurrent(oldKey, true)
+        end
+    end
     cData.savedInstances = cData.savedInstances or {}
     cData.savedInstanceNames = cData.savedInstanceNames or {}
     cData.savedLfg = cData.savedLfg or {}

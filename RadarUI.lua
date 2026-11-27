@@ -358,7 +358,11 @@ local function GetOrCreateChecklistCard(pool, parent, index, cardWidth)
             GameTooltip:AddLine(self.rawDesc, 1, 1, 1, true)
         end
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(self.achID and (L.GLORY_CLICK_HINT or L.QUEST_STEP_CLICK_HINT) or L.QUEST_STEP_CLICK_HINT)
+        if self.openAltManager then
+            GameTooltip:AddLine(L.ALT_CARD_CLICK_HINT)
+        else
+            GameTooltip:AddLine(self.achID and (L.GLORY_CLICK_HINT or L.QUEST_STEP_CLICK_HINT) or L.QUEST_STEP_CLICK_HINT)
+        end
         GameTooltip:Show()
     end)
 
@@ -370,6 +374,10 @@ local function GetOrCreateChecklistCard(pool, parent, index, cardWidth)
     end)
 
     card:SetScript("OnClick", function(self, button)
+        if self.openAltManager and button == "LeftButton" and addon.ShowAltManagerWindow then
+            addon:ShowAltManagerWindow()
+            return
+        end
         if not self.mountID then return end
         if button == "RightButton" then
             local url = addon:GetMountWowheadURL(self.mountID, self.doneQuest, self.achID)
@@ -724,11 +732,16 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
             end
             table.insert(altLines, string.format(L.ALT_UNDERLEVEL_HEADER_FMT, dStatus.minLevel, table.concat(lowNames, ", ")))
         end
+        if (dStatus.hiddenInactiveCount or 0) > 0 and (dStatus.altInactiveDays or 0) > 0 then
+            table.insert(altLines, string.format(L.ALT_HIDDEN_INACTIVE_FMT, dStatus.altInactiveDays, dStatus.hiddenInactiveCount))
+        end
+        table.insert(altLines, L.ALT_CARD_CLICK_HINT)
 
         local allLocked = (dStatus.totalEligible > 0 and dStatus.readyCount == 0)
         table.insert(stepsToRender, {
             mountID = mountID,
             stepIndex = nil,
+            openAltManager = true,
             customMapID = dStatus.mapID,
             customX = dStatus.x,
             customY = dStatus.y,
@@ -973,6 +986,7 @@ local function PopulateMountInspectorPanel(panel, mountID, pool, cardWidth)
         card.stepIndex = item.stepIndex
         card.doneQuest = item.doneQuest
         card.achID = item.achID
+        card.openAltManager = item.openAltManager
         card.customMapID = item.customMapID
         card.customX = item.customX
         card.customY = item.customY
@@ -2086,6 +2100,244 @@ function addon:RefreshMountJournalSideColumn()
 end
 
 
+function addon:RefreshAltManagerWindow()
+    local f = ui.altManagerFrame
+    if not f or not f:IsShown() then return end
+
+    f.title:SetText(L.ALT_MGR_TITLE)
+    f.desc:SetText(L.ALT_MGR_DESC)
+    f.filterLabel:SetText(L.ALT_MGR_FILTER_LABEL)
+
+    local curDays = (self.db and self.db.settings and tonumber(self.db.settings.altInactiveDays)) or 30
+    for _, btn in ipairs(f.dayBtns) do
+        local txt = (btn.days == 0) and L.ALT_MGR_FILTER_ALL or string.format(L.ALT_MGR_FILTER_DAYS_FMT, btn.days)
+        btn:SetText(txt)
+        btn:SetActiveTab(curDays == btn.days)
+    end
+    local pruneDays = (curDays > 0) and curDays or 30
+    f.btnPrune:SetText(string.format(L.ALT_MGR_PRUNE_BTN_FMT, pruneDays))
+    f.btnPrune.pruneDays = pruneDays
+
+    for _, r in ipairs(f.rowPool) do
+        r:Hide()
+    end
+
+    local entries = {}
+    local currentKey = self:GetCharKey()
+    local now = time()
+    if self.db and type(self.db.chars) == "table" then
+        for cKey, cData in pairs(self.db.chars) do
+            if type(cData) == "table" then
+                local lastSeen = tonumber(cData.lastSeen)
+                local ageDays = lastSeen and math.max(0, math.floor((now - lastSeen) / 86400)) or nil
+                table.insert(entries, {
+                    charKey = cKey,
+                    name = cData.name or tostring(cKey):gsub("%s*%-.+$", ""),
+                    realm = cData.realm or tostring(cKey):match("%-%s*(.+)$") or "",
+                    class = cData.class,
+                    level = tonumber(cData.level) or 1,
+                    lastSeen = lastSeen or 0,
+                    ageDays = ageDays,
+                    isCurrent = (cKey == currentKey),
+                })
+            end
+        end
+    end
+
+    table.sort(entries, function(a, b)
+        if a.isCurrent ~= b.isCurrent then
+            return a.isCurrent
+        end
+        if a.level ~= b.level then
+            return a.level > b.level
+        end
+        if a.lastSeen ~= b.lastSeen then
+            return a.lastSeen > b.lastSeen
+        end
+        return tostring(a.charKey) < tostring(b.charKey)
+    end)
+
+    for idx, item in ipairs(entries) do
+        local row = f.rowPool[idx]
+        if not row then
+            row = CreateFrame("Frame", nil, f.scrollContent, "BackdropTemplate")
+            row:SetSize(486, 34)
+            row:SetPoint("TOPLEFT", f.scrollContent, "TOPLEFT", 0, -((idx - 1) * 37))
+            ApplyFlatBackdrop(row, 0.08, 0.08, 0.10, 0.94, 0.20, 0.20, 0.24, 1.0)
+
+            row.nameFS = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            row.nameFS:SetPoint("LEFT", row, "LEFT", 10, 0)
+            row.nameFS:SetJustifyH("LEFT")
+
+            row.delBtn = CreateFlatButton(row, 26, 22, "×", false)
+            row.delBtn:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            row.delBtn:SetScript("OnClick", function(btn)
+                if btn.charKey then
+                    addon:RemoveTrackedAlt(btn.charKey)
+                end
+            end)
+            row.delBtn:HookScript("OnEnter", function(btn)
+                GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
+                GameTooltip:SetText(L.ALT_MGR_DELETE_TT, 1, 0.82, 0, 1, true)
+                GameTooltip:Show()
+            end)
+            row.delBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+
+            row.mergeBtn = CreateFlatButton(row, 96, 22, L.ALT_MGR_MERGE_BTN, true)
+            row.mergeBtn:SetPoint("RIGHT", row.delBtn, "LEFT", -5, 0)
+            row.mergeBtn:SetScript("OnClick", function(btn)
+                if btn.charKey then
+                    addon:MergeCharacterIntoCurrent(btn.charKey, false)
+                end
+            end)
+            row.mergeBtn:HookScript("OnEnter", function(btn)
+                GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
+                GameTooltip:SetText(L.ALT_MGR_MERGE_TT, 1, 0.82, 0, 1, true)
+                GameTooltip:Show()
+            end)
+            row.mergeBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+
+            row.seenFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            row.seenFS:SetPoint("RIGHT", row.mergeBtn, "LEFT", -10, 0)
+            row.seenFS:SetJustifyH("RIGHT")
+
+            f.rowPool[idx] = row
+        end
+
+        local colorPrefix = "|cffffffff"
+        if item.class and _G.RAID_CLASS_COLORS and _G.RAID_CLASS_COLORS[item.class] and _G.RAID_CLASS_COLORS[item.class].colorStr then
+            colorPrefix = "|c" .. _G.RAID_CLASS_COLORS[item.class].colorStr
+        end
+        local dispName = addon.LocalizeCharName and addon:LocalizeCharName(item.name) or item.name
+        local realmPart = (item.realm ~= "") and (" |cff888888— " .. item.realm .. "|r") or ""
+        row.nameFS:SetText(string.format("%s%s|r%s |cffffd100(%d)|r", colorPrefix, dispName, realmPart, item.level))
+
+        local isStale = (not item.isCurrent) and (curDays > 0) and (not item.ageDays or item.ageDays > curDays)
+        if item.isCurrent then
+            row.seenFS:SetText(L.ALT_MGR_CURRENT_TAG)
+            row.seenFS:ClearAllPoints()
+            row.seenFS:SetPoint("RIGHT", row, "RIGHT", -10, 0)
+            row.mergeBtn:Hide()
+            row.delBtn:Hide()
+            row:SetBackdropBorderColor(0.22, 0.78, 0.45, 0.95)
+        else
+            local seenTxt
+            if not item.ageDays then
+                seenTxt = L.ALT_MGR_SEEN_UNKNOWN
+            elseif item.ageDays == 0 then
+                seenTxt = L.ALT_MGR_SEEN_TODAY
+            else
+                seenTxt = string.format(L.ALT_MGR_SEEN_DAYS_FMT, item.ageDays)
+            end
+            row.seenFS:SetText(isStale and ("|cffff8844" .. seenTxt .. "|r") or ("|cffaaaaaa" .. seenTxt .. "|r"))
+            row.seenFS:ClearAllPoints()
+            row.seenFS:SetPoint("RIGHT", row.mergeBtn, "LEFT", -10, 0)
+            row.mergeBtn:SetText(L.ALT_MGR_MERGE_BTN)
+            row.mergeBtn.charKey = item.charKey
+            row.delBtn.charKey = item.charKey
+            row.mergeBtn:Show()
+            row.delBtn:Show()
+            row:SetBackdropBorderColor(isStale and 0.55 or 0.20, isStale and 0.35 or 0.20, 0.22, 1.0)
+        end
+        row:Show()
+    end
+
+    f.scrollContent:SetHeight(math.max(1, #entries * 37))
+end
+
+function addon:ShowAltManagerWindow()
+    if self.ScanCurrentCharacterLockouts then
+        self:ScanCurrentCharacterLockouts()
+    end
+    if not ui.altManagerFrame then
+        local f = CreateFrame("Frame", "MountCollectorAltManagerFrame", UIParent, "BackdropTemplate")
+        f:SetSize(540, 430)
+        f:SetPoint("CENTER", UIParent, "CENTER", 0, 30)
+        f:SetFrameStrata("DIALOG")
+        f:SetFrameLevel((radarFrame:GetFrameLevel() or 20) + 30)
+        ApplyFlatBackdrop(f, 0.05, 0.05, 0.06, 0.98, 1.0, 0.82, 0.0, 1.0)
+        f:EnableMouse(true)
+        f:SetMovable(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", f.StartMoving)
+        f:SetScript("OnDragStop", f.StopMovingOrSizing)
+        f.rowPool = {}
+
+        local top = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        top:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+        top:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -1)
+        top:SetHeight(28)
+        ApplyFlatBackdrop(top, 0.08, 0.08, 0.10, 0.98, 0.20, 0.20, 0.24, 1.0)
+
+        f.title = top:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        f.title:SetPoint("LEFT", top, "LEFT", 10, 0)
+
+        local closeBtn = CreateFlatButton(top, 22, 22, "X", false)
+        closeBtn:SetPoint("RIGHT", top, "RIGHT", -4, 0)
+        closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+        f.desc = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        f.desc:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -36)
+        f.desc:SetPoint("TOPRIGHT", f, "TOPRIGHT", -12, -36)
+        f.desc:SetJustifyH("LEFT")
+        f.desc:SetWordWrap(true)
+
+        local bar = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        bar:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -78)
+        bar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -12, -78)
+        bar:SetHeight(30)
+        ApplyFlatBackdrop(bar, 0.07, 0.07, 0.09, 0.96, 0.20, 0.20, 0.24, 1.0)
+
+        f.filterLabel = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        f.filterLabel:SetPoint("LEFT", bar, "LEFT", 8, 0)
+        f.filterLabel:SetTextColor(1.0, 0.82, 0.0, 1.0)
+
+        f.dayBtns = {}
+        local presets = { 0, 14, 30, 60 }
+        for i, dVal in ipairs(presets) do
+            local b = CreateFlatButton(bar, 58, 22, "", false)
+            if i == 1 then
+                b:SetPoint("LEFT", f.filterLabel, "RIGHT", 8, 0)
+            else
+                b:SetPoint("LEFT", f.dayBtns[i - 1], "RIGHT", 4, 0)
+            end
+            b.days = dVal
+            b:SetScript("OnClick", function()
+                if addon.db and addon.db.settings then
+                    addon.db.settings.altInactiveDays = dVal
+                    addon:RefreshAltManagerWindow()
+                    addon:RefreshRadarUI()
+                    addon:RefreshMountJournalSideColumn()
+                end
+            end)
+            f.dayBtns[i] = b
+        end
+
+        f.btnPrune = CreateFlatButton(bar, 118, 22, "", true)
+        f.btnPrune:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
+        f.btnPrune:SetScript("OnClick", function(self)
+            addon:PruneInactiveAlts(self.pruneDays or 30)
+        end)
+
+        local sf = CreateFrame("ScrollFrame", "MountCollectorAltMgrScroll", f, "UIPanelScrollFrameTemplate")
+        sf:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -8)
+        sf:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -30, 12)
+
+        local sc = CreateFrame("Frame", nil, sf)
+        sc:SetSize(486, 1)
+        sf:SetScrollChild(sc)
+        f.scrollContent = sc
+
+        ui.altManagerFrame = f
+        if type(UISpecialFrames) == "table" then
+            table.insert(UISpecialFrames, "MountCollectorAltManagerFrame")
+        end
+    end
+
+    ui.altManagerFrame:Show()
+    self:RefreshAltManagerWindow()
+end
+
 SLASH_MOUNTCOLLECTOR1 = "/mc"
 SLASH_MOUNTCOLLECTOR2 = "/mountcollector"
 SlashCmdList["MOUNTCOLLECTOR"] = function(msg)
@@ -2093,6 +2345,10 @@ SlashCmdList["MOUNTCOLLECTOR"] = function(msg)
     if cmd == "config" or cmd == "settings" or cmd == "opt" or cmd == "options" then
         if addon.ToggleConfigFrame then
             addon:ToggleConfigFrame()
+        end
+    elseif cmd == "alts" or cmd == "chars" or cmd == "twinks" then
+        if addon.ShowAltManagerWindow then
+            addon:ShowAltManagerWindow()
         end
     elseif cmd == "check" or cmd == "validate" then
         if addon.ValidateModuleIntegrity then

@@ -590,19 +590,25 @@ end
 -- 2. ПОДЗЕМЕЛЬЯ, РЕЙДЫ, ПРАЗДНИЧНЫЕ БОССЫ И МИРОВЫЕ БОССЫ (МАТРИЦА ТВИНКОВ)
 -- ============================================================================
 
-local function FormatClassColoredChar(name, classFile, level)
+local function GetShortCharName(name)
     local shortName = tostring(name or "Character"):gsub("%s*%-.+$", "")
     if addon.LocalizeCharName then
         shortName = addon:LocalizeCharName(shortName)
     end
+    return shortName
+end
+
+local function FormatClassColoredChar(name, classFile, level, realmSuffix)
+    local shortName = GetShortCharName(name)
     local colorPrefix = "|cffffffff"
     if classFile and _G.RAID_CLASS_COLORS and _G.RAID_CLASS_COLORS[classFile] and _G.RAID_CLASS_COLORS[classFile].colorStr then
         colorPrefix = "|c" .. _G.RAID_CLASS_COLORS[classFile].colorStr
     end
+    local realmPart = (realmSuffix and realmSuffix ~= "") and string.format(" |cff888888[%s]|r", realmSuffix) or ""
     if level and level > 0 then
-        return string.format("%s%s|r |cffaaaaaa(%d)|r", colorPrefix, shortName, level)
+        return string.format("%s%s|r%s |cffaaaaaa(%d)|r", colorPrefix, shortName, realmPart, level)
     end
-    return string.format("%s%s|r", colorPrefix, shortName)
+    return string.format("%s%s|r%s", colorPrefix, shortName, realmPart)
 end
 
 local function IsCharLockedForDungeonEntry(cData, dEntry, now)
@@ -700,33 +706,59 @@ function addon:GetDungeonMountStatus(mountID)
     local underleveledChars = {}
     local readyCount = 0
     local isLockedOnCurrentChar = false
+    local hiddenInactiveCount = 0
+    local maxAgeDays = (self.db and self.db.settings and tonumber(self.db.settings.altInactiveDays)) or 30
+    local maxAgeSec = (maxAgeDays > 0) and (maxAgeDays * 86400) or 0
 
     if self.db and type(self.db.chars) == "table" then
+        local activeRecords = {}
+        local shortNameCounts = {}
+
         for charKey, cData in pairs(self.db.chars) do
             if type(cData) == "table" then
-                local lvl = tonumber(cData.level) or 1
-                local isLocked = IsCharLockedForDungeonEntry(cData, dEntry, now)
-                if charKey == currentCharKey then
-                    isLockedOnCurrentChar = isLocked
-                end
-                local entry = {
-                    charKey = charKey,
-                    name = cData.name or charKey,
-                    realm = cData.realm or "",
-                    class = cData.class,
-                    level = lvl,
-                    isCurrent = (charKey == currentCharKey),
-                    isLocked = isLocked,
-                    coloredName = FormatClassColoredChar(cData.name or charKey, cData.class, lvl),
-                }
-                if lvl >= minLevel then
-                    table.insert(eligibleChars, entry)
-                    if not isLocked then
-                        readyCount = readyCount + 1
-                    end
+                local isCurrent = (charKey == currentCharKey)
+                local lastSeen = tonumber(cData.lastSeen)
+                local isStale = (not isCurrent) and (
+                    cData.hidden == true
+                    or (maxAgeSec > 0 and (not lastSeen or (now - lastSeen) > maxAgeSec))
+                )
+                if isStale then
+                    hiddenInactiveCount = hiddenInactiveCount + 1
                 else
-                    table.insert(underleveledChars, entry)
+                    local sName = GetShortCharName(cData.name or charKey)
+                    shortNameCounts[sName] = (shortNameCounts[sName] or 0) + 1
+                    table.insert(activeRecords, { charKey = charKey, cData = cData, shortName = sName, isCurrent = isCurrent })
                 end
+            end
+        end
+
+        for _, rec in ipairs(activeRecords) do
+            local charKey = rec.charKey
+            local cData = rec.cData
+            local lvl = tonumber(cData.level) or 1
+            local isLocked = IsCharLockedForDungeonEntry(cData, dEntry, now)
+            if rec.isCurrent then
+                isLockedOnCurrentChar = isLocked
+            end
+            local realmVal = cData.realm or tostring(charKey):match("%-%s*(.+)$") or ""
+            local showRealm = (shortNameCounts[rec.shortName] and shortNameCounts[rec.shortName] > 1) and realmVal or nil
+            local entry = {
+                charKey = charKey,
+                name = cData.name or charKey,
+                realm = realmVal,
+                class = cData.class,
+                level = lvl,
+                isCurrent = rec.isCurrent,
+                isLocked = isLocked,
+                coloredName = FormatClassColoredChar(cData.name or charKey, cData.class, lvl, showRealm),
+            }
+            if lvl >= minLevel then
+                table.insert(eligibleChars, entry)
+                if not isLocked then
+                    readyCount = readyCount + 1
+                end
+            else
+                table.insert(underleveledChars, entry)
             end
         end
     end
@@ -777,6 +809,8 @@ function addon:GetDungeonMountStatus(mountID)
         underleveledChars = underleveledChars,
         readyCount = readyCount,
         totalEligible = #eligibleChars,
+        hiddenInactiveCount = hiddenInactiveCount,
+        altInactiveDays = maxAgeDays,
         entry = dEntry,
     }
 end

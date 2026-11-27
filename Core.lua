@@ -167,6 +167,7 @@ function addon:InitDB()
         showWorldMapPins = true,
         showNpcTooltip = true,
         announceAttempts = true,
+        altInactiveDays = 30,
     }
     for k, v in pairs(defaults) do
         if db.settings[k] == nil then
@@ -1016,6 +1017,7 @@ function addon:ValidateModuleIntegrity(silentIfOk)
         "ScanAllCharacterStatistics", "GetMountAttempts", "SetManualMountAttempts", "RecordAttempt",
         "IsNpcLockedToday", "IsMountRareLockedToday", "GetZoneUncollectedMounts",
         "ScanCurrentCharacterLockouts", "GetDungeonMountStatus", "GetGloryMountStatus", "GetVendorMountStatus",
+        "MergeCharacterIntoCurrent", "RemoveTrackedAlt", "PruneInactiveAlts",
         "SnapshotBuyableVendorMounts", "CheckVendorMountUnlocks",
         -- RareRadar.lua
         "IsPlayerInInstancedContent", "IsOpenWorldRareOrWorldBossMount", "CheckUnitForMountDrop",
@@ -1024,7 +1026,7 @@ function addon:ValidateModuleIntegrity(silentIfOk)
         -- MapPins.lua
         "RefreshWorldMapPins", "InitWorldMapPins", "UpdateLDBText", "EnsureRoundMinimapButton", "InitLDB",
         -- Tooltips.lua & RadarUI.lua & Config.lua
-        "AppendMountCollectorLines", "HookMountJournal", "RefreshRadarUI", "ToggleRadarWindow", "ToggleConfigFrame",
+        "AppendMountCollectorLines", "HookMountJournal", "RefreshRadarUI", "ToggleRadarWindow", "ToggleConfigFrame", "ShowAltManagerWindow",
     }
     for _, fnName in ipairs(requiredMethods) do
         if type(self[fnName]) ~= "function" then

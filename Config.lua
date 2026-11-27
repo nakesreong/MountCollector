@@ -189,6 +189,15 @@ function addon:BuildSettingsControls(parent, isEmbeddedInRadar)
     end)
     controls.btnTestAlert = btnTestAlert
 
+    local btnManageAlts = CreateStyledButton(parent, 185, 24, "", false)
+    btnManageAlts:SetPoint("LEFT", btnTestAlert, "RIGHT", 10, 0)
+    btnManageAlts:SetScript("OnClick", function()
+        if addon.ShowAltManagerWindow then
+            addon:ShowAltManagerWindow()
+        end
+    end)
+    controls.btnManageAlts = btnManageAlts
+
     function controls:Refresh()
         title:SetText(L.CFG_TITLE)
         subtitle:SetText(L.CFG_SUBTITLE)
@@ -197,11 +206,19 @@ function addon:BuildSettingsControls(parent, isEmbeddedInRadar)
         secRadar:SetText("|cffffd100" .. L.CFG_SEC_RADAR .. "|r")
         btnOpenRadar:SetText(isEmbeddedInRadar and L.QUEST_BACK_BTN or L.CFG_BTN_OPEN_RADAR)
         btnTestAlert:SetText(L.CFG_BTN_TEST_ALERT)
+        local altCnt = 0
+        if addon.db and type(addon.db.chars) == "table" then
+            for _ in pairs(addon.db.chars) do altCnt = altCnt + 1 end
+        end
+        btnManageAlts:SetText(string.format(L.CFG_BTN_MANAGE_ALTS_FMT, altCnt))
         if btnOpenRadar.label and btnOpenRadar.label.GetStringWidth then
-            btnOpenRadar:SetWidth(math.max(180, math.ceil(btnOpenRadar.label:GetStringWidth() or 150) + 20))
+            btnOpenRadar:SetWidth(math.max(175, math.ceil(btnOpenRadar.label:GetStringWidth() or 150) + 20))
         end
         if btnTestAlert.label and btnTestAlert.label.GetStringWidth then
-            btnTestAlert:SetWidth(math.max(190, math.ceil(btnTestAlert.label:GetStringWidth() or 160) + 20))
+            btnTestAlert:SetWidth(math.max(180, math.ceil(btnTestAlert.label:GetStringWidth() or 160) + 20))
+        end
+        if btnManageAlts.label and btnManageAlts.label.GetStringWidth then
+            btnManageAlts:SetWidth(math.max(165, math.ceil(btnManageAlts.label:GetStringWidth() or 140) + 20))
         end
 
         local curLang = (addon.db and addon.db.settings and addon.db.settings.language) or "auto"
