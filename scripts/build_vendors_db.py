@@ -234,17 +234,85 @@ MOUNT_OVERRIDES = {
         "primary": {"vendorEN": "Quackenbush", "vendorRU": "Квакенбуш", "zoneEN": "Bizmo's Brawlpub", "zoneRU": "Потасовочная \"У Бизмо\"", "mapID": 500, "outMapID": 84, "x": 67.0, "y": 33.6, "side": "ALLIANCE"},
         "alt": {"vendorEN": "Paul North", "vendorRU": "Пол Норт", "zoneEN": "Brawl'gar Arena", "zoneRU": "Арена \"Морд'Бой\"", "mapID": 503, "outMapID": 85, "x": 70.6, "y": 30.8, "side": "HORDE"},
     },
-    236: {"reqClass": "DEATHKNIGHT"},
+    236: {"reqClass": "DEATHKNIGHT", "primary": {"mapID": 23, "x": 83.6, "y": 49.4}},
     338: {"reqClass": "PALADIN"},
-    870: {"reqClass": "HUNTER"},
-    872: {"reqClass": "HUNTER"},
+    608: {
+        "primary": {"vendorEN": "Trader Araanda", "vendorRU": "Торговка Араанда", "zoneEN": "Lunarfall (Garrison)", "zoneRU": "Зашедшая Луна (Гарнизон)", "mapID": 582, "outMapID": 539, "x": 50.6, "y": 54.0, "side": "ALLIANCE"},
+        "alt": {"vendorEN": "Trader Darakk", "vendorRU": "Торговец Даракк", "zoneEN": "Frostwall (Garrison)", "zoneRU": "Ледяные Скалы (Гарнизон)", "mapID": 590, "outMapID": 525, "x": 46.6, "y": 47.6, "side": "HORDE"},
+    },
+    618: {
+        "primary": {"vendorEN": "Maaria", "vendorRU": "Маария", "zoneEN": "Lunarfall (Trading Post)", "zoneRU": "Зашедшая Луна (Торговая лавка)", "mapID": 582, "outMapID": 539, "x": 50.6, "y": 54.0, "side": "ALLIANCE"},
+    },
+    620: {
+        "primary": {"vendorEN": "Trader Araanda", "vendorRU": "Торговка Араанда", "zoneEN": "Lunarfall (Garrison)", "zoneRU": "Зашедшая Луна (Гарнизон)", "mapID": 582, "outMapID": 539, "x": 50.6, "y": 54.0, "side": "ALLIANCE"},
+        "alt": {"vendorEN": "Trader Darakk", "vendorRU": "Торговец Даракк", "zoneEN": "Frostwall (Garrison)", "zoneRU": "Ледяные Скалы (Гарнизон)", "mapID": 590, "outMapID": 525, "x": 46.6, "y": 47.6, "side": "HORDE"},
+    },
+    645: {
+        "primary": {"vendorEN": "Kil'rip", "vendorRU": "Рез'ак", "zoneEN": "Frostwall (Trading Post)", "zoneRU": "Ледяные Скалы (Торговая лавка)", "mapID": 590, "outMapID": 525, "x": 46.6, "y": 47.6, "side": "HORDE"},
+    },
+    847: {
+        "primary": {"vendorEN": "Xur'ios", "vendorRU": "Ксур'иос", "zoneEN": "Dalaran (Broken Isles)", "zoneRU": "Даларан (Расколотые острова)", "mapID": 627, "x": 48.8, "y": 13.6},
+        "costs": [{"kind": "ITEM", "id": 127124, "amount": 150}],
+    },
+    870: {"reqClass": "HUNTER", "primary": {"mapID": 739, "outMapID": 650, "x": 43.2, "y": 48.2}},
+    872: {"reqClass": "HUNTER", "primary": {"mapID": 739, "outMapID": 650, "x": 43.2, "y": 48.2}},
     889: {"reqClass": "ROGUE"},
     890: {"reqClass": "ROGUE"},
     891: {"reqClass": "ROGUE"},
     892: {"reqClass": "PALADIN"},
     893: {"reqClass": "PALADIN"},
     894: {"reqClass": "PALADIN"},
-    930: {"reqClass": "WARLOCK"},
+    930: {"reqClass": "WARLOCK", "primary": {"mapID": 717, "outMapID": 627, "x": 58.4, "y": 39.6}},
+    1321: {
+        "primary": {"vendorEN": "Wrathion", "vendorRU": "Гневион", "zoneEN": "Chamber of Heart (Silithus)", "zoneRU": "Зал Сердца (Силитус)", "mapID": 1473, "outMapID": 81, "x": 42.2, "y": 44.2},
+    },
+    1664: {
+        "primary": {"vendorEN": "Tethalash", "vendorRU": "Теталаш", "zoneEN": "Valdrakken", "zoneRU": "Вальдраккен", "mapID": 2112, "x": 25.6, "y": 33.6},
+        "alt": {"vendorEN": "Treysh", "vendorRU": "Трейш", "zoneEN": "The Forbidden Reach", "zoneRU": "Запретный край", "mapID": 2151, "x": 36.0, "y": 66.8},
+    },
+    1665: {
+        "primary": {"vendorEN": "Tethalash", "vendorRU": "Теталаш", "zoneEN": "Valdrakken", "zoneRU": "Вальдраккен", "mapID": 2112, "x": 25.6, "y": 33.6},
+        "alt": {"vendorEN": "Treysh", "vendorRU": "Трейш", "zoneEN": "The Forbidden Reach", "zoneRU": "Запретный край", "mapID": 2151, "x": 36.0, "y": 66.8},
+    },
+    1667: {
+        "primary": {"vendorEN": "Tethalash", "vendorRU": "Теталаш", "zoneEN": "Valdrakken", "zoneRU": "Вальдраккен", "mapID": 2112, "x": 25.6, "y": 33.6},
+        "alt": {"vendorEN": "Treysh", "vendorRU": "Трейш", "zoneEN": "The Forbidden Reach", "zoneRU": "Запретный край", "mapID": 2151, "x": 36.0, "y": 66.8},
+    },
+    1668: {
+        "primary": {"vendorEN": "Tethalash", "vendorRU": "Теталаш", "zoneEN": "Valdrakken", "zoneRU": "Вальдраккен", "mapID": 2112, "x": 25.6, "y": 33.6},
+        "alt": {"vendorEN": "Treysh", "vendorRU": "Трейш", "zoneEN": "The Forbidden Reach", "zoneRU": "Запретный край", "mapID": 2151, "x": 36.0, "y": 66.8},
+    },
+    1683: {
+        "primary": {"vendorEN": "Tethalash", "vendorRU": "Теталаш", "zoneEN": "Valdrakken", "zoneRU": "Вальдраккен", "mapID": 2112, "x": 25.6, "y": 33.6},
+        "alt": {"vendorEN": "Treysh", "vendorRU": "Трейш", "zoneEN": "The Forbidden Reach", "zoneRU": "Запретный край", "mapID": 2151, "x": 36.0, "y": 66.8},
+    },
+    1684: {
+        "primary": {"vendorEN": "Tethalash", "vendorRU": "Теталаш", "zoneEN": "Valdrakken", "zoneRU": "Вальдраккен", "mapID": 2112, "x": 25.6, "y": 33.6},
+        "alt": {"vendorEN": "Treysh", "vendorRU": "Трейш", "zoneEN": "The Forbidden Reach", "zoneRU": "Запретный край", "mapID": 2151, "x": 36.0, "y": 66.8},
+    },
+    1685: {
+        "primary": {"vendorEN": "Tethalash", "vendorRU": "Теталаш", "zoneEN": "Valdrakken", "zoneRU": "Вальдраккен", "mapID": 2112, "x": 25.6, "y": 33.6},
+        "alt": {"vendorEN": "Treysh", "vendorRU": "Трейш", "zoneEN": "The Forbidden Reach", "zoneRU": "Запретный край", "mapID": 2151, "x": 36.0, "y": 66.8},
+    },
+    1686: {
+        "primary": {"vendorEN": "Tethalash", "vendorRU": "Теталаш", "zoneEN": "Valdrakken", "zoneRU": "Вальдраккен", "mapID": 2112, "x": 25.6, "y": 33.6},
+        "alt": {"vendorEN": "Treysh", "vendorRU": "Трейш", "zoneEN": "The Forbidden Reach", "zoneRU": "Запретный край", "mapID": 2151, "x": 36.0, "y": 66.8},
+    },
+    2224: {
+        "primary": {"vendorEN": "Bobadormu", "vendorRU": "Бобадорму", "zoneEN": "Tanaris (Caverns of Time)", "zoneRU": "Танарис (Пещеры Времени)", "mapID": 71, "x": 63.0, "y": 57.2},
+    },
+    2276: {
+        "primary": {"vendorEN": "Ando the Gat", "vendorRU": "Андо Пуля", "zoneEN": "Liberation of Undermine (Incontinental)", "zoneRU": "«Освобождение Нижней Шахты» (отель)", "mapID": 2346, "x": 41.8, "y": 48.8},
+    },
+    2278: {
+        "primary": {"vendorEN": "Ando the Gat", "vendorRU": "Андо Пуля", "zoneEN": "Liberation of Undermine (Incontinental)", "zoneRU": "«Освобождение Нижней Шахты» (отель)", "mapID": 2346, "x": 41.8, "y": 48.8},
+    },
+    2279: {
+        "primary": {"vendorEN": "Ando the Gat", "vendorRU": "Андо Пуля", "zoneEN": "Liberation of Undermine (Incontinental)", "zoneRU": "«Освобождение Нижней Шахты» (отель)", "mapID": 2346, "x": 41.8, "y": 48.8},
+    },
+    2803: {"primary": {"mapID": 1670, "x": 52.8, "y": 71.2}},
+    2804: {"primary": {"mapID": 1670, "x": 52.8, "y": 71.2}},
+    2815: {"primary": {"mapID": 1670, "x": 52.8, "y": 71.2}},
 }
 
 # Fallback Zone -> (mapID, x, y)
@@ -568,6 +636,10 @@ MOUNT_REP_OVERRIDES = {
     2294: {"factionID": 2677, "reqStanding": 8},
     2284: {"factionID": 2692, "reqStanding": 8},
     2287: {"factionID": 2669, "reqStanding": 8},
+    2276: {"factionID": 2685, "reqRenown": 17},
+    2278: {"factionID": 2685, "reqRenown": 20},
+    2279: {"factionID": 2685, "reqRenown": 8},
+    1321: {"reqAchEN": "Through the Depths of Visions", "reqAchRU": "Сквозь глубины видений"},
     2519: {"factionID": 2688, "reqRenown": 9},
     # Midnight (12.x) Renown, Enclave, Delver's Journey & Preyhunter's Journey gates
     2614: {"factionID": 2704, "reqRenown": 16},
@@ -582,6 +654,7 @@ MOUNT_REP_OVERRIDES = {
     2770: {"factionID": 2764, "reqRenown": 5, "factionEN": "Preyseeker's Journey (S1)", "factionRU": "Путь загонщика (1-й сезон)"},
     3032: {"factionID": 2808, "reqRenown": 10, "factionEN": "Preyseeker's Journey (S2)", "factionRU": "Путь загонщика (2-й сезон)"},
     2840: {"factionID": 2742, "reqRenown": 5, "factionEN": "Delver's Journey (S1)", "factionRU": "Путь участника вылазки (1-й сезон)"},
+    2841: {"factionID": 2742, "reqRenown": 10, "factionEN": "Delver's Journey (S1)", "factionRU": "Путь участника вылазки (1-й сезон)"},
     3043: {"factionID": 2796, "reqRenown": 5, "factionEN": "Delver's Journey (S2)", "factionRU": "Путь участника вылазки (2-й сезон)"},
     2935: {"factionID": 2792, "reqRenown": 8},
     3019: {"factionID": 2773, "reqStanding": 8},
@@ -601,6 +674,7 @@ ITEM_NAMES_FALLBACK = {
     103533: ("Vicious Saddle", "Седло ярости"),
     117397: ("Nat's Lucky Coin", "Счастливая монета Ната"),
     124099: ("Blackfang Claw", "Коготь Черного Клыка"),
+    127124: ("Curious Coin", "Любопытная монета"),
     137642: ("Mark of Honor", "Почетный знак"),
     138777: ("Drowned Mana", "Утопленная мана"),
     168802: ("Nazjatar Battle Commendation", "Боевой почетный знак Назжатара"),
